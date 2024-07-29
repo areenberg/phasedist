@@ -1,13 +1,14 @@
 import numpy as np
+from scipy.linalg import expm
 
 # REFERENCES
 
 #Bladt, M., & Nielsen, B. F. (2017). Matrix-Exponential Distributions in Applied Probability. 
 #Springer. https://doi.org/10.1007/978-1-4939-7049-0
 
-class __fitdph:
-    #fit discrete-time phase-type distributions using the
-    #EM algorithm from p. 675 Bladt and Nielsen (2017). 
+class __fitcph:
+    #fit continuous-time phase-type distributions using the
+    #EM algorithm from p. 678 Bladt and Nielsen (2017).
 
     def __init__(self,obs=None,initpi=None,initphgen=None,initexitrates=None,randominit=True,seed=None,tolerance=1e-6,itermax=1e6):
         self.obs = obs #observed realizations of the PH distribution
@@ -22,19 +23,19 @@ class __fitdph:
         self.__initialize()
 
     def fit(self):
-        #fit the DPH distribution
+        #fit the CPH distribution
         iter=0
         eps = np.inf
-        loglik0 = self.loglikelihood
+        loglik0 = -np.inf
         while iter<self.itermax and eps>self.tolerance:
             self.__estep()
             self.__mstep()
-            self.__updatelikelihood()
-            eps = self.loglikelihood-loglik0
+            eps = self.loglikelihood-loglik0 #loglik is evaluated within the E-step 
             #print(self.loglikelihood,loglik0,eps)
             loglik0 = self.loglikelihood
             iter += 1
-    
+        self.__updatelikelihood() #evaluate final loglik
+
     def getinitdist(self):
         #returns the initial distribution
         return self.pi
@@ -48,21 +49,21 @@ class __fitdph:
         return self.exitrates 
             
     def getmean(self):
-        #returns the mean of the DPH
-        return np.sum(np.matmul(self.pi,np.linalg.inv(np.subtract(np.eye(self.nphases),self.phgen))))
+        #returns the mean of the CPH
+        return -np.sum(np.matmul(self.pi,np.linalg.inv(self.phgen)))
 
     def getvar(self):
-        #returns the variance of the DPH
-        Tinv = np.linalg.inv(np.subtract(np.eye(self.nphases),self.phgen))
-        return np.sum(np.matmul(np.matmul(self.pi,Tinv),np.subtract((2*Tinv),np.eye(self.nphases))))-self.getmean()**2
+        #returns the variance of the CPH
+        phinv = np.linalg.inv(self.phgen)
+        return 2*np.sum(np.matmul(self.pi,np.linalg.matrix_power(phinv,2)))-np.power(np.sum(np.matmul(self.pi,phinv)),2)
 
     def getdensity(self,x):
-        #returns the density of the DPH
-        return np.matmul(self.pi,np.matmul(np.linalg.matrix_power(self.phgen,(x-1)),self.exitrates)).item()
+        #returns the density of the CPH
+        return np.matmul(self.pi,np.matmul(expm(self.phgen*x),self.exitrates)).item()
 
     def getcumprob(self,x):
-        #returns the cumulated probability P(X<=x) of the DPH
-        return 1-np.sum(np.matmul(self.pi,np.linalg.matrix_power(self.phgen,x)))
+        #returns the cumulated probability P(X<=x) of the CPH
+        return 1-np.sum(np.matmul(self.pi,expm(self.phgen*x)))
 
     def getloglik(self):
         return self.loglikelihood
@@ -80,8 +81,7 @@ class __fitdph:
             np.random.seed(self.seed)
         
         #convert data types
-        self.obs = self.obs.astype(int) #observations must be integer
-        self.obs = np.sort(self.obs) #ensure observations are sorted
+        self.obs = self.obs.astype(float) #observations must be float
         self.initpi = self.initpi.astype(float)
         self.initphgen = self.initphgen.astype(float)
         self.initexitrates = self.initexitrates.astype(float)
@@ -96,11 +96,11 @@ class __fitdph:
         #accounting for the specified structure
         if self.randominit:
             self.__initrandom()
-        self.__updatelikelihood() #compute the log-likelihood
+        #self.__updatelikelihood() #compute the log-likelihood
         self.__countParameters()    
             
     def __initrandom(self):
-        #initialize with a random DPH distribution
+        #initialize with a random CPH distribution
         
         #make a random initial distribution (pi)
         nzidx = np.nonzero(self.pi)[1]
@@ -116,47 +116,38 @@ class __fitdph:
         #make a random PH generator
         for i in range(self.nphases):
             nzidx = np.nonzero(self.phgen[i,:])[1]
+            msk = nzidx != i
+            nzidx = nzidx[msk]
             u = np.random.uniform(low=0.0, high=1.0, size=len(nzidx))
-            u = (u / np.sum(u)) * (1 - self.exitrates[i, 0])
             self.phgen[i,nzidx] = u
+            self.phgen[i,i] = -(np.sum(u)+self.exitrates[i,0])
         
     def __estep(self):
         #performs the E-step
         
         self.bi = np.zeros(self.nphases)
+        self.zi = np.zeros(self.nphases)
         self.ni = np.zeros(self.nphases)
         self.nij = np.zeros((self.nphases,self.nphases))
-        self.phgeninv = np.linalg.inv(self.phgen) #for the computation of 'K'
+        self.loglikelihood = 0.0
         
-        y0 = -1
-        for y in self.obs:    
-            if y!=y0: #reuse computations if possible
-                if y==1:
-                    Tpow = self.identity
-                    Ttprod = self.exitrates
-                else:
-                    Tpow = np.linalg.matrix_power(self.phgen,(y-1))
-                    Ttprod = np.matmul(Tpow,self.exitrates)
-                piTtprod = np.matmul(self.pi,Ttprod)
-                
-                if y>=2:
-                    #pre-compute the matrix function 'K'
-                    self.__Kmatrix(y)
-            y0=y #update y0
-            
-            if piTtprod!=0.0:
-                for i in range(self.nphases):
-                
-                    #compute B_i (expected number of times starting in phase i)
-                    self.bi[i] += self.pi[0,i]*Ttprod[i,0] / piTtprod
-                    #compute N_i (expected number of transitions to absorbing state from phase i)
-                    piTpow = np.matmul(self.pi,Tpow)
-                    self.ni[i] += piTpow[0,i]*self.exitrates[i,0] / piTtprod
-                
-                    if y>=2:
-                        #compute N_ij (expected transitions between phase i and j)
-                        for j in range(self.nphases):
-                            self.nij[i,j] += self.phgen[i,j]*self.Kmat[j,i] / piTtprod
+        for y in self.obs:
+            self.__Jmatrix(y) #update J matrix and exp(T*y)
+            eTyt = np.matmul(self.eTy,self.exitrates)
+            pieTy = np.matmul(self.pi,self.eTy)
+            pieTyt = np.matmul(pieTy,self.exitrates)
+            self.loglikelihood += np.log(pieTyt)
+            for i in range(self.nphases):
+                #compute B_i (expected number of times starting in phase i)
+                self.bi[i] += (self.pi[0,i]*eTyt[i,0])/pieTyt
+                #compute Z_i (expected time spend in phase i)
+                self.zi[i] += self.Jmat[i,i]/pieTyt
+                #compute N_ij (expected transitions between phase i and j)
+                for j in range(self.nphases):
+                    if j!=i:
+                        self.nij[i,j] += (self.phgen[i,j]*self.Jmat[j,i])/pieTyt
+                #compute N_i (expected number of transitions to absorbing state from phase i)
+                self.ni[i] += (pieTy[0,i]*self.exitrates[i,0])/pieTyt
         
     def __mstep(self):
         #performs the M-step
@@ -167,50 +158,36 @@ class __fitdph:
             
         #update the exit rates
         for i in range(self.nphases):
-            sm = self.ni[i]
-            for j in range(self.nphases):
-                sm += self.nij[i,j]
-            self.exitrates[i,0] = self.ni[i]/sm
-
+            self.exitrates[i,0] = self.ni[i]/self.zi[i]
+        
         #update the PH generator
         for i in range(self.nphases):
+            sm=self.exitrates[i,0]
             for j in range(self.nphases):
-                sm = self.ni[i]
-                for k in range(self.nphases):
-                    sm += self.nij[i,k]
-                self.phgen[i,j] = self.nij[i,j]/sm
-    
+                if j!=i:
+                    self.phgen[i,j] = self.nij[i,j]/self.zi[i]
+                    sm += self.phgen[i,j]
+            self.phgen[i,i] = -sm
+            
     def __updatelikelihood(self):
         self.loglikelihood = 0.0
         for y in self.obs:
-            self.loglikelihood += np.log(self.__getProbMass(y)).item()
+            self.loglikelihood += np.log(self.getdensity(y))
     
-    def __getProbMass(self,y):
-        return np.matmul(self.pi,np.matmul(np.linalg.matrix_power(self.phgen,y),self.exitrates))
-    
-    def __Kmatrix(self,y):
-        #computes the matrix-function 'K' for
-        #the observations 'y'
+    def __Jmatrix(self,y):
+        #computes the matrix-function 'J' as well as
+        #the matrix 'exp(T*y)' for the observations 'y'
         
-        if y<2:
-            return
-
-        self.Kmat = np.zeros((self.nphases, self.nphases))
-
-        Ty = np.linalg.matrix_power(self.phgen,y-2)
-        exit_prod = np.matmul(Ty,self.exitrates)
-        pi_mat = self.pi
+        mat = expm(np.block([[self.phgen,np.matmul(self.exitrates,self.pi)],
+                        [np.zeros((self.nphases,self.nphases)),self.phgen]])*y)
         
-        for k in range(y-1):
-            self.Kmat += np.outer(exit_prod,pi_mat)
-            if k<y-2:
-                Ty = np.matmul(Ty,self.phgeninv)  
-                exit_prod = np.matmul(Ty,self.exitrates)
-                pi_mat = np.matmul(pi_mat,self.phgen)  
+        self.eTy = mat[:self.nphases,:self.nphases]
+        self.Jmat = mat[:self.nphases, self.nphases:2*self.nphases]
+        
 
     def __countParameters(self):
         #count the number of independent parameters
         phg = 0
         for i in range(self.nphases): #independent parameters in each phase of the PH generator and exit vector
-            phg += np.count_nonzero(self.phgen[i,:])+np.count_nonzero(self.exitrates[i,0])-1
+            phg += np.count_nonzero(self.phgen[i,:])+np.count_nonzero(self.exitrates[i,0])-1 #subtract the diagonal element
         self.nparam = phg+(np.count_nonzero(self.pi)-1) #add the number of independent parameters in the initial distribution
