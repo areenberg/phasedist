@@ -6,11 +6,11 @@ from scipy.linalg import expm
 #Bladt, M., & Nielsen, B. F. (2017). Matrix-Exponential Distributions in Applied Probability. 
 #Springer. https://doi.org/10.1007/978-1-4939-7049-0
 
-class __fitcph:
+class fitcph:
     #fit continuous-time phase-type distributions using the
     #EM algorithm from p. 678 Bladt and Nielsen (2017).
 
-    def __init__(self,obs=None,initpi=None,initphgen=None,initexitrates=None,randominit=True,seed=None,tolerance=1e-6,itermax=1e6):
+    def __init__(self,obs=None,initpi=None,initphgen=None,initexitrates=None,randominit=True,seed=None,tolerance=1e-6,itermax=1e6,verbose=False):
         self.obs = obs #observed realizations of the PH distribution
         self.initpi = initpi
         self.initphgen = initphgen
@@ -20,6 +20,7 @@ class __fitcph:
         self.seed = seed
         self.itermax = itermax
         self.tolerance=tolerance
+        self.verbose=verbose
         self.__initialize()
 
     def fit(self):
@@ -34,6 +35,9 @@ class __fitcph:
             #print(self.loglikelihood,loglik0,eps)
             loglik0 = self.loglikelihood
             iter += 1
+            if self.verbose and iter%5==0:
+                print("iter =",iter,"  eps =",eps,"  mean =",self.getmean(),"  var =",self.getvar())
+            
         self.__updatelikelihood() #evaluate final loglik
 
     def getinitdist(self):
@@ -110,7 +114,7 @@ class __fitcph:
         
         #make a random exit vector
         nzidx = np.nonzero(self.exitrates)[0]
-        u = np.random.uniform(low=0.0, high=1.0, size=len(nzidx))
+        u = np.random.uniform(low=0.0, high=10.0, size=len(nzidx))
         self.exitrates[nzidx,0] = u
         
         #make a random PH generator
@@ -118,7 +122,7 @@ class __fitcph:
             nzidx = np.nonzero(self.phgen[i,:])[1]
             msk = nzidx != i
             nzidx = nzidx[msk]
-            u = np.random.uniform(low=0.0, high=1.0, size=len(nzidx))
+            u = np.random.uniform(low=0.0, high=10.0, size=len(nzidx))
             self.phgen[i,nzidx] = u
             self.phgen[i,i] = -(np.sum(u)+self.exitrates[i,0])
         

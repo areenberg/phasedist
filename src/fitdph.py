@@ -5,11 +5,11 @@ import numpy as np
 #Bladt, M., & Nielsen, B. F. (2017). Matrix-Exponential Distributions in Applied Probability. 
 #Springer. https://doi.org/10.1007/978-1-4939-7049-0
 
-class __fitdph:
+class fitdph:
     #fit discrete-time phase-type distributions using the
     #EM algorithm from p. 675 Bladt and Nielsen (2017). 
 
-    def __init__(self,obs=None,initpi=None,initphgen=None,initexitrates=None,randominit=True,seed=None,tolerance=1e-6,itermax=1e6):
+    def __init__(self,obs=None,initpi=None,initphgen=None,initexitrates=None,randominit=True,seed=None,tolerance=1e-6,itermax=1e6,verbose=False):
         self.obs = obs #observed realizations of the PH distribution
         self.initpi = initpi
         self.initphgen = initphgen
@@ -19,6 +19,7 @@ class __fitdph:
         self.seed = seed
         self.itermax = itermax
         self.tolerance=tolerance
+        self.verbose=verbose
         self.__initialize()
 
     def fit(self):
@@ -31,9 +32,10 @@ class __fitdph:
             self.__mstep()
             self.__updatelikelihood()
             eps = self.loglikelihood-loglik0
-            #print(self.loglikelihood,loglik0,eps)
             loglik0 = self.loglikelihood
             iter += 1
+            if self.verbose and iter%5==0:
+                print("iter =",iter,"  eps =",eps,"  mean =",self.getmean(),"  var =",self.getvar())
     
     def getinitdist(self):
         #returns the initial distribution

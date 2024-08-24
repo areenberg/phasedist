@@ -7,12 +7,12 @@ from scipy.stats import lognorm, norm, gamma, weibull_min, chi2
 #Bladt, M., & Nielsen, B. F. (2017). Matrix-Exponential Distributions in Applied Probability. 
 #Springer. https://doi.org/10.1007/978-1-4939-7049-0
 
-class __fitcph2dist:
+class fitcph2dist:
     #fit a continuous-time phase-type distributions to
     #a distribution with a continuous density using
     #the EM algorithm from p. 681 Bladt and Nielsen (2017).
 
-    def __init__(self,initpi=None,initphgen=None,initexitrates=None,randominit=True,seed=None,tolerance=1e-3,truncation=0.99,steps=50,itermax=1e9):
+    def __init__(self,initpi=None,initphgen=None,initexitrates=None,randominit=True,seed=None,tolerance=1e-3,truncation=0.99,steps=50,itermax=1e9,verbose=False):
         self.initpi = initpi
         self.initphgen = initphgen
         self.initexitrates = initexitrates
@@ -23,6 +23,7 @@ class __fitcph2dist:
         self.tolerance=tolerance
         self.truncation=truncation
         self.disttype = None
+        self.verbose=verbose
         self.steps = steps #number of steps in the numerical integration
         
     def lognorm(self,mu=None,sigma=None,mean=None,var=None):
@@ -39,8 +40,8 @@ class __fitcph2dist:
     def norm(self,mu=None,sigma=None):
         #approximate a (truncated) normal distribution
         self.param1=mu
-        self.param2=np.power(sigma,2)
-        self.disttype="normal"
+        self.param2=sigma
+        self.disttype="norm"
         self.__initialize()
         
     def gamma(self,shape=None,scale=None,rate=None):
@@ -98,7 +99,8 @@ class __fitcph2dist:
             self.pi0 = np.copy(self.pi)
             self.phgen0 = np.copy(self.phgen)
             iter += 1
-            print("iter =",iter,"  eps =",self.eps,"  mean =",self.getmean(),"  var =",self.getvar())
+            if self.verbose and iter%5==0:
+                print("iter =",iter,"  eps =",self.eps,"  mean =",self.getmean(),"  var =",self.getvar())
             
     def getinitdist(self):
         #returns the initial distribution
@@ -292,13 +294,13 @@ class __fitcph2dist:
         elif self.disttype=="gamma":
             self.y = np.linspace(0,gamma.ppf(self.truncation,self.param1,scale=self.param2),self.steps+1)
         elif self.disttype=="norm":
-            self.y = np.linspace(0,self.normtruncquantfun(self.param1,np.sqrt(self.param2)),self.steps+1)
+            self.y = np.linspace(0,self.__normtruncquantfun(self.param1,self.param2),self.steps+1)
         elif self.disttype=="weibull":
             self.y = np.linspace(0,weibull_min.ppf(self.truncation,self.param1,scale=self.param2),self.steps+1)
         elif self.disttype=="chisq":
             self.y = np.linspace(0,chi2.ppf(self.truncation,self.param1),self.steps+1)
         elif self.disttype=="ph":
-            self.y = np.linspace(0,self.phtruncquantfun(self.param1,self.param2),self.steps+1)
+            self.y = np.linspace(0,self.__phtruncquantfun(self.param1,self.param2),self.steps+1)
         elif self.disttype=="per":
             self.y = np.linspace(0,np.max(self.param2),self.steps+1)
         
@@ -311,13 +313,13 @@ class __fitcph2dist:
             elif self.disttype=="gamma":
                 self.hy[i] = self.__gamma_dcdf(self.y[i],self.y[i+1])
             elif self.disttype=="norm":
-                self.hy[i] = None #     <<<--- TO DO
+                self.hy[i] = self.__normtrunc_dcdf(self.y[i],self.y[i+1])
             elif self.disttype=="weibull":
-                self.hy[i] = None #     <<<--- TO DO
+                self.hy[i] = self.__weib_dcdf(self.y[i],self.y[i+1])
             elif self.disttype=="chisq":
-                self.hy[i] = None #     <<<--- TO DO
+                self.hy[i] = self.__chisq_dcdf(self.y[i],self.y[i+1])
             elif self.disttype=="ph":
-                self.hy[i] = None #     <<<--- TO DO
+                self.hy[i] = self.__ph_dcdf(self.y[i],self.y[i+1])
             elif self.disttype=="per":
                 self.hy[i] = self.__per_dcdf(self.y[i],self.y[i+1])
         
@@ -348,6 +350,39 @@ class __fitcph2dist:
             return gamma.cdf(x1,self.param1,scale=self.param2)
         else:
             return gamma.cdf(x1,self.param1,scale=self.param2)-gamma.cdf(x0,self.param1,scale=self.param2)
+
+    def __normtrunc_dcdf(self,x0,x1):
+        #Cumulated probability *between* x0 and x1
+        #of the truncated normal distribution
+        
+        return (norm.cdf((x1-self.param1)/self.param2)-norm.cdf((x0-self.param1)/self.param2))/(1-norm.cdf((-self.param1)/self.param2))
+
+    def __weib_dcdf(self,x0,x1):
+        #Cumulated probability *between* x0 and x1
+        #of the Weibull distribution
+        
+        if x0==0:
+            return weibull_min.cdf(x1,self.param1,scale=self.param2)
+        else:
+            return weibull_min.cdf(x1,self.param1,scale=self.param2)-weibull_min.cdf(x0,self.param1,scale=self.param2)
+    
+    def __chisq_dcdf(self,x0,x1):
+        #Cumulated probability *between* x0 and x1
+        #of the Chi-square distribution
+        
+        if x0==0:
+            return chi2.cdf(x1,self.param1)
+        else:
+            return chi2.cdf(x1,self.param1)-chi2.cdf(x0,self.param1)
+        
+    def __ph_dcdf(self,x0,x1):
+        #Cumulated probability *between* x0 and x1
+        #of the PH distribution
+        
+        if x0==0:
+            return 1-np.sum(np.matmul(self.param1,expm(self.param2*x1)))
+        else:
+            return np.sum(np.matmul(self.param1,expm(self.param2*x0)))-np.sum(np.matmul(self.param1,expm(self.param2*x1)))
         
     def __per_dcdf(self,x0,x1):
         #Cumulated probability *between* x0 and x1
@@ -367,7 +402,7 @@ class __fitcph2dist:
         else:
             return self.param1[idx1]*(x/self.param2[idx1])
 
-    def normtruncquantfun(self,mu,sigma):
+    def __normtruncquantfun(self,mu,sigma):
         #numerical quantile function for the truncated
         #normal distribution
         cmp=1-norm.cdf(-mu/sigma)
@@ -384,7 +419,7 @@ class __fitcph2dist:
                 iter+=1          
         return x            
             
-    def phtruncquantfun(self,idst,phg):
+    def __phtruncquantfun(self,idst,phg):
         #numerical quantile function for the
         #PH distribution
         phinv = np.linalg.inv(phg)
