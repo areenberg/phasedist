@@ -34,8 +34,8 @@ class fitdph:
             eps = self.loglikelihood-loglik0
             loglik0 = self.loglikelihood
             iter += 1
-            if self.verbose and iter%5==0:
-                print("iter =",iter,"  eps =",eps,"  mean =",self.getmean(),"  var =",self.getvar())
+            if self.verbose and iter%25==0:
+                print("iter =",iter,"  eps =",eps.item(),"  mean =",self.getmean(),"  var =",self.getvar())
     
     def getinitdist(self):
         #returns the initial distribution

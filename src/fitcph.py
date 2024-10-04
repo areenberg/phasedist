@@ -35,8 +35,8 @@ class fitcph:
             #print(self.loglikelihood,loglik0,eps)
             loglik0 = self.loglikelihood
             iter += 1
-            if self.verbose and iter%5==0:
-                print("iter =",iter,"  eps =",eps,"  mean =",self.getmean(),"  var =",self.getvar())
+            if self.verbose and iter%25==0:
+                print("iter =",iter,"  eps =",eps.item(),"  mean =",self.getmean(),"  var =",self.getvar())
             
         self.__updatelikelihood() #evaluate final loglik
 
