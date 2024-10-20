@@ -166,11 +166,12 @@ class fit:
         self.__checkfit()
         
         #adjust for zeros in observations
-        if self.fitaccepted:
-            self.d.initpi = self.d.initpi*(1-fraczero)
+        self.d.initpi = self.d.initpi*(1-fraczero)
+        
+        if self.fitaccepted:    
             return 0
         else:
-            print("Error: The PH distribution contains infeasible parameters.")
+            print("The PH distribution might contain infeasible or inaccurate parameters.")
             return 1
 
     def __general(self):
@@ -234,10 +235,10 @@ class fit:
     def __checkfit(self):
         #check feasibility of fitted parameters
         self.fitaccepted = True
-        #if self.__correctphgen(self.d.getphasegen(),self.d.getexitrates) and self.__correctinitdist(self.d.getinitdist()):
-        #    self.fitaccepted = True
-        #else:
-        #    self.fitaccepted = False
+        if self.__correctphgen(self.d.getphasegen(),self.d.getexitrates()) and self.__correctinitdist(self.d.getinitdist()):
+            self.fitaccepted = True
+        else:
+            self.fitaccepted = False
             
     def __correctphgen(self,phasegen,exitrates):
         #returns True if the PH generator and
@@ -253,10 +254,10 @@ class fit:
         if np.any(phasegen[~np.eye(self.nphases,dtype=bool)]<0):
             print("Error: The PH generator contains negative off-diagonal values.")
             return False
-        if np.any(phasegen[np.eye(self.nphases,dtype=bool)]>0):
+        if not self.discrete and np.any(phasegen[np.eye(self.nphases,dtype=bool)]>0):
             print("Error: The PH generator contains positive diagonal values.")
             return False
-        if not np.all(-np.sum(phasegen,axis=1)==exitrates):
+        if not self.discrete and not np.all(-np.sum(phasegen,axis=1)==exitrates):
             print("Error: The exit rate vector does not match the PH generator.")
             return False
         #check exit rates
@@ -284,7 +285,7 @@ class fit:
         if np.any(initdist<0.0):
             print("Error: The initial distribution contains negative values.")
             return False
-        if np.sum(initdist)!=1.0:
-            print("Error: The initial distribution does not sum to unity.")
+        if np.abs(np.sum(initdist)-1.0)>1e-14:
+            print("Warning: Prior to adjusting for zeros in the observations the initial distribution summed to " + str(np.sum(initdist)))
             return False
         return True

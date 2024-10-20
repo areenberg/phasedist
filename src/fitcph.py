@@ -37,7 +37,8 @@ class fitcph:
             iter += 1
             if self.verbose and iter%25==0:
                 print("iter =",iter,"  eps =",eps.item(),"  mean =",self.getmean(),"  var =",self.getvar())
-            
+        
+        self.__polish()    
         self.__updatelikelihood() #evaluate final loglik
 
     def getinitdist(self):
@@ -195,3 +196,11 @@ class fitcph:
         for i in range(self.nphases): #independent parameters in each phase of the PH generator and exit vector
             phg += np.count_nonzero(self.phgen[i,:])+np.count_nonzero(self.exitrates[i,0])-1 #subtract the diagonal element
         self.nparam = phg+(np.count_nonzero(self.pi)-1) #add the number of independent parameters in the initial distribution
+        
+    def __polish(self):
+        #polish parameters
+        
+        #normalize initial distribution
+        self.pi = self.pi/np.sum(self.pi)
+        #compute exit rates from the PH generator
+        self.exitrates = -np.sum(self.phgen,axis=1)

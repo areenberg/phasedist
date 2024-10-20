@@ -4,22 +4,19 @@ import numpy as np
 from scipy.stats import lognorm
 import matplotlib.pyplot as plt
 
-seed=456
+seed=123
 np.random.seed(seed)
 
 #obs = np.random.geometric(0.2,size=100)
-#obs = np.random.negative_binomial(2,0.2,size=100)+2 #convert to trials by adding two
+obs = np.random.negative_binomial(2,0.5,size=1000)+2 #convert to trials by adding two
 #obs = np.random.exponential(scale=1.0,size=100)
-obs = np.random.lognormal(0,0.25,size=100)
+#obs = np.random.lognormal(0,0.25,size=100)
 
-
-ph = fit(obs=obs,nphases=5,dtype="general",discrete=False,verbose=True)
+ph = fit(obs=obs,nphases=2,dtype="generlang",discrete=True,verbose=False)
 
 print(ph.getinitdist())
 print(ph.getphasegen())
 print(ph.getexitrates())
-print(ph.getcumprob(3))
-print(ph.getaic())
 
 
 #ph = fitcph2dist(initpi=np.matrix([[1,1,1]]),

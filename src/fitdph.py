@@ -36,6 +36,7 @@ class fitdph:
             iter += 1
             if self.verbose and iter%25==0:
                 print("iter =",iter,"  eps =",eps.item(),"  mean =",self.getmean(),"  var =",self.getvar())
+        self.__polish()        
     
     def getinitdist(self):
         #returns the initial distribution
@@ -60,11 +61,19 @@ class fitdph:
 
     def getdensity(self,x):
         #returns the density of the DPH
-        return np.matmul(self.pi,np.matmul(np.linalg.matrix_power(self.phgen,(x-1)),self.exitrates)).item()
+        if int(x)!=x:
+            print("Error: 'x' is not an integer.")
+            return np.nan
+        else:
+            return np.matmul(self.pi,np.matmul(np.linalg.matrix_power(self.phgen,(x-1)),self.exitrates)).item()
 
     def getcumprob(self,x):
         #returns the cumulated probability P(X<=x) of the DPH
-        return 1-np.sum(np.matmul(self.pi,np.linalg.matrix_power(self.phgen,x)))
+        if int(x)!=x:
+            print("Error: 'x' is not an integer.")
+            return np.nan
+        else:
+            return 1-np.sum(np.matmul(self.pi,np.linalg.matrix_power(self.phgen,x)))
 
     def getloglik(self):
         return self.loglikelihood
@@ -216,3 +225,11 @@ class fitdph:
         for i in range(self.nphases): #independent parameters in each phase of the PH generator and exit vector
             phg += np.count_nonzero(self.phgen[i,:])+np.count_nonzero(self.exitrates[i,0])-1
         self.nparam = phg+(np.count_nonzero(self.pi)-1) #add the number of independent parameters in the initial distribution
+    
+    def __polish(self):
+        #polish parameters
+        
+        #normalize initial distribution
+        self.pi = self.pi/np.sum(self.pi)
+        #compute exit rates from the PH generator
+        self.exitrates = 1.0-np.sum(self.phgen,axis=1)
