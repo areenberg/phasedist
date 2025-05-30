@@ -14,11 +14,16 @@ class fitcph2dist:
     #a distribution with a continuous density using
     #the EM algorithm from p. 681 Bladt and Nielsen (2017).
 
-    def __init__(self,initdist=None,initphgen=None,initexitrates=None,randominit=True,seed=None,tolerance=1e-3,truncation=0.99,steps=50,itermax=1e9,verbose=False):
-        self.initpi = initdist
+    def __init__(self,nphases=2,dtype="general",
+                 initdist=None,initphgen=None,initexitrates=None,
+                 randominit=True,seed=None,tolerance=1e-3,truncation=0.99,
+                 steps=50,itermax=1e9,verbose=False):
+        
+        self.nphases=nphases
+        self.dtype=dtype
+        self.initdist = initdist
         self.initphgen = initphgen
         self.initexitrates = initexitrates
-        self.nphases = self.initphgen.shape[0]
         self.randominit = randominit
         self.seed = seed
         self.itermax = itermax
@@ -27,6 +32,181 @@ class fitcph2dist:
         self.disttype = None
         self.verbose=verbose
         self.steps = steps #number of steps in the numerical integration
+        
+        #checking and fitting
+        if self.__checkinputs():
+            self.__makedist() #fit the parameters
+
+    def __checkinputs(self):
+        #check the feasibility of all input parameters
+        #before proceeding
+        
+        #check data types and convert if necesarry
+        if not isinstance(self.nphases,int) or self.nphases<1:
+            print("Error: The number of phases can only be specified as an integer larger than 0.")
+            return 0    
+        if not isinstance(self.dtype,str):
+            print("Error: The distribution type can only be specified as a string.")
+        if self.initdist is not None and (isinstance(self.initdist,np.ndarray) or isinstance(self.initdist,list)):
+            self.initdist = np.matrix(self.initdist)
+        elif self.initdist is not None and not isinstance(self.initdist,np.matrix):
+            print("Error: The initial distribution can only be specified as a list, NumPy array, or a NumPy matrix.")
+            return False
+        if self.initphgen is not None and (isinstance(self.initphgen,np.ndarray) or isinstance(self.initphgen,list)):
+            self.initphgen = np.matrix(self.initphgen)
+        elif self.initphgen is not None and not isinstance(self.initphgen,np.matrix):
+            print("Error: The PH generator can only be specified as a list or a NumPy matrix.")
+            return False
+        if self.initexitrates is not None and (isinstance(self.initexitrates,np.ndarray) or isinstance(self.initexitrates,list)):
+            self.initexitrates = np.transpose(np.matrix(self.initexitrates))
+        elif self.initexitrates is not None and not isinstance(self.initexitrates,np.matrix):
+            print("Error: The exit rate vector can only be specified as a list, NumPy array, or a NumPy matrix.")
+            return False
+        if not isinstance(self.randominit,bool):
+            print("Error: The argument 'randominit' needs to be of type 'bool'.")
+            return False        
+        if self.seed is not None and not isinstance(self.seed,int):
+            print("Error: The seed can only be specified as an integer.")
+            return False
+        if not isinstance(self.tolerance,float):
+            print("Error: The argument 'tolerance' needs to be of type 'float'.")
+            return False        
+        if not isinstance(self.itermax,float) and not isinstance(self.itermax,int):
+            print("Error: The argument 'itermax' needs to be of type 'float' or 'int'.")
+            return False        
+        if not isinstance(self.verbose,bool):
+            print("Error: The argument 'verbose' needs to be of type 'bool'.")
+            return False
+        
+        #check PH generator and exit rates in case of no random initialization
+        if self.dtype=="custom" or not self.randominit:
+            self.nphases = self.initphgen.shape[0]
+        if not self.randominit:
+            if not self.__correctphgen(self.initphgen,self.initexitrates) or not self.__correctinitdist(self.d.getinitdist):
+                return False
+            
+        return True
+
+    def __correctphgen(self,phasegen,exitrates):
+        #returns True if the PH generator and
+        #exit rates are feasible
+        
+        #check PH generator
+        if phasegen.shape[0]!=phasegen.shape[1] or phasegen.shape[0]!=self.nphases:
+            print("Error: The dimensions of the PH generator does not match the number of phases.")
+            return False
+        if np.where(np.isnan(phasegen))[0].size>0 or np.where(np.isinf(phasegen))[0].size>0 or np.where(np.isneginf(phasegen))[0].size>0:
+            print("Error: The PH generator contains NaN or/and infinity values.")
+            return False
+        if np.any(phasegen[~np.eye(self.nphases,dtype=bool)]<0):
+            print("Error: The PH generator contains negative off-diagonal values.")
+            return False
+        if np.any(phasegen[np.eye(self.nphases,dtype=bool)]>0):
+            print("Error: The PH generator contains positive diagonal values.")
+            return False
+        if np.max(abs(np.add(np.sum(phasegen,axis=1),exitrates)))>1e-6:
+            print("Warning: An element of the exit rate vector deviates at least 1e-6 from the absolute row sum of the PH generator.")
+            return True
+        #check exit rates
+        if self.nphases!=exitrates.size:
+            print("Error: The size of the exit rate vector does not match the number of phases.")
+            return False
+        if np.where(np.isnan(exitrates))[0].size>0 or np.where(np.isinf(exitrates))[0].size>0 or np.where(np.isneginf(exitrates))[0].size>0:
+            print("Error: The exit rate vector contains NaN or/and infinity values.")
+            return False
+        if np.any(exitrates<0):
+            print("Error: The exit rate vector contains negative values.")
+            return False
+        return True
+
+    def __correctinitdist(self,initdist):
+        #returns True if the initial distribution
+        #is feasible
+        
+        if initdist.size!=self.nphases:
+            print("Error: The size of the initial distribution does not match the number of phases.")
+            return False
+        if np.where(np.isnan(initdist))[0].size>0 or np.where(np.isinf(initdist))[0].size>0 or np.where(np.isneginf(initdist))[0].size>0:
+            print("Error: The initial distribution contains NaN or/and infinity values.")
+            return False
+        if np.any(initdist<0.0):
+            print("Error: The initial distribution contains negative values.")
+            return False
+        if np.abs(np.sum(initdist)-1.0)>1e-14:
+            print("Warning: Prior to adjusting for zeros in the observations the initial distribution summed to " + str(np.sum(initdist)))
+            return False
+        return True
+        
+    def __makedist(self):
+        
+        #set distribution type
+        if self.dtype=="general":
+            self.__general()
+        elif self.dtype=="generlang":
+            self.__generlang()
+        elif self.dtype=="hyperexp":
+            self.__hyperexp()
+        elif self.dtype=="coxian":
+            self.__coxian()
+        elif self.dtype=="gencoxian":
+            self.__gencoxian()
+        elif self.dtype!="custom":
+            print("Error: Unknown distribution type.")
+            return 1
+
+    def __general(self):
+        #general phase-type distribution
+        self.initdist=np.matrix(np.ones((1,self.nphases)))
+        self.initphgen=np.matrix(np.ones((self.nphases,self.nphases)))
+        self.initexitrates=np.matrix(np.ones((self.nphases,1)))
+
+    def __generlang(self):
+        #generalized Erlang distribution        
+        self.initdist=np.matrix(np.zeros((1,self.nphases)))
+        self.initdist[0,0]=1
+        
+        self.initexitrates=np.matrix(np.zeros((self.nphases,1)))
+        self.initexitrates[self.nphases-1,0]=1
+        
+        self.initphgen=np.matrix(np.zeros((self.nphases,self.nphases)))
+        for i in range(self.nphases):
+            self.initphgen[i,i]=1
+            if i<(self.nphases-1):
+                self.initphgen[i,i+1]=1
+            
+    def __hyperexp(self):
+        #hyper-exponential distribution
+        self.initdist=np.matrix(np.ones((1,self.nphases)))
+        
+        self.initphgen=np.matrix(np.zeros((self.nphases,self.nphases)))
+        self.initexitrates=np.matrix(np.ones((self.nphases,1)))
+        for i in range(self.nphases):
+            self.initphgen[i,i]=1
+        
+    def __coxian(self):
+        #Coxian distribution
+        self.initdist=np.matrix(np.zeros((1,self.nphases)))
+        self.initdist[0,0]=1
+        
+        self.initexitrates=np.matrix(np.ones((self.nphases,1)))
+        
+        self.initphgen=np.matrix(np.zeros((self.nphases,self.nphases)))
+        for i in range(self.nphases):
+            self.initphgen[i,i]=1
+            if i<(self.nphases-1):
+                self.initphgen[i,i+1]=1
+
+    def __gencoxian(self):
+        #generalized Coxian distribution
+        self.initdist=np.matrix(np.ones((1,self.nphases)))
+        self.initexitrates=np.matrix(np.ones((self.nphases,1)))
+        
+        self.initphgen=np.matrix(np.zeros((self.nphases,self.nphases)))
+        for i in range(self.nphases):
+            self.initphgen[i,i]=1
+            if i<(self.nphases-1):
+                self.initphgen[i,i+1]=1
+
         
     def lognorm(self,mu=None,sigma=None,mean=None,var=None):
         #approximate a log-normal distribution
@@ -178,12 +358,12 @@ class fitcph2dist:
         
         #convert data types
         self.steps = int(self.steps)
-        self.initpi = self.initpi.astype(float)
+        self.initpi = self.initdist.astype(float)
         self.initphgen = self.initphgen.astype(float)
         self.initexitrates = self.initexitrates.astype(float)
         
         #copy to output parameters    
-        self.pi = self.initpi      
+        self.pi = self.initdist      
         self.phgen = self.initphgen
         self.exitrates = self.initexitrates    
         

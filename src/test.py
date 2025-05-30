@@ -27,17 +27,14 @@ np.random.seed(seed)
 #ph.plot()
 
 
-ph = fitcph2dist(initdist=np.matrix([[1,0,0]]),
-            initphgen=np.matrix([[1,1,0],
-                                 [0,1,1],
-                                 [0,0,1]]),
-            initexitrates=np.transpose(np.matrix([[1,1,1]])),
-            randominit=True,
-            seed=seed,
-            tolerance=1e-3,
-            truncation=0.99,
-            steps=50,
-            verbose=True)
+ph = fitcph2dist(nphases=3,
+                 dtype="coxian",
+                 randominit=True,
+                 seed=seed,
+                 tolerance=1e-3,
+                 truncation=0.99,
+                 steps=50,
+                 verbose=True)
 
 
 ph.chisq(df=2)
@@ -45,6 +42,7 @@ ph.fit()
 ph.plot()
 
 print(ph.getmean())
+print(ph.getvar())
 
 #print("mean =",ph.getmean())
 #print("variance =",ph.getvar())
