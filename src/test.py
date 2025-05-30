@@ -8,16 +8,24 @@ seed=123
 np.random.seed(seed)
 
 #obs = np.random.geometric(0.2,size=100)
-obs = np.random.negative_binomial(2,0.5,size=1000)+2 #convert to trials by adding two
+obs = np.random.negative_binomial(2,0.5,size=100)+2 #convert to trials by adding two
 #obs = np.random.exponential(scale=1.0,size=100)
 #obs = np.random.lognormal(0,0.25,size=100)
 
-ph = fit(obs=obs,nphases=2,dtype="generlang",discrete=True,verbose=False)
+ph = fit(obs=obs,nphases=4,dtype="coxian",discrete=True,verbose=True)
 
-print(ph.getinitdist())
-print(ph.getphasegen())
-print(ph.getexitrates())
+#print(ph.getinitdist())
+#print(ph.getphasegen())
+#print(ph.getexitrates())
 
+print(ph.getmean())
+print(obs.mean())
+
+print(ph.getvar())
+print(obs.var())
+
+
+ph.plot()
 
 #ph = fitcph2dist(initpi=np.matrix([[1,1,1]]),
 #            initphgen=np.matrix([[1,1,1],

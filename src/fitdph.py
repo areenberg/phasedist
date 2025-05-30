@@ -35,8 +35,12 @@ class fitdph:
             loglik0 = self.loglikelihood
             iter += 1
             if self.verbose and iter%25==0:
-                print("iter =",iter,"  eps =",eps.item(),"  mean =",self.getmean(),"  var =",self.getvar())
-        self.__polish()        
+                if isinstance(eps,float):
+                    printeps = eps
+                else:
+                    printeps = eps.item()   
+                print("iter =",iter,"  eps =",printeps,"  mean =",self.getmean(),"  var =",self.getvar())        
+        #self.__polish()        
     
     def getinitdist(self):
         #returns the initial distribution
@@ -128,7 +132,7 @@ class fitdph:
         for i in range(self.nphases):
             nzidx = np.nonzero(self.phgen[i,:])[1]
             u = np.random.uniform(low=0.0, high=1.0, size=len(nzidx))
-            u = (u / np.sum(u)) * (1 - self.exitrates[i, 0])
+            u = (u / np.sum(u)) * (1.0 - self.exitrates[i, 0])
             self.phgen[i,nzidx] = u
         
     def __estep(self):
@@ -231,5 +235,7 @@ class fitdph:
         
         #normalize initial distribution
         self.pi = self.pi/np.sum(self.pi)
-        #compute exit rates from the PH generator
-        self.exitrates = 1.0-np.sum(self.phgen,axis=1)
+        #compute diagional
+        np.fill_diagonal(self.phgen,0.0)
+        v = np.subtract(np.ones((self.nphases,1)),np.add(np.sum(self.phgen,axis=1),self.exitrates))
+        np.fill_diagonal(self.phgen,v)

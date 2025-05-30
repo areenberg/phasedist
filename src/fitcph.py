@@ -36,8 +36,11 @@ class fitcph:
             loglik0 = self.loglikelihood
             iter += 1
             if self.verbose and iter%25==0:
-                print("iter =",iter,"  eps =",eps.item(),"  mean =",self.getmean(),"  var =",self.getvar())
-        
+                if isinstance(eps,float):
+                    printeps = eps
+                else:
+                    printeps = eps.item()
+                print("iter =",iter,"  eps =",printeps,"  mean =",self.getmean(),"  var =",self.getvar())
         self.__polish()    
         self.__updatelikelihood() #evaluate final loglik
 
@@ -202,5 +205,7 @@ class fitcph:
         
         #normalize initial distribution
         self.pi = self.pi/np.sum(self.pi)
-        #compute exit rates from the PH generator
-        self.exitrates = -np.sum(self.phgen,axis=1)
+        #compute diagonal for the PH generator
+        np.fill_diagonal(self.phgen,0.0)
+        v = np.add(np.sum(self.phgen,axis=1),self.exitrates)
+        np.fill_diagonal(self.phgen,-v)
