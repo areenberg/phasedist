@@ -7,6 +7,12 @@ import matplotlib.pyplot as plt
 seed=123
 np.random.seed(seed)
 
+
+#----------------------------------------
+# EMPIRICAL APPROACH
+#----------------------------------------
+
+#simulate some data
 #obs = np.random.geometric(0.2,size=100)
 #obs = np.random.negative_binomial(2,0.5,size=100)+2 #convert to trials by adding two
 #obs = np.random.exponential(scale=1.0,size=100)
@@ -23,9 +29,11 @@ np.random.seed(seed)
 
 #print(ph.getvar())
 #print(obs.var())
-
 #ph.plot()
 
+#----------------------------------------
+# PARAMETRIC APPROACH
+#----------------------------------------
 
 ph = fitcph2dist(nphases=3,
                  dtype="coxian",
@@ -35,7 +43,6 @@ ph = fitcph2dist(nphases=3,
                  truncation=0.99,
                  steps=50,
                  verbose=True)
-
 
 ph.chisq(df=2)
 ph.fit()
