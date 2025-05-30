@@ -1,12 +1,8 @@
-from fit import fit
-from fitcph2dist import fitcph2dist
+import phasedist as ph
 import numpy as np
-from scipy.stats import lognorm
-import matplotlib.pyplot as plt
 
-seed=123
+seed=25681
 np.random.seed(seed)
-
 
 #----------------------------------------
 # EMPIRICAL APPROACH
@@ -16,34 +12,34 @@ np.random.seed(seed)
 #obs = np.random.geometric(0.2,size=100)
 #obs = np.random.negative_binomial(2,0.5,size=100)+2 #convert to trials by adding two
 #obs = np.random.exponential(scale=1.0,size=100)
-#obs = np.random.lognormal(0,0.25,size=100)
+obs = np.random.lognormal(0,0.25,size=100)
 
 #fit the distribution
-#ph = fit(obs=obs,nphases=4,dtype="coxian",discrete=True,verbose=True)
+fit = ph.fit(obs=obs,nphases=9,dtype="coxian",discrete=False,verbose=True)
 
 #check the fitted parameters
-#print(ph.getinitdist())
-#print(ph.getphasegen())
-#print(ph.getexitrates())
+print(fit.getinitdist())
+print(fit.getphasegen())
+print(fit.getexitrates())
 
 #check metrics of the fitted PH distribution
-#print("mean =",ph.getmean())
-#print("variance =",ph.getvar())
-#print("density =",ph.getdensity(1))
-#print("P(X<=x) =",ph.getcumprob(1))
-#print("LogLik =",ph.getloglik())
-#print("AIC =",ph.getaic())
-#print("BIC =",ph.getbic())
+print("mean =",fit.getmean())
+print("variance =",fit.getvar())
+print("density =",fit.getdensity(1))
+print("P(X<=x) =",fit.getcumprob(1))
+print("LogLik =",fit.getloglik())
+print("AIC =",fit.getaic())
+print("BIC =",fit.getbic())
 
 #make a visual check
-#ph.plot()
+fit.plot()
 
 #----------------------------------------
 # PARAMETRIC APPROACH
 #----------------------------------------
 
-#create object dedicated for approximating a parametric distribution
-ph = fitcph2dist(nphases=3,
+#create object for approximating a parametric distribution
+apx = ph.fitcph2dist(nphases=3,
                  dtype="coxian",
                  randominit=True,
                  seed=seed,
@@ -53,16 +49,14 @@ ph = fitcph2dist(nphases=3,
                  verbose=True)
 
 #select true distribution
-ph.chisq(df=2)
+apx.chisq(df=2)
 
 #make the fit
-ph.fit()
+apx.fit()
 
 #make a visual comparison between the approximate and true distribution
-ph.plot()
+apx.plot()
 
 #check metrics of the approximate distribution
-print(ph.getmean())
-print(ph.getvar())
-
-
+print(apx.getmean())
+print(apx.getvar())

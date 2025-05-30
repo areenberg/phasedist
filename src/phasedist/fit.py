@@ -1,7 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
-from fitcph import fitcph
-from fitdph import fitdph
+from phasedist.fitcph import fitcph
+from phasedist.fitdph import fitdph
 
 class fit:
     #fit continuous or discrete-time phase-type
