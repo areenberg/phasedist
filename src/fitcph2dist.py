@@ -1,6 +1,8 @@
+import sys
 import numpy as np
 from scipy.linalg import expm
 from scipy.stats import lognorm, norm, gamma, weibull_min, chi2
+import matplotlib.pyplot as plt
 
 # REFERENCES
 
@@ -12,8 +14,8 @@ class fitcph2dist:
     #a distribution with a continuous density using
     #the EM algorithm from p. 681 Bladt and Nielsen (2017).
 
-    def __init__(self,initpi=None,initphgen=None,initexitrates=None,randominit=True,seed=None,tolerance=1e-3,truncation=0.99,steps=50,itermax=1e9,verbose=False):
-        self.initpi = initpi
+    def __init__(self,initdist=None,initphgen=None,initexitrates=None,randominit=True,seed=None,tolerance=1e-3,truncation=0.99,steps=50,itermax=1e9,verbose=False):
+        self.initpi = initdist
         self.initphgen = initphgen
         self.initexitrates = initexitrates
         self.nphases = self.initphgen.shape[0]
@@ -29,6 +31,9 @@ class fitcph2dist:
     def lognorm(self,mu=None,sigma=None,mean=None,var=None):
         #approximate a log-normal distribution
         if mu is None and mean is not None:
+            if mean<=0:
+                print("Error: 'mean<=0' is infeasible for the lognormal distribution.")
+                sys.exit(1)
             self.param1 = np.log(np.power(mean,2)/np.sqrt(np.power(mean,2)+var))
             self.param2 = np.log(1 + var/np.power(mean,2))
         elif mu is not None and mean is None:
@@ -76,12 +81,48 @@ class fitcph2dist:
 
     def percentiles(self,cumprobs=None,x=None):
         #create a PH approximation based on the
-        #percentiles in the numpy array 'q' and
-        #the y-values in y.
+        #cumulated probabilities (could be empirically
+        #determined) in the numpy array 'cumprobs' and
+        #the corresponding response values in 'x'.
         self.param1=cumprobs
         self.param2=x
         self.disttype="per"
         self.__initialize()
+        
+    def plot(self):
+        #conduct a visual comparison of the approximate and true
+        #distributions    
+ 
+        #compute densities for approximate and true distributions        
+        x = np.linspace(1e-6,self.y.max(),500)
+        dist_pdf = np.zeros(len(x))
+        ph_pdf = np.zeros(len(x))
+        for i in range(len(x)):
+            if self.disttype=="lognorm":
+                dist_pdf[i] = lognorm.pdf(x[i],self.param2,scale=np.exp(self.param1))
+            elif self.disttype=="gamma":
+                dist_pdf[i] = gamma.pdf(x[i],self.param1,scale=self.param2)
+            elif self.disttype=="weibull":
+                dist_pdf[i] = weibull_min.pdf(x[i],self.param1,scale=self.param2)
+            elif self.disttype=="chisq":
+                dist_pdf[i] = chi2.pdf(x[i],self.param1)
+            elif self.disttype=="ph":
+                dist_pdf[i] = np.matmul(self.param1,np.matmul(expm(self.param2*x),abs(np.sum(self.param2,axis=1)))).item()
+            ph_pdf[i] = self.getdensity(x[i])
+        
+        #make plot    
+        plt.figure(figsize=(10, 6))
+        if not self.disttype=="norm" and not self.disttype=="per":
+            plt.plot(x, dist_pdf, label='True density', color='blue')
+        plt.plot(x, ph_pdf, label='Approx. density', color='red', linestyle='--')
+        plt.xlabel('x')
+        plt.ylabel('Density')
+        plt.title('Approximation validation')
+        plt.legend()
+        plt.grid(True)
+        plt.show()        
+        
+        return None
         
     def fit(self):
         #approximate the CPH distribution
@@ -437,8 +478,6 @@ class fitcph2dist:
                 trc = 1-np.sum(np.matmul(idst,expm(phg*x)))
                 iter+=1
         return x            
-           
-           
            
             
             

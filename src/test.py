@@ -8,47 +8,43 @@ seed=123
 np.random.seed(seed)
 
 #obs = np.random.geometric(0.2,size=100)
-obs = np.random.negative_binomial(2,0.5,size=100)+2 #convert to trials by adding two
+#obs = np.random.negative_binomial(2,0.5,size=100)+2 #convert to trials by adding two
 #obs = np.random.exponential(scale=1.0,size=100)
 #obs = np.random.lognormal(0,0.25,size=100)
 
-ph = fit(obs=obs,nphases=4,dtype="coxian",discrete=True,verbose=True)
+#ph = fit(obs=obs,nphases=4,dtype="coxian",discrete=True,verbose=True)
 
 #print(ph.getinitdist())
 #print(ph.getphasegen())
 #print(ph.getexitrates())
 
-print(ph.getmean())
-print(obs.mean())
+#print(ph.getmean())
+#print(obs.mean())
 
-print(ph.getvar())
-print(obs.var())
+#print(ph.getvar())
+#print(obs.var())
+
+#ph.plot()
 
 
+ph = fitcph2dist(initdist=np.matrix([[1,0,0]]),
+            initphgen=np.matrix([[1,1,0],
+                                 [0,1,1],
+                                 [0,0,1]]),
+            initexitrates=np.transpose(np.matrix([[1,1,1]])),
+            randominit=True,
+            seed=seed,
+            tolerance=1e-3,
+            truncation=0.99,
+            steps=50,
+            verbose=True)
+
+
+ph.chisq(df=2)
+ph.fit()
 ph.plot()
 
-#ph = fitcph2dist(initpi=np.matrix([[1,1,1]]),
-#            initphgen=np.matrix([[1,1,1],
-#                                 [1,1,1],
-#                                 [1,1,1]]),
-#            initexitrates=np.transpose(np.matrix([[1,1,1]])),
-#            randominit=True,
-#            seed=seed,
-#            tolerance=1e-3,
-#            truncation=0.99,
-#            steps=50,
-#            verbose=True)
-
-
-#ph.phasedist(np.matrix([1,0,0]),np.matrix([[-2,2,0],
-#                                           [0,-2,2],
-#                                           [0,0,-2]]))
-#ph.fit()
-
-
-#print("pi =",ph.pi)
-#print("phgen =",ph.phgen)
-#print("exitrates =",ph.exitrates)
+print(ph.getmean())
 
 #print("mean =",ph.getmean())
 #print("variance =",ph.getvar())
@@ -58,22 +54,3 @@ ph.plot()
 #print("AIC =",ph.getaic())
 #print("BIC =",ph.getbic())
 
-
-
-#x = np.linspace(0.001, 15, 500)
-#dist_pdf = np.zeros(len(x))
-#ph_pdf = np.zeros(len(x))
-#for i in range(len(x)):
-    #dist_pdf[i] = ph.lognormdensity(x[i])
-#    ph_pdf[i] = ph.getdensity(x[i])
-    
-
-#plt.figure(figsize=(10, 6))
-#plt.plot(x, dist_pdf, label='True density', color='blue')
-#plt.plot(x, ph_pdf, label='Approx. density', color='red', linestyle='--')
-#plt.xlabel('x')
-#plt.ylabel('Density')
-#plt.title('Approximation validation')
-#plt.legend()
-#plt.grid(True)
-#plt.show()
