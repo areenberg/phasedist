@@ -1,7 +1,9 @@
+import sys
 import numpy as np
 import matplotlib.pyplot as plt
 from phasedist.fitcph import fitcph
 from phasedist.fitdph import fitdph
+from phasedist.dist import dist
 
 class fit:
     #fit continuous or discrete-time phase-type
@@ -9,7 +11,7 @@ class fit:
 
     def __init__(self,obs=None,nphases=2,dtype="general",discrete=False,
                  initdist=None,initphgen=None,initexitrates=None,
-                 randominit=True,seed=None,tolerance=1e-6,itermax=1e6,verbose=False):
+                 randominit=True,seed=None,tolerance=1e-6,itermax=1000000,verbose=False):
         
         #set parameters
         self.obs=obs
@@ -28,7 +30,8 @@ class fit:
         #checking and fitting
         if self.__checkinputs():
             self.__fitdist() #fit the parameters
-
+        else:
+            sys.exit(1) #terminate the program    
 
     def getinitdist(self):
         #returns the initial distribution
@@ -68,6 +71,14 @@ class fit:
     def getbic(self):
         #returns the Bayesian Information Criteria (BIC)
         return self.d.getbic()
+    
+    def getdist(self):
+        #returns a phase-type distribution object
+        dst = dist(discrete=self.discrete,
+                   initdist=self.d.getinitdist(),
+                   phgen=self.d.getphasegen(),
+                   seed=self.seed)
+        return dst
     
     def plot(self):
         #compares the empirical and theoretical CDFs in a plot

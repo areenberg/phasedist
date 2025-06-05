@@ -3,6 +3,7 @@ import numpy as np
 from scipy.linalg import expm
 from scipy.stats import lognorm, norm, gamma, weibull_min, chi2
 import matplotlib.pyplot as plt
+from phasedist.dist import dist
 
 # REFERENCES
 
@@ -17,7 +18,7 @@ class fitcph2dist:
     def __init__(self,nphases=2,dtype="general",
                  initdist=None,initphgen=None,initexitrates=None,
                  randominit=True,seed=None,tolerance=1e-3,truncation=0.99,
-                 steps=50,itermax=1e9,verbose=False):
+                 steps=50,itermax=1000000000,verbose=False):
         
         self.nphases=nphases
         self.dtype=dtype
@@ -36,6 +37,8 @@ class fitcph2dist:
         #checking and fitting
         if self.__checkinputs():
             self.__makedist() #fit the parameters
+        else:
+            sys.exit(1) #terminate the program
 
     def __checkinputs(self):
         #check the feasibility of all input parameters
@@ -351,6 +354,14 @@ class fitcph2dist:
     def getcumprob(self,x):
         #returns the cumulated probability P(X<=x) of the CPH
         return 1-np.sum(np.matmul(self.pi,expm(self.phgen*x)))
+
+    def getdist(self):
+        #returns a phase-type distribution object
+        dst = dist(discrete=False,
+                   initdist=self.pi,
+                   phgen=self.phgen,
+                   seed=self.seed)
+        return dst
 
     def __initialize(self):    
         if self.seed is not None:
