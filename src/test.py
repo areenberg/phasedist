@@ -1,21 +1,24 @@
 import phasedist as ph
 import numpy as np
 
-seed=25681
-np.random.seed(seed)
-
 #----------------------------------------
 # EMPIRICAL APPROACH
 #----------------------------------------
 
 #simulate some data
-#obs = np.random.geometric(0.2,size=100)
-#obs = np.random.negative_binomial(2,0.5,size=100)+2 #convert to trials by adding two
-#obs = np.random.exponential(scale=1.0,size=100)
-obs = np.random.lognormal(0,0.25,size=100)
-
+sample_size = 100
+obs = np.zeros(sample_size)
+#continuous
+#d = ph.dist(discrete=False,initdist=np.array([1.0,0.0,0.0]),phgen=np.matrix([[-2.0,2.0,0.0],[0.0,-2.0,2.0],[0.0,0.0,-2.0]]))
+#for i in range(sample_size):
+#    obs[i] = d.getsample()
+#discrete
+d = ph.dist(discrete=True,initdist=np.array([0.5,0.0,0.5]),phgen=np.matrix([[0.5,0.5,0.0],[0.0,0.5,0.5],[0.0,0.0,0.5]]))
+for i in range(sample_size):
+    obs[i] = d.getsample()
+   
 #fit the distribution
-fit = ph.fit(obs=obs,nphases=9,dtype="coxian",discrete=False,verbose=True)
+fit = ph.fit(obs=obs,nphases=3,dtype="gencoxian",discrete=True,verbose=True)
 
 #check the fitted parameters
 print(fit.getinitdist())
@@ -37,7 +40,7 @@ fit.plot()
 #----------------------------------------
 # PARAMETRIC APPROACH
 #----------------------------------------
-
+'''
 #create object for approximating a parametric distribution
 apx = ph.fitcph2dist(nphases=3,
                  dtype="coxian",
@@ -60,3 +63,4 @@ apx.plot()
 #check metrics of the approximate distribution
 print(apx.getmean())
 print(apx.getvar())
+'''

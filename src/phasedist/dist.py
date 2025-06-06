@@ -21,6 +21,18 @@ class dist:
         else:
             sys.exit(1) #terminate the program
 
+    def getinitdist(self):
+        #returns the initial distribution
+        return self.initdist
+    
+    def getphasegen(self):
+        #returns the phase-type generator
+        return self.phgen
+    
+    def getexitrates(self):
+        #returns the exitrate vector
+        return self.exitrates
+
     def getmean(self):
         #returns the mean
         if self.discrete:
@@ -32,10 +44,10 @@ class dist:
         #returns the variance
         if self.discrete:
             Tinv = np.linalg.inv(np.subtract(np.eye(self.nphases),self.phgen))
-            return np.sum(np.matmul(np.matmul(self.pi,Tinv),np.subtract((2*Tinv),np.eye(self.nphases))))-self.getmean()**2
+            return np.sum(np.matmul(np.matmul(self.initdist,Tinv),np.subtract((2*Tinv),np.eye(self.nphases))))-self.getmean()**2
         else:
             phinv = np.linalg.inv(self.phgen)
-            return 2*np.sum(np.matmul(self.pi,np.linalg.matrix_power(phinv,2)))-np.power(np.sum(np.matmul(self.pi,phinv)),2)
+            return 2*np.sum(np.matmul(self.initdist,np.linalg.matrix_power(phinv,2)))-np.power(np.sum(np.matmul(self.initdist,phinv)),2)
 
     def getdensity(self,x):
         #returns the density
@@ -44,9 +56,9 @@ class dist:
                 print("Error: 'x' is not an integer.")
                 return np.nan
             else:
-                return np.matmul(self.pi,np.matmul(np.linalg.matrix_power(self.phgen,(x-1)),self.exitrates)).item()
+                return np.matmul(self.initdist,np.matmul(np.linalg.matrix_power(self.phgen,(x-1)),self.exitrates)).item()
         else:
-            return np.matmul(self.pi,np.matmul(expm(self.phgen*x),self.exitrates)).item()
+            return np.matmul(self.initdist,np.matmul(expm(self.phgen*x),self.exitrates)).item()
 
     def getcumprob(self,x):
         #returns the cumulated probability P(X<=x)
@@ -55,11 +67,11 @@ class dist:
                 print("Error: 'x' is not an integer.")
                 return np.nan
             else:
-                return 1-np.sum(np.matmul(self.initdist,np.linalg.matrix_power(self.phgen,x)))
+                return 1-np.sum(np.matmul(self.initdist,np.linalg.matrix_power(self.phgen,int(x))))
         else:
             return 1-np.sum(np.matmul(self.initdist,expm(self.phgen*x)))
         
-    def getquantile(self,p,tolerance=1e-12):
+    def getquantile(self,p,tolerance=1e-6):
         #returns the x that ensures P(X<=x)=p,
         #i.e. the quantile function of the
         #PH distribution
@@ -70,9 +82,9 @@ class dist:
         elif p==0.0:
             return 0.0
         elif self.discrete:
-            return self.__dphtruncquantfun(prob=p,idst=self.initdist,phg=self.phgen,itermax=1000000)
+            return self.__dphtruncquantfun(prob=p,itermax=1000000)
         else:
-            return self.__cphtruncquantfun(self,prob=p,idst=self.initdist,phg=self.phgen,tol=tolerance,itermax=1000000)
+            return self.__cphtruncquantfun(prob=p,tol=tolerance,itermax=1000000)
         
     def getsample(self):
         #samples a random value from the PH distribution
@@ -80,6 +92,37 @@ class dist:
             return self.__dphsample()
         else:
             return self.__cphsample()
+
+    def plot(self,type='pdf'):
+        #plot the density function    
+ 
+        #compute densities for approximate and true distributions        
+        x = np.linspace(0.0,self.getquantile(p=0.999),500)
+        val = np.zeros(len(x))
+        for i in range(len(x)):
+            if type == 'pdf':
+                val[i] = self.getdensity(x[i])
+            elif type == 'cdf':
+                val[i] = self.getcumprob(x[i])
+        
+        if type == 'pdf':
+            ylbl = 'Density'
+            tl = 'Probability Density Function'
+        elif type == 'cdf':
+            ylbl = 'Probability'
+            tl = 'Cumulative Distribution Function'
+        
+        #make plot    
+        plt.figure(figsize=(10, 6))
+        plt.plot(x, val, label=ylbl, color='blue', linestyle='-')
+        plt.xlabel('x')
+        plt.ylabel(ylbl)
+        plt.title(tl)
+        plt.legend()
+        plt.grid(True)
+        plt.show()        
+        
+        return None
             
     def __initialize(self):
         #overall initialization
@@ -120,31 +163,26 @@ class dist:
         #samples a random value from the
         #continuous phase-type (CPH) distribution
         
-        p = len(self.initdist)
         t = 0.0
-        s = np.random.choice(p, size=1, p=self.initdist)[0]
+        s = np.random.choice(self.nphases,size=1,p=np.asarray(self.initdist).ravel())[0]
         while True:
-            t += np.random.exponential(scale=1/(-self.phgen[s, s]))
-            a = self.phgen[s, :]/(-self.phgen[s,s])
-            a[a < 0] = 0
-            a_cumsum = np.cumsum(a)
-            r = np.random.uniform(0,1)
-            l = np.where(a_cumsum > r)[0]
-            if len(l) == 0:
+            t += np.random.exponential(scale=1/(-self.phgen[s,s]))
+            a = np.asarray(self.phgen[s,:]/(-self.phgen[s,s])).ravel()
+            a[a<0] = 0
+            a = np.append(a,(self.exitrates[s].item()/-self.phgen[s,s]))
+            s = np.random.choice((self.nphases+1),size=1,p=a)[0]
+            if s == self.nphases:
                 return t
-            else:
-                s = l[0]
     
     def __dphsample(self):
         #samples a random value from the
         #discrete phase-type (DPH) distribution
         
         t = 0  # Time in discrete steps
-        s = np.random.choice(self.nphases, size=1, p=self.initdist)[0]
-        
+        s = np.random.choice(self.nphases, size=1, p=np.asarray(self.initdist).ravel())[0]
         while True:
             t += 1
-            a = np.array([self.phgen[s, :],self.exitrates[s].item()])
+            a = np.append(np.asarray(self.phgen[s,:]).ravel(),self.exitrates[s].item())
             s = np.random.choice((self.nphases+1),size=1,p=a)[0]
             if s == self.nphases:
                 return t
@@ -165,13 +203,13 @@ class dist:
         
         #improve x until convergence
         trc=1-np.sum(np.matmul(self.initdist,expm(self.phgen*x)))
-        dd = np.sqrt(var)*tol
+        dd = tol
         iter=0
         while np.abs(trc-prob)>tol and iter<itermax:
                 x1=x+dd
                 f1 = 1-np.sum(np.matmul(self.initdist,expm(self.phgen*x1)))
                 grad = (f1-trc)/dd
-                x = x - (trc-tol)/grad
+                x = x - (trc-prob)/grad
                 trc = 1-np.sum(np.matmul(self.initdist,expm(self.phgen*x)))
                 iter+=1
         if iter==itermax:

@@ -32,6 +32,7 @@ class fitcph2dist:
         self.truncation=truncation
         self.disttype = None
         self.verbose=verbose
+        self.dist = None
         self.steps = steps #number of steps in the numerical integration
         
         #checking and fitting
@@ -39,6 +40,198 @@ class fitcph2dist:
             self.__makedist() #fit the parameters
         else:
             sys.exit(1) #terminate the program
+
+    #----------------------------------------------------------------------
+    #   PUBLIC METHODS
+    #----------------------------------------------------------------------
+
+    def lognorm(self,mu=None,sigma=None,mean=None,var=None):
+        #approximate a log-normal distribution
+        if mu is None and mean is not None:
+            if mean<=0:
+                print("Error: 'mean<=0' is infeasible for the lognormal distribution.")
+                sys.exit(1)
+            self.param1 = np.log(np.power(mean,2)/np.sqrt(np.power(mean,2)+var))
+            self.param2 = np.log(1 + var/np.power(mean,2))
+        elif mu is not None and mean is None:
+            self.param1 = mu
+            self.param2 = np.power(sigma,2)
+        self.disttype="lognorm"
+        self.__initialize()
+        
+    def norm(self,mu=None,sigma=None):
+        #approximate a (truncated) normal distribution
+        self.param1=mu
+        self.param2=sigma
+        self.disttype="norm"
+        self.__initialize()
+        
+    def gamma(self,shape=None,scale=None,rate=None):
+        #approximate a gamma distribution
+        self.param1=shape
+        if scale is None:
+            self.param2=1/rate
+        elif rate is None:
+            self.param2=scale
+        self.disttype="gamma"
+        self.__initialize()
+    
+    def chisq(self,df=None):
+        #approximate a chi-squared distribution
+        self.param1=df
+        self.disttype="chisq"
+        self.__initialize()
+    
+    def weibull(self,shape=None,scale=None):
+        #approximate a weibull distribution
+        self.param1=shape
+        self.param2=scale
+        self.disttype="weibull"
+        self.__initialize()
+        
+    def phasedist(self,initdist,phgen):
+        #approximate another phase-type distribution
+        self.param1=initdist
+        self.param2=phgen
+        self.disttype="ph"
+        self.__initialize()
+
+    def percentiles(self,cumprobs=None,x=None):
+        #create a PH approximation based on the
+        #cumulated probabilities (could be empirically
+        #determined) in the numpy array 'cumprobs' and
+        #the corresponding response values in 'x'.
+        self.param1=cumprobs
+        self.param2=x
+        self.disttype="per"
+        self.__initialize()
+
+    def fit(self):
+        #approximate the CPH distribution
+        if self.disttype is None:
+            print("Error: Select a distribution for the approximation.")
+            return 1
+        iter=0
+        self.eps = np.inf
+        self.pi0 = np.copy(self.pi)
+        self.phgen0 = np.copy(self.phgen)
+        while iter<self.itermax and self.eps>self.tolerance:
+            self.__estep()
+            self.__mstep()
+            self.__updateEpsilon()
+            self.pi0 = np.copy(self.pi)
+            self.phgen0 = np.copy(self.phgen)
+            iter += 1
+            if self.verbose and iter%5==0:
+                print("iter =",iter,"  eps =",self.eps,"  mean =",self.getmean(),"  var =",self.getvar())
+
+        #create object for output PH distribution
+        self.dist = dist(discrete=False,
+                         initdist=self.pi,
+                         phgen=self.phgen,
+                         seed=self.seed)
+        
+        return 0
+        
+    def plot(self):
+        #conduct a visual comparison of the approximate and true
+        #distributions
+ 
+        #compute densities for approximate and true distributions        
+        x = np.linspace(0.0,self.y.max(),500)
+        dist_pdf = np.zeros(len(x))
+        ph_pdf = np.zeros(len(x))
+        for i in range(len(x)):
+            if self.disttype=="lognorm":
+                dist_pdf[i] = lognorm.pdf(x[i],self.param2,scale=np.exp(self.param1))
+            elif self.disttype=="gamma":
+                dist_pdf[i] = gamma.pdf(x[i],self.param1,scale=self.param2)
+            elif self.disttype=="weibull":
+                dist_pdf[i] = weibull_min.pdf(x[i],self.param1,scale=self.param2)
+            elif self.disttype=="chisq":
+                dist_pdf[i] = chi2.pdf(x[i],self.param1)
+            elif self.disttype=="ph":
+                dist_pdf[i] = np.matmul(self.param1,np.matmul(expm(self.param2*x),abs(np.sum(self.param2,axis=1)))).item()
+            ph_pdf[i] = self.getdensity(x[i])
+        
+        #make plot    
+        plt.figure(figsize=(10, 6))
+        if not self.disttype=="norm" and not self.disttype=="per":
+            plt.plot(x, dist_pdf, label='True density', color='blue')
+        plt.plot(x, ph_pdf, label='Approx. density', color='red', linestyle='--')
+        plt.xlabel('x')
+        plt.ylabel('Density')
+        plt.title('Approximation validation')
+        plt.legend()
+        plt.grid(True)
+        plt.show()        
+        
+        return None
+   
+    def getinitdist(self):
+        #returns the initial distribution
+        if self.dist is not None:
+            return self.dist.getinitdist()
+        else:
+            return np.nan
+    
+    def getphasegen(self):
+        #returns the phase-type generator
+        if self.dist is not None:
+            return self.dist.getphasegen()
+        else:
+            return np.nan
+    
+    def getexitrates(self):
+        #returns the exit rate vector
+        if self.dist is not None:
+            return self.dist.getexitrates()
+        else:
+            return np.nan 
+            
+    def getmean(self):
+        #returns the mean
+        if self.dist is not None:
+            return self.dist.getmean()
+        else:
+            return np.nan
+
+    def getvar(self):
+        #returns the variance
+        if self.dist is not None:
+            return self.dist.getvar()
+        else:
+            return np.nan
+
+    def getdensity(self,x):
+        #returns the density
+        if self.dist is not None:
+            return self.dist.getdensity(x)
+        else:
+            return np.nan
+
+    def getcumprob(self,x):
+        #returns the cumulated probability P(X<=x)
+        if self.dist is not None:
+            return self.dist.getcumprob(x)
+        else:
+            return np.nan
+
+    def getquantile(self,p,tolerance=1e-6):
+        #returns the quantile corresponding to
+        #the probability 'p'
+        if self.dist is not None:
+            return self.dist.getquantile(p,tolerance)
+        else:
+            return np.nan
+
+    def getdist(self):
+        #returns a phase-type distribution object
+        return self.dist
+
+    #----------------------------------------------------------------------
+    #   PRIVATE METHODS
+    #----------------------------------------------------------------------
 
     def __checkinputs(self):
         #check the feasibility of all input parameters
@@ -209,159 +402,6 @@ class fitcph2dist:
             self.initphgen[i,i]=1
             if i<(self.nphases-1):
                 self.initphgen[i,i+1]=1
-
-        
-    def lognorm(self,mu=None,sigma=None,mean=None,var=None):
-        #approximate a log-normal distribution
-        if mu is None and mean is not None:
-            if mean<=0:
-                print("Error: 'mean<=0' is infeasible for the lognormal distribution.")
-                sys.exit(1)
-            self.param1 = np.log(np.power(mean,2)/np.sqrt(np.power(mean,2)+var))
-            self.param2 = np.log(1 + var/np.power(mean,2))
-        elif mu is not None and mean is None:
-            self.param1 = mu
-            self.param2 = np.power(sigma,2)
-        self.disttype="lognorm"
-        self.__initialize()
-        
-    def norm(self,mu=None,sigma=None):
-        #approximate a (truncated) normal distribution
-        self.param1=mu
-        self.param2=sigma
-        self.disttype="norm"
-        self.__initialize()
-        
-    def gamma(self,shape=None,scale=None,rate=None):
-        #approximate a gamma distribution
-        self.param1=shape
-        if scale is None:
-            self.param2=1/rate
-        elif rate is None:
-            self.param2=scale
-        self.disttype="gamma"
-        self.__initialize()
-    
-    def chisq(self,df=None):
-        #approximate a chi-squared distribution
-        self.param1=df
-        self.disttype="chisq"
-        self.__initialize()
-    
-    def weibull(self,shape=None,scale=None):
-        #approximate a weibull distribution
-        self.param1=shape
-        self.param2=scale
-        self.disttype="weibull"
-        self.__initialize()
-        
-    def phasedist(self,initdist,phgen):
-        #approximate another phase-type distribution
-        self.param1=initdist
-        self.param2=phgen
-        self.disttype="ph"
-        self.__initialize()
-
-    def percentiles(self,cumprobs=None,x=None):
-        #create a PH approximation based on the
-        #cumulated probabilities (could be empirically
-        #determined) in the numpy array 'cumprobs' and
-        #the corresponding response values in 'x'.
-        self.param1=cumprobs
-        self.param2=x
-        self.disttype="per"
-        self.__initialize()
-        
-    def plot(self):
-        #conduct a visual comparison of the approximate and true
-        #distributions    
- 
-        #compute densities for approximate and true distributions        
-        x = np.linspace(1e-6,self.y.max(),500)
-        dist_pdf = np.zeros(len(x))
-        ph_pdf = np.zeros(len(x))
-        for i in range(len(x)):
-            if self.disttype=="lognorm":
-                dist_pdf[i] = lognorm.pdf(x[i],self.param2,scale=np.exp(self.param1))
-            elif self.disttype=="gamma":
-                dist_pdf[i] = gamma.pdf(x[i],self.param1,scale=self.param2)
-            elif self.disttype=="weibull":
-                dist_pdf[i] = weibull_min.pdf(x[i],self.param1,scale=self.param2)
-            elif self.disttype=="chisq":
-                dist_pdf[i] = chi2.pdf(x[i],self.param1)
-            elif self.disttype=="ph":
-                dist_pdf[i] = np.matmul(self.param1,np.matmul(expm(self.param2*x),abs(np.sum(self.param2,axis=1)))).item()
-            ph_pdf[i] = self.getdensity(x[i])
-        
-        #make plot    
-        plt.figure(figsize=(10, 6))
-        if not self.disttype=="norm" and not self.disttype=="per":
-            plt.plot(x, dist_pdf, label='True density', color='blue')
-        plt.plot(x, ph_pdf, label='Approx. density', color='red', linestyle='--')
-        plt.xlabel('x')
-        plt.ylabel('Density')
-        plt.title('Approximation validation')
-        plt.legend()
-        plt.grid(True)
-        plt.show()        
-        
-        return None
-        
-    def fit(self):
-        #approximate the CPH distribution
-        if self.disttype is None:
-            print("Select a distribution for the approximation.")
-            return 0
-        iter=0
-        self.eps = np.inf
-        self.pi0 = np.copy(self.pi)
-        self.phgen0 = np.copy(self.phgen)
-        while iter<self.itermax and self.eps>self.tolerance:
-            self.__estep()
-            self.__mstep()
-            self.__updateEpsilon()
-            self.pi0 = np.copy(self.pi)
-            self.phgen0 = np.copy(self.phgen)
-            iter += 1
-            if self.verbose and iter%5==0:
-                print("iter =",iter,"  eps =",self.eps,"  mean =",self.getmean(),"  var =",self.getvar())
-            
-    def getinitdist(self):
-        #returns the initial distribution
-        return self.pi
-    
-    def getphasegen(self):
-        #returns the phase-type generator
-        return self.phgen
-    
-    def getexitrates(self):
-        #returns the exit rate vector
-        return self.exitrates 
-            
-    def getmean(self):
-        #returns the mean of the CPH
-        return -np.sum(np.matmul(self.pi,np.linalg.inv(self.phgen)))
-
-    def getvar(self):
-        #returns the variance of the CPH
-        phinv = np.linalg.inv(self.phgen)
-        return 2*np.sum(np.matmul(self.pi,np.linalg.matrix_power(phinv,2)))-np.power(np.sum(np.matmul(self.pi,phinv)),2)
-
-    def getdensity(self,x):
-        #returns the density of the CPH
-        return np.matmul(self.pi,np.matmul(expm(self.phgen*x),self.exitrates)).item()
-
-    def getcumprob(self,x):
-        #returns the cumulated probability P(X<=x) of the CPH
-        return 1-np.sum(np.matmul(self.pi,expm(self.phgen*x)))
-
-    def getdist(self):
-        #returns a phase-type distribution object
-        dst = dist(discrete=False,
-                   initdist=self.pi,
-                   phgen=self.phgen,
-                   seed=self.seed)
-        return dst
 
     def __initialize(self):    
         if self.seed is not None:

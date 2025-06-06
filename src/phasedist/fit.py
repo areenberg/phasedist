@@ -33,33 +33,42 @@ class fit:
         else:
             sys.exit(1) #terminate the program    
 
+    #----------------------------------------------------------------------
+    #   PUBLIC METHODS
+    #----------------------------------------------------------------------
+
     def getinitdist(self):
         #returns the initial distribution
-        return self.d.getinitdist()
+        return self.dist.getinitdist()
     
     def getphasegen(self):
         #returns the phase-type generator
-        return self.d.getphasegen()
+        return self.dist.getphasegen()
     
     def getexitrates(self):
         #returns the exit rate vector
-        return self.d.getexitrates() 
+        return self.dist.getexitrates() 
             
     def getmean(self):
         #returns the mean
-        return self.d.getmean()
+        return self.dist.getmean()
 
     def getvar(self):
         #returns the variance
-        return self.d.getvar()
+        return self.dist.getvar()
 
     def getdensity(self,x):
         #returns the density
-        return self.d.getdensity(x)
+        return self.dist.getdensity(x)
 
     def getcumprob(self,x):
         #returns the cumulated probability P(X<=x)
-        return self.d.getcumprob(x)
+        return self.dist.getcumprob(x)
+
+    def getquantile(self,p,tolerance=1e-6):
+        #returns the quantile corresponding to
+        #the probability 'p'
+        return self.dist.getquantile(p,tolerance)
 
     def getloglik(self):
         return self.d.getloglik()
@@ -74,11 +83,7 @@ class fit:
     
     def getdist(self):
         #returns a phase-type distribution object
-        dst = dist(discrete=self.discrete,
-                   initdist=self.d.getinitdist(),
-                   phgen=self.d.getphasegen(),
-                   seed=self.seed)
-        return dst
+        return self.dist
     
     def plot(self):
         #compares the empirical and theoretical CDFs in a plot
@@ -113,6 +118,10 @@ class fit:
         plt.legend()
         plt.grid()
         plt.show()
+
+    #----------------------------------------------------------------------
+    #   PRIVATE METHODS
+    #----------------------------------------------------------------------
         
     def __checkinputs(self):
         #check the feasibility of all input parameters
@@ -216,6 +225,12 @@ class fit:
         
         #adjust for zeros in observations
         self.d.initpi = self.d.initpi*(1-fraczero)
+        
+        #create object for output PH distribution
+        self.dist = dist(discrete=self.discrete,
+                         initdist=self.d.getinitdist(),
+                         phgen=self.d.getphasegen(),
+                         seed=self.seed)
         
         if self.fitaccepted:    
             return 0
