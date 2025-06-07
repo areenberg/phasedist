@@ -5,6 +5,7 @@ import numpy as np
 # EMPIRICAL APPROACH
 #----------------------------------------
 
+'''
 #simulate some data
 sample_size = 500
 
@@ -36,6 +37,7 @@ print(fit.getquantile(0.99))
 
 #make a visual check
 fit.plot()
+'''
 
 #----------------------------------------
 # PARAMETRIC APPROACH

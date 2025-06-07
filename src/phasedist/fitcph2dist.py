@@ -152,7 +152,8 @@ class fitcph2dist:
             elif self.disttype=="chisq":
                 dist_pdf[i] = chi2.pdf(x[i],self.param1)
             elif self.disttype=="ph":
-                dist_pdf[i] = np.matmul(self.param1,np.matmul(expm(self.param2*x),abs(np.sum(self.param2,axis=1)))).item()
+                d = dist(discrete=False,initdist=self.param1,phgen=self.param2)
+                dist_pdf[i] = d.getdensity(x[i])
             ph_pdf[i] = self.getdensity(x[i])
         
         #make plot    
