@@ -10,7 +10,23 @@ sample_size = 500
 obs = np.zeros(sample_size)
 
 #continuous
-d = ph.dist(discrete=False,initdist=np.array([1.0,0.0,0.0]),phgen=np.matrix([[-2.0,2.0,0.0],[0.0,-2.0,2.0],[0.0,0.0,-2.0]]))
+
+df = np.zeros(1000000)
+for i in range(df.size):
+    initdist = np.random.uniform(size=3)
+    initdist /= np.sum(initdist)
+    a = np.random.uniform(size=9)*5
+    d = ph.dist(discrete=False,initdist=initdist,phgen=np.matrix([[-(a[0]+a[1]+a[2]),a[0],a[1]],[a[3],-(a[3]+a[4]+a[5]),a[4]],[a[6],a[7],-(a[6]+a[7]+a[8])]]))
+    x = np.round(np.random.uniform()*3.0+0.001,8)
+    p = d.getcumprob(x)
+    newx = d.getquantile(p)
+    df[i] = abs(newx-x)/x
+print(df.max())
+print(np.quantile(df,0.9999))
+print(np.quantile(df,0.999))
+print(np.quantile(df,0.99))
+
+'''
 obs = d.getrandom(sample_size)
 
 #discrete
@@ -36,7 +52,7 @@ print("BIC =",fit.getbic())
 
 #make a visual check
 fit.plot()
-
+'''
 #----------------------------------------
 # PARAMETRIC APPROACH
 #----------------------------------------

@@ -71,7 +71,7 @@ class dist:
         else:
             return 1-np.sum(np.matmul(self.initdist,expm(self.phgen*x)))
         
-    def getquantile(self,p,tolerance=1e-6):
+    def getquantile(self,p,tolerance=1e-9):
         #returns the x that ensures P(X<=x)=p,
         #i.e. the quantile function of the
         #PH distribution
@@ -82,9 +82,9 @@ class dist:
         elif p==0.0:
             return 0.0
         elif self.discrete:
-            return self.__dphtruncquantfun(prob=p,itermax=1000000)
+            return self.__dphquantfun(prob=p,itermax=1000000)
         else:
-            return self.__cphtruncquantfun(prob=p,tol=tolerance,itermax=1000000)
+            return self.__cphquantfun(prob=p,tol=tolerance,itermax=1000000)
         
     def getrandom(self,size=1):
         #samples a random value from the PH distribution
@@ -207,9 +207,15 @@ class dist:
             if s == self.nphases:
                 return t
             
-    def __cphtruncquantfun(self,prob,tol=1e-6,itermax=1000000):
+    def __cphquantfun(self,prob,tol=1e-9,itermax=1000000):
         #numerical quantile function for the
         #CPH distribution
+        
+        #handling of very small or large input values
+        if prob<tol:
+            return 0.0
+        if prob>1.0-tol:
+            return np.inf
         
         #some initial preparation
         phinv = np.linalg.inv(self.phgen)
@@ -229,14 +235,17 @@ class dist:
                 x1=x+dd
                 f1 = 1-np.sum(np.matmul(self.initdist,expm(self.phgen*x1)))
                 grad = (f1-trc)/dd
+                if grad==0.0:
+                    print("Warning: Algorithm terminated with grad==0. Results might be misleading.")
+                    return np.inf
                 x = x - (trc-prob)/grad
                 trc = 1-np.sum(np.matmul(self.initdist,expm(self.phgen*x)))
                 iter+=1
         if iter==itermax:
             print("Warning: Algorithm terminated with iter==itermax. Results might be misleading.")
-        return x
+        return np.round(x,int(-np.log10(tol))-1)
 
-    def __dphtruncquantfun(self,prob,itermax=1000000):
+    def __dphquantfun(self,prob,itermax=1000000):
         #numerical quantile function for the
         #DPH distribution
 

@@ -217,7 +217,7 @@ class fitcph2dist:
         else:
             return np.nan
 
-    def getquantile(self,p,tolerance=1e-6):
+    def getquantile(self,p,tolerance=1e-9):
         #returns the quantile corresponding to
         #the probability 'p'
         if self.dist is not None:
