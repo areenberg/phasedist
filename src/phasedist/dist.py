@@ -86,12 +86,23 @@ class dist:
         else:
             return self.__cphtruncquantfun(prob=p,tol=tolerance,itermax=1000000)
         
-    def getsample(self):
+    def getrandom(self,size=1):
         #samples a random value from the PH distribution
-        if self.discrete:
-            return self.__dphsample()
-        else:
-            return self.__cphsample()
+        if size==1:
+            if self.discrete:
+                return self.__dphsample()
+            else:
+                return self.__cphsample()
+        elif size<1:
+            return np.nan
+        else:    
+            obs = np.zeros(size)
+            for i in range(size):
+                if self.discrete:
+                    obs[i] = self.__dphsample()
+                else:
+                    obs[i] = self.__cphsample()
+            return obs
 
     def plot(self,type='pdf'):
         #plot the density function    
@@ -136,6 +147,17 @@ class dist:
         #set a pre-defined seed    
         if self.seed is not None:
             np.random.seed(self.seed)
+            
+        #prepare vectors for random sampling
+        self.flatinitdist = np.asarray(self.initdist).ravel()
+        self.a = []
+        for s in range(self.nphases):
+            if self.discrete:
+                self.a.append(np.append(np.asarray(self.phgen[s,:]).ravel(),self.exitrates[s].item()))
+            else:
+                a = np.asarray(self.phgen[s,:]/(-self.phgen[s,s])).ravel()
+                a[a<0] = 0
+                self.a.append(np.append(a,(self.exitrates[s].item()/-self.phgen[s,s])))
 
     def __checkinputs(self):
         #check the feasibility of all input parameters
@@ -164,12 +186,10 @@ class dist:
         #continuous phase-type (CPH) distribution
         
         t = 0.0
-        s = np.random.choice(self.nphases,size=1,p=np.asarray(self.initdist).ravel())[0]
+        s = np.random.choice(self.nphases,size=1,p=self.flatinitdist)[0]
         while True:
             t += np.random.exponential(scale=1/(-self.phgen[s,s]))
-            a = np.asarray(self.phgen[s,:]/(-self.phgen[s,s])).ravel()
-            a[a<0] = 0
-            a = np.append(a,(self.exitrates[s].item()/-self.phgen[s,s]))
+            a = self.a[s]
             s = np.random.choice((self.nphases+1),size=1,p=a)[0]
             if s == self.nphases:
                 return t
@@ -179,15 +199,15 @@ class dist:
         #discrete phase-type (DPH) distribution
         
         t = 0  # Time in discrete steps
-        s = np.random.choice(self.nphases, size=1, p=np.asarray(self.initdist).ravel())[0]
+        s = np.random.choice(self.nphases,size=1,p=self.flatinitdist)[0]
         while True:
             t += 1
-            a = np.append(np.asarray(self.phgen[s,:]).ravel(),self.exitrates[s].item())
+            a = self.a[s]
             s = np.random.choice((self.nphases+1),size=1,p=a)[0]
             if s == self.nphases:
                 return t
             
-    def __cphtruncquantfun(self,prob,tol=1e-12,itermax=1000000):
+    def __cphtruncquantfun(self,prob,tol=1e-6,itermax=1000000):
         #numerical quantile function for the
         #CPH distribution
         

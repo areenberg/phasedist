@@ -6,19 +6,19 @@ import numpy as np
 #----------------------------------------
 
 #simulate some data
-sample_size = 100
+sample_size = 500
 obs = np.zeros(sample_size)
+
 #continuous
 d = ph.dist(discrete=False,initdist=np.array([1.0,0.0,0.0]),phgen=np.matrix([[-2.0,2.0,0.0],[0.0,-2.0,2.0],[0.0,0.0,-2.0]]))
-for i in range(sample_size):
-    obs[i] = d.getsample()
+obs = d.getrandom(sample_size)
+
 #discrete
-#d = ph.dist(discrete=True,initdist=np.array([0.5,0.0,0.5]),phgen=np.matrix([[0.5,0.5,0.0],[0.0,0.5,0.5],[0.0,0.0,0.5]]))
-#for i in range(sample_size):
-#    obs[i] = d.getsample()
-   
+#d = ph.dist(discrete=True,initdist=np.array([1.0,0.0,0.0]),phgen=np.matrix([[0.5,0.5,0.0],[0.0,0.5,0.5],[0.0,0.0,0.5]]))
+#obs = d.getrandom(sample_size)
+
 #fit the distribution
-fit = ph.fit(obs=obs,nphases=3,dtype="generlang",discrete=False,verbose=True)
+fit = ph.fit(obs=obs,nphases=3,dtype="gencoxian",discrete=False,verbose=True)
 
 #check the fitted parameters
 print(fit.getinitdist())

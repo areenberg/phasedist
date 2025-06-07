@@ -1,6 +1,7 @@
 import sys
 import numpy as np
 import matplotlib.pyplot as plt
+from statsmodels.stats.proportion import proportion_confint
 from phasedist.fitcph import fitcph
 from phasedist.fitdph import fitdph
 from phasedist.dist import dist
@@ -85,13 +86,29 @@ class fit:
         #returns a phase-type distribution object
         return self.dist
     
-    def plot(self):
+    def plot(self,
+             confint=True,
+             confidence=0.95,
+             xlabel='x',
+             ylabel='CDF',
+             title='Empirical and Fitted CDFs',
+             labelfitted='Fitted CDF',
+             labelempirical='Empirical CDF'
+             ):
         #compares the empirical and theoretical CDFs in a plot
         
         obssorted = np.sort(self.obs)
-        empcdf = np.arange(1,len(self.obs) + 1)/len(self.obs)
         
         if not self.discrete:
+            empcdf = np.arange(1,self.obs.size + 1)
+            empcdf_upper = np.zeros(empcdf.size)
+            empcdf_lower = np.zeros(empcdf.size)
+            for i in range(empcdf.size):
+                lims = proportion_confint(empcdf[i],self.obs.size,alpha=(1-confidence),method='wilson')
+                empcdf_upper[i] = lims[1]
+                empcdf_lower[i] = lims[0]
+            empcdf = empcdf.astype(float)
+            empcdf /= float(self.obs.size)
             res = 1000
             theocdf = np.zeros(res)
             x = np.linspace(np.min(obssorted),np.max(obssorted),res)
@@ -99,22 +116,40 @@ class fit:
                 theocdf[i] = self.getcumprob(x[i])
         else:
             x = np.arange(np.min(obssorted),np.max(obssorted)+1)
+            empcdf = np.zeros(x.size)
+            empcdf_upper = np.zeros(x.size)
+            empcdf_lower = np.zeros(x.size)
             theocdf = np.zeros(x.size)
+            emp_old = 0
             for i in range(x.size):
                 theocdf[i] = self.getcumprob(x[i])
+                a = obssorted[obssorted==(i+np.min(obssorted))]
+                empcdf[i] = a.size+emp_old
+                emp_old = empcdf[i]
+                lims = proportion_confint(empcdf[i],self.obs.size,alpha=(1-confidence),method='binom_test')
+                empcdf_upper[i] = lims[1]
+                empcdf_lower[i] = lims[0]
+            empcdf = empcdf.astype(float)
+            empcdf /= float(self.obs.size)    
             
         plt.figure(figsize=(8, 6))
         
         if not self.discrete:
-            plt.plot(x,theocdf,label="Fitted CDF",lw=1,linestyle='-',color='blue')
-            plt.plot(obssorted,empcdf,label="Empirical CDF",lw=1,linestyle='-',color='red')
+            plt.plot(x,theocdf,label=labelfitted,lw=1,linestyle='-',color='blue')
+            plt.plot(obssorted,empcdf,label=labelempirical,lw=1,linestyle='-',color='red')
+            if confint:
+                plt.plot(obssorted,empcdf_upper,label='Upper conf. int.',lw=1,linestyle='--',color='red')
+                plt.plot(obssorted,empcdf_lower,label='Lower conf. int.',lw=1,linestyle='--',color='red')
         else:
-            plt.scatter(x,theocdf,label="Fitted CDF",lw=1,marker='o',color='blue')
-            plt.plot(obssorted,empcdf,label="Empirical CDF",lw=1,linestyle='-',color='red')
+            plt.scatter(x,empcdf,label=labelempirical,lw=1,marker='x',color='red')
+            if confint:
+                plt.scatter(x,empcdf_upper,label='Upper conf. int.',marker='_',s=100,color='red')
+                plt.scatter(x,empcdf_lower,label='Lower conf. int.',marker='_',s=100,color='red')
+            plt.scatter(x,theocdf,label=labelfitted,lw=1,marker='x',color='blue')    
             
-        plt.xlabel("x")
-        plt.ylabel("CDF")
-        plt.title("Empirical and Fitted CDFs")
+        plt.xlabel(xlabel)
+        plt.ylabel(ylabel)
+        plt.title(title)
         plt.legend()
         plt.grid()
         plt.show()
