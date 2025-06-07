@@ -211,12 +211,6 @@ class dist:
         #numerical quantile function for the
         #CPH distribution
         
-        #handling of very small or large input values
-        if prob<tol:
-            return 0.0
-        if prob>1.0-tol:
-            return np.inf
-        
         #some initial preparation
         phinv = np.linalg.inv(self.phgen)
         var = 2*np.sum(np.matmul(self.initdist,np.linalg.matrix_power(phinv,2)))-np.power(np.sum(np.matmul(self.initdist,phinv)),2)
@@ -229,15 +223,9 @@ class dist:
         
         #improve x until convergence
         trc=1-np.sum(np.matmul(self.initdist,expm(self.phgen*x)))
-        dd = tol
         iter=0
         while np.abs(trc-prob)>tol and iter<itermax:
-                x1=x+dd
-                f1 = 1-np.sum(np.matmul(self.initdist,expm(self.phgen*x1)))
-                grad = (f1-trc)/dd
-                if grad==0.0:
-                    print("Warning: Algorithm terminated with grad==0. Results might be misleading.")
-                    return np.inf
+                grad = np.matmul(self.initdist,np.matmul(expm(self.phgen*x),self.exitrates)).item()
                 x = x - (trc-prob)/grad
                 trc = 1-np.sum(np.matmul(self.initdist,expm(self.phgen*x)))
                 iter+=1

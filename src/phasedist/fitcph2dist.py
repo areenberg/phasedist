@@ -123,7 +123,8 @@ class fitcph2dist:
             self.phgen0 = np.copy(self.phgen)
             iter += 1
             if self.verbose and iter%5==0:
-                print("iter =",iter,"  eps =",self.eps,"  mean =",self.getmean(),"  var =",self.getvar())
+                d = dist(discrete=False,initdist=self.pi,phgen=self.phgen)
+                print("iter =",iter,"  eps =",self.eps,"  mean =",d.getmean(),"  var =",d.getvar())
 
         #create object for output PH distribution
         self.dist = dist(discrete=False,
@@ -572,10 +573,10 @@ class fitcph2dist:
         elif self.disttype=="chisq":
             self.y = np.linspace(0,chi2.ppf(self.truncation,self.param1),self.steps+1)
         elif self.disttype=="ph":
-            self.y = np.linspace(0,self.__phtruncquantfun(self.param1,self.param2),self.steps+1)
+            d = dist(discrete=False,initdist=self.param1,phgen=self.param2)
+            self.y = np.linspace(0,d.getquantile(self.truncation),self.steps+1)
         elif self.disttype=="per":
             self.y = np.linspace(0,np.max(self.param2),self.steps+1)
-        
         
         #compute cumulated probability segments
         self.hy = np.zeros(self.steps)
@@ -690,26 +691,3 @@ class fitcph2dist:
                 trc = (norm.cdf((x-mu)/sigma)-norm.cdf(-mu/sigma))/cmp
                 iter+=1          
         return x            
-            
-    def __phtruncquantfun(self,idst,phg):
-        #numerical quantile function for the
-        #PH distribution
-        phinv = np.linalg.inv(phg)
-        sigma = np.sqrt(2*np.sum(np.matmul(idst,np.linalg.matrix_power(phinv,2)))-np.power(np.sum(np.matmul(idst,phinv)),2))
-        mu = -np.sum(np.matmul(idst,phinv))
-        x=np.max(np.array([sigma*self.tolerance,mu]))
-        trc=1-np.sum(np.matmul(idst,expm(phg*x)))
-        dd = sigma*self.tolerance
-        iter=0
-        while np.abs(trc-self.truncation)>self.tolerance and iter<self.itermax:
-                x1=x+dd
-                f1 = 1-np.sum(np.matmul(idst,expm(phg*x1)))
-                grad = (f1-trc)/dd
-                x = x - (trc-self.truncation)/grad
-                trc = 1-np.sum(np.matmul(idst,expm(phg*x)))
-                iter+=1
-        return x            
-           
-            
-            
-            
