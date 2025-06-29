@@ -5,13 +5,15 @@ import numpy as np
 # EMPIRICAL APPROACH
 #----------------------------------------
 
-'''
+
 #simulate some data
-sample_size = 500
+sample_size = 50
 
 d = ph.dist(discrete=False,initdist=np.array([1.0,0.0,0.0]),phgen=np.matrix([[-2.0,2.0,0.0],[0.0,-2.0,2.0],[0.0,0.0,-2.0]])) #continuous
 #d = ph.dist(discrete=True,initdist=np.array([1.0,0.0,0.0]),phgen=np.matrix([[0.5,0.5,0.0],[0.0,0.5,0.5],[0.0,0.0,0.5]])) #discrete
 obs = d.getrandom(sample_size)
+
+
 
 #fit the distribution
 fit = ph.fit(obs=obs,nphases=3,dtype="generlang",discrete=False,verbose=True)
@@ -37,12 +39,13 @@ print(fit.getquantile(0.99))
 
 #make a visual check
 fit.plot()
-'''
+
 
 #----------------------------------------
 # PARAMETRIC APPROACH
 #----------------------------------------
 
+'''
 #create object for approximating a parametric distribution
 apx = ph.fitcph2dist(nphases=3,
                  dtype="generlang",
@@ -65,3 +68,4 @@ apx.plot()
 #check metrics of the approximate distribution
 print(apx.getmean())
 print(apx.getvar())
+'''

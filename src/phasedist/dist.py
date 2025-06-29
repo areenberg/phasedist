@@ -50,41 +50,36 @@ class dist:
             return 2*np.sum(np.matmul(self.initdist,np.linalg.matrix_power(phinv,2)))-np.power(np.sum(np.matmul(self.initdist,phinv)),2)
 
     def getdensity(self,x):
-        #returns the density
-        if self.discrete:
-            if int(x)!=x:
-                print("Error: 'x' is not an integer.")
-                return np.nan
-            else:
-                return np.matmul(self.initdist,np.matmul(np.linalg.matrix_power(self.phgen,(x-1)),self.exitrates)).item()
+        #returns the distribution's density
+        if isinstance(x,np.ndarray):
+            y = np.zeros(x.size)
+            for i in range(x.size):
+                y[i] = self.__computedensity(x[i])
+            return y   
         else:
-            return np.matmul(self.initdist,np.matmul(expm(self.phgen*x),self.exitrates)).item()
+            return self.__computedensity(x)
 
     def getcumprob(self,x):
         #returns the cumulated probability P(X<=x)
-        if self.discrete:
-            if int(x)!=x:
-                print("Error: 'x' is not an integer.")
-                return np.nan
-            else:
-                return 1-np.sum(np.matmul(self.initdist,np.linalg.matrix_power(self.phgen,int(x))))
+        if isinstance(x,np.ndarray):
+            y = np.zeros(x.size)
+            for i in range(x.size):
+                y[i] = self.__computecumprob(x[i])
+            return y   
         else:
-            return 1-np.sum(np.matmul(self.initdist,expm(self.phgen*x)))
-        
+            return self.__computecumprob(x)
+
     def getquantile(self,p,tolerance=1e-9):
         #returns the x that ensures P(X<=x)=p,
         #i.e. the quantile function of the
         #PH distribution
-        if p==1.0:
-            return np.inf
-        elif p<0.0 or p>1.0:
-            return np.nan
-        elif p==0.0:
-            return 0.0
-        elif self.discrete:
-            return self.__dphquantfun(prob=p,itermax=1000000)
+        if isinstance(p,np.ndarray):
+            y = np.zeros(p.size)
+            for i in range(p.size):
+                y[i] = self.__computequantile(p[i],tolerance)
+            return y   
         else:
-            return self.__cphquantfun(prob=p,tol=tolerance,itermax=1000000)
+            return self.__computequantile(p,tolerance)
         
     def getrandom(self,size=1):
         #samples a random value from the PH distribution
@@ -180,6 +175,47 @@ class dist:
             print("Error: The seed can only be specified as an integer.")
             return False
         return True #if all correct
+        
+    def __computedensity(self,x):
+        #computes the distribution's density
+        #function for the scalar x
+        
+        if self.discrete:
+            if int(x)!=x:
+                print("Error: 'x' is not an integer.")
+                return np.nan
+            else:
+                return np.matmul(self.initdist,np.matmul(np.linalg.matrix_power(self.phgen,(x-1)),self.exitrates)).item()
+        else:
+            return np.matmul(self.initdist,np.matmul(expm(self.phgen*x),self.exitrates)).item()
+
+    def __computecumprob(self,x):
+        #computes the distribution function for
+        #the scalar x
+
+        if self.discrete:
+            if int(x)!=x:
+                print("Error: 'x' is not an integer.")
+                return np.nan
+            else:
+                return 1-np.sum(np.matmul(self.initdist,np.linalg.matrix_power(self.phgen,int(x))))
+        else:
+            return 1-np.sum(np.matmul(self.initdist,expm(self.phgen*x)))
+
+    def __computequantile(self,p,tolerance=1e-9):
+        #computes the quantile function for
+        #the probability p at the specified tolerance
+        
+        if p==1.0:
+            return np.inf
+        elif p<0.0 or p>1.0:
+            return np.nan
+        elif p==0.0:
+            return 0.0
+        elif self.discrete:
+            return self.__dphquantfun(prob=p,itermax=1000000)
+        else:
+            return self.__cphquantfun(prob=p,tol=tolerance,itermax=1000000)
         
     def __cphsample(self):
         #samples a random value from the
