@@ -1,6 +1,6 @@
 #----------------------------------------------------
-# VALIDATION TEST: DPH Negative binomial-3 (R Code)
-# See the file 'negbinom3.py'
+# R-file for validation test: DPH Negative binomial-3
+# To run the test, use the file 'negbinom3.py'
 #----------------------------------------------------
 
 # Install dependencies (do not change order)

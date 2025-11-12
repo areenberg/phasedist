@@ -24,7 +24,7 @@ import phasedist as ph
 # Fit a negative binomial-3 DPH distribution using Phasedist
 
 obs = np.loadtxt('validation/negbinom3_data.csv',skiprows=1)
-fit = ph.fit(obs=obs,nphases=3,dtype="generlang",discrete=True,verbose=True)
+fit = ph.fit(obs=obs,nphases=3,dtype="generlang",discrete=True,verbose=True,itermax=1000,tolerance=0.0)
 phdist = fit.getdist()
 
 # Fit a negative binomial-3 DPH distribution using matrixdist in R (installs all dependencies first)

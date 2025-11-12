@@ -1,6 +1,6 @@
 #----------------------------------------------------
-# VALIDATION TEST: CPH Erlang-3 (R Code)
-# See the file 'erlang3.py'
+# R-file for validation test: CPH Erlang-3
+# To run the test, use the file 'erlang3.py'
 #----------------------------------------------------
 
 # Install dependencies (do not change order)
