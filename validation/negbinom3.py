@@ -1,7 +1,7 @@
 '''
 VALIDATION TEST: DPH Negative binomial-3
 
-In this benchmark test, we compare the 'Phasedist' package to
+In this validation test, we compare the 'Phasedist' package to
 the 'matrixdist' package (from R) by fitting Negative binomial-3
 distributions to the data in the CSV-file 'negbinom3_data.csv'
 and comparing the fitted distributions.
@@ -21,7 +21,7 @@ src_path = os.path.join(project_root, "..", "src")
 sys.path.append(os.path.abspath(src_path))
 import phasedist as ph
 
-# Fit an Erlang-3 CPH distribution using Phasedist
+# Fit a negative binomial-3 DPH distribution using Phasedist
 
 obs = np.loadtxt('validation/negbinom3_data.csv',skiprows=1)
 fit = ph.fit(obs=obs,nphases=3,dtype="generlang",discrete=True,verbose=True)

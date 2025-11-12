@@ -1,7 +1,7 @@
 '''
 VALIDATION TEST: CPH Erlang-3
 
-In this benchmark test, we compare the 'Phasedist' package to
+In this validation test, we compare the 'Phasedist' package to
 the 'matrixdist' package (from R) by fitting Erlang-3
 distributions to the data in the CSV-file 'erlang3_data.csv'
 and comparing the fitted distributions.
