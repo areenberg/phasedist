@@ -218,7 +218,7 @@ class fit:
         if self.dtype=="custom" or not self.randominit:
             self.nphases = self.initphgen.shape[0]
         if not self.randominit:
-            if not self.__correctphgen(self.initphgen,self.initexitrates) or not self.__correctinitdist(self.d.getinitdist):
+            if not self.__correctphgen(self.initphgen,self.initexitrates) or not self.__correctinitdist(self.initdist):
                 return False
         
         return True
