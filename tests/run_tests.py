@@ -41,7 +41,7 @@ if not np.array_equal(
     np.round(phdist.getinitdist(), 3),
     np.round(np.array([[1.0,0.0,0.0]]), 3),
 ):
-    sys.exit("Validation test failed at estimation of Erlang-3 distribution.")
+    sys.exit("Validation test failed at estimation of initial distribution for Erlang-3 distribution.")
     
 if not np.array_equal(
     np.round(phdist.getphasegen(), 6),
@@ -49,13 +49,13 @@ if not np.array_equal(
                       [0.0,-2.06070328,2.06070328],
                       [0.0,0.0,-2.06070328]]), 6),
 ):
-    sys.exit("Validation test failed at estimation of Erlang-3 distribution.")
+    sys.exit("Validation test failed at estimation of phase-type generator for Erlang-3 distribution.")
     
 if not np.array_equal(
     np.round(phdist.getexitrates(), 6),
     np.round(np.array([[0.0],[0.0],[2.06070328]]), 6),
 ):
-    sys.exit("Validation test failed at estimation of Erlang-3 distribution.")
+    sys.exit("Validation test failed at estimation of exit rates for Erlang-3 distribution.")
 
 #---------------------------------------------------------------------------
 # TEST 2: Fit a negative binomial-3 DPH distribution using simulated data
@@ -87,7 +87,7 @@ if not np.array_equal(
     np.round(phdist.getinitdist(), 3),
     np.round(np.array([[1.0,0.0,0.0]]), 3),
 ):
-    sys.exit("Validation test failed at estimation of negative binomial-3 distribution.")
+    sys.exit("Validation test failed at estimation of initial distribution for negative binomial-3 distribution.")
     
 if not np.array_equal(
     np.round(phdist.getphasegen(), 6),
@@ -95,10 +95,37 @@ if not np.array_equal(
                       [0.0,0.46996466,0.53003534],
                       [0.0,0.0,0.46996466]]), 6),
 ):
-    sys.exit("Validation test failed at estimation of negative binomial-3 distribution.")
+    sys.exit("Validation test failed at estimation of phase-type generator for negative binomial-3 distribution.")
     
 if not np.array_equal(
     np.round(phdist.getexitrates(), 6),
     np.round(np.array([[0.0],[0.0],[0.53003534]]), 6),
 ):
-    sys.exit("Validation test failed at estimation of negative binomial-3 distribution.")
+    sys.exit("Validation test failed at estimation of exit rates for negative binomial-3 distribution.")
+    
+#---------------------------------------------------------------------------
+# TEST 3: Test the distribution object
+#---------------------------------------------------------------------------    
+
+initdist = np.array([0.1,0.5,0.4])
+phasegen = np.array([[-1.0,0.0,1.0],
+                     [0.0,-2.0,0.0],
+                     [0.0,4.0,-5.0]])
+
+phdist = ph.dist(initdist=initdist,
+              phgen=phasegen,
+              seed=123)
+
+if not phdist.getmean()==0.65:
+    sys.exit("Validation test failed at estimation of mean.")
+if not round(phdist.getvar(),2)==0.47:
+    sys.exit("Validation test failed at estimation of variance.")
+if not round(phdist.getcumprob(x=1.953),3)==0.950:
+    sys.exit("Validation test failed at estimation of distribution function.")
+if not round(phdist.getquantile(p=0.95),3)==1.953:
+    sys.exit("Validation test failed at estimation of quantile.")
+if not round(phdist.getdensity(x=1),3)==0.322:
+    sys.exit("Validation test failed at estimation of density.")
+if phdist.getrandom(size=1)>6.0:
+    sys.exit("Validation test failed since an unlikely high number was sampled. Try running the test again. If the problem persist, check your installation.")
+    
