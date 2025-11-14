@@ -7,688 +7,821 @@ from phasedist.dist import dist
 
 # REFERENCES
 
-#Bladt, M., & Nielsen, B. F. (2017). Matrix-Exponential Distributions in Applied Probability. 
-#Springer. https://doi.org/10.1007/978-1-4939-7049-0
+# Bladt, M., & Nielsen, B. F. (2017). Matrix-Exponential Distributions in Applied Probability.
+# Springer. https://doi.org/10.1007/978-1-4939-7049-0
+
 
 class fitcph2dist:
-    #fit a continuous-time phase-type distributions to
-    #a distribution with a continuous density using
-    #the EM algorithm from p. 681 Bladt and Nielsen (2017).
+    # fit a continuous-time phase-type distributions to
+    # a distribution with a continuous density using
+    # the EM algorithm from p. 681 Bladt and Nielsen (2017).
 
-    def __init__(self,nphases=2,dtype="general",
-                 initdist=None,initphgen=None,initexitrates=None,
-                 randominit=True,seed=None,tolerance=1e-3,truncation=0.99,
-                 steps=50,itermax=1000000000,verbose=False):
-        
-        self.nphases=nphases
-        self.dtype=dtype
+    def __init__(
+        self,
+        nphases=2,
+        dtype="general",
+        initdist=None,
+        initphgen=None,
+        initexitrates=None,
+        randominit=True,
+        seed=None,
+        tolerance=1e-3,
+        truncation=0.99,
+        steps=50,
+        itermax=1000000000,
+        verbose=False,
+    ):
+
+        self.nphases = nphases
+        self.dtype = dtype
         self.initdist = initdist
         self.initphgen = initphgen
         self.initexitrates = initexitrates
         self.randominit = randominit
         self.seed = seed
         self.itermax = itermax
-        self.tolerance=tolerance
-        self.truncation=truncation
+        self.tolerance = tolerance
+        self.truncation = truncation
         self.disttype = None
-        self.verbose=verbose
+        self.verbose = verbose
         self.dist = None
-        self.steps = steps #number of steps in the numerical integration
-        
-        #checking and fitting
+        self.steps = steps  # number of steps in the numerical integration
+
+        # checking and fitting
         if self.__checkinputs():
-            self.__makedist() #fit the parameters
+            self.__makedist()  # fit the parameters
         else:
-            sys.exit(1) #terminate the program
+            sys.exit(1)  # terminate the program
 
-    #----------------------------------------------------------------------
+    # ----------------------------------------------------------------------
     #   PUBLIC METHODS
-    #----------------------------------------------------------------------
+    # ----------------------------------------------------------------------
 
-    def lognorm(self,mu=None,sigma=None,mean=None,var=None):
-        #approximate a log-normal distribution
+    def lognorm(self, mu=None, sigma=None, mean=None, var=None):
+        # approximate a log-normal distribution
         if mu is None and mean is not None:
-            if mean<=0:
+            if mean <= 0:
                 print("Error: 'mean<=0' is infeasible for the lognormal distribution.")
                 sys.exit(1)
-            self.param1 = np.log(np.power(mean,2)/np.sqrt(np.power(mean,2)+var))
-            self.param2 = np.log(1 + var/np.power(mean,2))
+            self.param1 = np.log(np.power(mean, 2) / np.sqrt(np.power(mean, 2) + var))
+            self.param2 = np.log(1 + var / np.power(mean, 2))
         elif mu is not None and mean is None:
             self.param1 = mu
-            self.param2 = np.power(sigma,2)
-        self.disttype="lognorm"
-        self.__initialize()
-        
-    def norm(self,mu=None,sigma=None):
-        #approximate a (truncated) normal distribution
-        self.param1=mu
-        self.param2=sigma
-        self.disttype="norm"
-        self.__initialize()
-        
-    def gamma(self,shape=None,scale=None,rate=None):
-        #approximate a gamma distribution
-        self.param1=shape
-        if scale is None:
-            self.param2=1/rate
-        elif rate is None:
-            self.param2=scale
-        self.disttype="gamma"
-        self.__initialize()
-    
-    def chisq(self,df=None):
-        #approximate a chi-squared distribution
-        self.param1=df
-        self.disttype="chisq"
-        self.__initialize()
-    
-    def weibull(self,shape=None,scale=None):
-        #approximate a weibull distribution
-        self.param1=shape
-        self.param2=scale
-        self.disttype="weibull"
-        self.__initialize()
-        
-    def phasedist(self,initdist,phgen):
-        #approximate another phase-type distribution
-        self.param1=initdist
-        self.param2=phgen
-        self.disttype="ph"
+            self.param2 = np.power(sigma, 2)
+        self.disttype = "lognorm"
         self.__initialize()
 
-    def percentiles(self,cumprobs=None,x=None):
-        #create a PH approximation based on the
-        #cumulated probabilities (could be empirically
-        #determined) in the numpy array 'cumprobs' and
-        #the corresponding response values in 'x'.
-        self.param1=cumprobs
-        self.param2=x
-        self.disttype="per"
+    def norm(self, mu=None, sigma=None):
+        # approximate a (truncated) normal distribution
+        self.param1 = mu
+        self.param2 = sigma
+        self.disttype = "norm"
+        self.__initialize()
+
+    def gamma(self, shape=None, scale=None, rate=None):
+        # approximate a gamma distribution
+        self.param1 = shape
+        if scale is None:
+            self.param2 = 1 / rate
+        elif rate is None:
+            self.param2 = scale
+        self.disttype = "gamma"
+        self.__initialize()
+
+    def chisq(self, df=None):
+        # approximate a chi-squared distribution
+        self.param1 = df
+        self.disttype = "chisq"
+        self.__initialize()
+
+    def weibull(self, shape=None, scale=None):
+        # approximate a weibull distribution
+        self.param1 = shape
+        self.param2 = scale
+        self.disttype = "weibull"
+        self.__initialize()
+
+    def phasedist(self, initdist, phgen):
+        # approximate another phase-type distribution
+        self.param1 = initdist
+        self.param2 = phgen
+        self.disttype = "ph"
+        self.__initialize()
+
+    def percentiles(self, cumprobs=None, x=None):
+        # create a PH approximation based on the
+        # cumulated probabilities (could be empirically
+        # determined) in the numpy array 'cumprobs' and
+        # the corresponding response values in 'x'.
+        self.param1 = cumprobs
+        self.param2 = x
+        self.disttype = "per"
         self.__initialize()
 
     def fit(self):
-        #approximate the CPH distribution
+        # approximate the CPH distribution
         if self.disttype is None:
             print("Error: Select a distribution for the approximation.")
             return 1
-        iter=0
+        iter = 0
         self.eps = np.inf
         self.pi0 = np.copy(self.pi)
         self.phgen0 = np.copy(self.phgen)
-        while iter<self.itermax and self.eps>self.tolerance:
+        while iter < self.itermax and self.eps > self.tolerance:
             self.__estep()
             self.__mstep()
             self.__updateEpsilon()
             self.pi0 = np.copy(self.pi)
             self.phgen0 = np.copy(self.phgen)
             iter += 1
-            if self.verbose and iter%5==0:
-                d = dist(discrete=False,initdist=self.pi,phgen=self.phgen)
-                print("iter =",iter,"  eps =",self.eps,"  mean =",d.getmean(),"  var =",d.getvar())
+            if self.verbose and iter % 5 == 0:
+                d = dist(discrete=False, initdist=self.pi, phgen=self.phgen)
+                print(
+                    "iter =",
+                    iter,
+                    "  eps =",
+                    self.eps,
+                    "  mean =",
+                    d.getmean(),
+                    "  var =",
+                    d.getvar(),
+                )
 
-        #create object for output PH distribution
-        self.dist = dist(discrete=False,
-                         initdist=self.pi,
-                         phgen=self.phgen,
-                         seed=self.seed)
-        
+        # create object for output PH distribution
+        self.dist = dist(
+            discrete=False, initdist=self.pi, phgen=self.phgen, seed=self.seed
+        )
+
         return 0
-        
+
     def plot(self):
-        #conduct a visual comparison of the approximate and true
-        #distributions
- 
-        #compute densities for approximate and true distributions        
-        x = np.linspace(0.0,self.y.max(),500)
+        # conduct a visual comparison of the approximate and true
+        # distributions
+
+        # compute densities for approximate and true distributions
+        x = np.linspace(0.0, self.y.max(), 500)
         dist_pdf = np.zeros(len(x))
         ph_pdf = np.zeros(len(x))
         for i in range(len(x)):
-            if self.disttype=="lognorm":
-                dist_pdf[i] = lognorm.pdf(x[i],self.param2,scale=np.exp(self.param1))
-            elif self.disttype=="gamma":
-                dist_pdf[i] = gamma.pdf(x[i],self.param1,scale=self.param2)
-            elif self.disttype=="weibull":
-                dist_pdf[i] = weibull_min.pdf(x[i],self.param1,scale=self.param2)
-            elif self.disttype=="chisq":
-                dist_pdf[i] = chi2.pdf(x[i],self.param1)
-            elif self.disttype=="ph":
-                d = dist(discrete=False,initdist=self.param1,phgen=self.param2)
+            if self.disttype == "lognorm":
+                dist_pdf[i] = lognorm.pdf(x[i], self.param2, scale=np.exp(self.param1))
+            elif self.disttype == "gamma":
+                dist_pdf[i] = gamma.pdf(x[i], self.param1, scale=self.param2)
+            elif self.disttype == "weibull":
+                dist_pdf[i] = weibull_min.pdf(x[i], self.param1, scale=self.param2)
+            elif self.disttype == "chisq":
+                dist_pdf[i] = chi2.pdf(x[i], self.param1)
+            elif self.disttype == "ph":
+                d = dist(discrete=False, initdist=self.param1, phgen=self.param2)
                 dist_pdf[i] = d.getdensity(x[i])
             ph_pdf[i] = self.getdensity(x[i])
-        
-        #make plot    
+
+        # make plot
         plt.figure(figsize=(10, 6))
-        if not self.disttype=="norm" and not self.disttype=="per":
-            plt.plot(x, dist_pdf, label='True density', color='blue')
-        plt.plot(x, ph_pdf, label='Approx. density', color='red', linestyle='--')
-        plt.xlabel('x')
-        plt.ylabel('Density')
-        plt.title('Approximation validation')
+        if not self.disttype == "norm" and not self.disttype == "per":
+            plt.plot(x, dist_pdf, label="True density", color="blue")
+        plt.plot(x, ph_pdf, label="Approx. density", color="red", linestyle="--")
+        plt.xlabel("x")
+        plt.ylabel("Density")
+        plt.title("Approximation validation")
         plt.legend()
         plt.grid(True)
-        plt.show()        
-        
+        plt.show()
+
         return None
-   
+
     def getinitdist(self):
-        #returns the initial distribution
+        # returns the initial distribution
         if self.dist is not None:
             return self.dist.getinitdist()
         else:
             return np.nan
-    
+
     def getphasegen(self):
-        #returns the phase-type generator
+        # returns the phase-type generator
         if self.dist is not None:
             return self.dist.getphasegen()
         else:
             return np.nan
-    
+
     def getexitrates(self):
-        #returns the exit rate vector
+        # returns the exit rate vector
         if self.dist is not None:
             return self.dist.getexitrates()
         else:
-            return np.nan 
-            
+            return np.nan
+
     def getmean(self):
-        #returns the mean
+        # returns the mean
         if self.dist is not None:
             return self.dist.getmean()
         else:
             return np.nan
 
     def getvar(self):
-        #returns the variance
+        # returns the variance
         if self.dist is not None:
             return self.dist.getvar()
         else:
             return np.nan
 
-    def getdensity(self,x):
-        #returns the density
+    def getdensity(self, x):
+        # returns the density
         if self.dist is not None:
             return self.dist.getdensity(x)
         else:
             return np.nan
 
-    def getcumprob(self,x):
-        #returns the cumulated probability P(X<=x)
+    def getcumprob(self, x):
+        # returns the cumulated probability P(X<=x)
         if self.dist is not None:
             return self.dist.getcumprob(x)
         else:
             return np.nan
 
-    def getquantile(self,p,tolerance=1e-9):
-        #returns the quantile corresponding to
-        #the probability 'p'
+    def getquantile(self, p, tolerance=1e-9):
+        # returns the quantile corresponding to
+        # the probability 'p'
         if self.dist is not None:
-            return self.dist.getquantile(p,tolerance)
+            return self.dist.getquantile(p, tolerance)
         else:
             return np.nan
 
     def getdist(self):
-        #returns a phase-type distribution object
+        # returns a phase-type distribution object
         return self.dist
 
-    #----------------------------------------------------------------------
+    # ----------------------------------------------------------------------
     #   PRIVATE METHODS
-    #----------------------------------------------------------------------
+    # ----------------------------------------------------------------------
 
     def __checkinputs(self):
-        #check the feasibility of all input parameters
-        #before proceeding
-        
-        #check data types and convert if necesarry
-        if not isinstance(self.nphases,int) or self.nphases<1:
-            print("Error: The number of phases can only be specified as an integer larger than 0.")
-            return 0    
-        if not isinstance(self.dtype,str):
+        # check the feasibility of all input parameters
+        # before proceeding
+
+        # check data types and convert if necesarry
+        if not isinstance(self.nphases, int) or self.nphases < 1:
+            print(
+                "Error: The number of phases can only be specified as an integer larger than 0."
+            )
+            return 0
+        if not isinstance(self.dtype, str):
             print("Error: The distribution type can only be specified as a string.")
-        if self.initdist is not None and (isinstance(self.initdist,np.ndarray) or isinstance(self.initdist,list)):
+        if self.initdist is not None and (
+            isinstance(self.initdist, np.ndarray) or isinstance(self.initdist, list)
+        ):
             self.initdist = np.matrix(self.initdist)
-        elif self.initdist is not None and not isinstance(self.initdist,np.matrix):
-            print("Error: The initial distribution can only be specified as a list, NumPy array, or a NumPy matrix.")
+        elif self.initdist is not None and not isinstance(self.initdist, np.matrix):
+            print(
+                "Error: The initial distribution can only be specified as a list, NumPy array, or a NumPy matrix."
+            )
             return False
-        if self.initphgen is not None and (isinstance(self.initphgen,np.ndarray) or isinstance(self.initphgen,list)):
+        if self.initphgen is not None and (
+            isinstance(self.initphgen, np.ndarray) or isinstance(self.initphgen, list)
+        ):
             self.initphgen = np.matrix(self.initphgen)
-        elif self.initphgen is not None and not isinstance(self.initphgen,np.matrix):
-            print("Error: The PH generator can only be specified as a list or a NumPy matrix.")
+        elif self.initphgen is not None and not isinstance(self.initphgen, np.matrix):
+            print(
+                "Error: The PH generator can only be specified as a list or a NumPy matrix."
+            )
             return False
-        if self.initexitrates is not None and (isinstance(self.initexitrates,np.ndarray) or isinstance(self.initexitrates,list)):
+        if self.initexitrates is not None and (
+            isinstance(self.initexitrates, np.ndarray)
+            or isinstance(self.initexitrates, list)
+        ):
             self.initexitrates = np.transpose(np.matrix(self.initexitrates))
-        elif self.initexitrates is not None and not isinstance(self.initexitrates,np.matrix):
-            print("Error: The exit rate vector can only be specified as a list, NumPy array, or a NumPy matrix.")
+        elif self.initexitrates is not None and not isinstance(
+            self.initexitrates, np.matrix
+        ):
+            print(
+                "Error: The exit rate vector can only be specified as a list, NumPy array, or a NumPy matrix."
+            )
             return False
-        if not isinstance(self.randominit,bool):
+        if not isinstance(self.randominit, bool):
             print("Error: The argument 'randominit' needs to be of type 'bool'.")
-            return False        
-        if self.seed is not None and not isinstance(self.seed,int):
+            return False
+        if self.seed is not None and not isinstance(self.seed, int):
             print("Error: The seed can only be specified as an integer.")
             return False
-        if not isinstance(self.tolerance,float):
+        if not isinstance(self.tolerance, float):
             print("Error: The argument 'tolerance' needs to be of type 'float'.")
-            return False        
-        if not isinstance(self.itermax,float) and not isinstance(self.itermax,int):
+            return False
+        if not isinstance(self.itermax, float) and not isinstance(self.itermax, int):
             print("Error: The argument 'itermax' needs to be of type 'float' or 'int'.")
-            return False        
-        if not isinstance(self.verbose,bool):
+            return False
+        if not isinstance(self.verbose, bool):
             print("Error: The argument 'verbose' needs to be of type 'bool'.")
             return False
-        
-        #check PH generator and exit rates in case of no random initialization
-        if self.dtype=="custom" or not self.randominit:
+
+        # check PH generator and exit rates in case of no random initialization
+        if self.dtype == "custom" or not self.randominit:
             self.nphases = self.initphgen.shape[0]
         if not self.randominit:
-            if not self.__correctphgen(self.initphgen,self.initexitrates) or not self.__correctinitdist(self.d.getinitdist):
+            if not self.__correctphgen(
+                self.initphgen, self.initexitrates
+            ) or not self.__correctinitdist(self.d.getinitdist):
                 return False
-            
+
         return True
 
-    def __correctphgen(self,phasegen,exitrates):
-        #returns True if the PH generator and
-        #exit rates are feasible
-        
-        #check PH generator
-        if phasegen.shape[0]!=phasegen.shape[1] or phasegen.shape[0]!=self.nphases:
-            print("Error: The dimensions of the PH generator does not match the number of phases.")
+    def __correctphgen(self, phasegen, exitrates):
+        # returns True if the PH generator and
+        # exit rates are feasible
+
+        # check PH generator
+        if phasegen.shape[0] != phasegen.shape[1] or phasegen.shape[0] != self.nphases:
+            print(
+                "Error: The dimensions of the PH generator does not match the number of phases."
+            )
             return False
-        if np.where(np.isnan(phasegen))[0].size>0 or np.where(np.isinf(phasegen))[0].size>0 or np.where(np.isneginf(phasegen))[0].size>0:
+        if (
+            np.where(np.isnan(phasegen))[0].size > 0
+            or np.where(np.isinf(phasegen))[0].size > 0
+            or np.where(np.isneginf(phasegen))[0].size > 0
+        ):
             print("Error: The PH generator contains NaN or/and infinity values.")
             return False
-        if np.any(phasegen[~np.eye(self.nphases,dtype=bool)]<0):
+        if np.any(phasegen[~np.eye(self.nphases, dtype=bool)] < 0):
             print("Error: The PH generator contains negative off-diagonal values.")
             return False
-        if np.any(phasegen[np.eye(self.nphases,dtype=bool)]>0):
+        if np.any(phasegen[np.eye(self.nphases, dtype=bool)] > 0):
             print("Error: The PH generator contains positive diagonal values.")
             return False
-        if np.max(abs(np.add(np.sum(phasegen,axis=1),exitrates)))>1e-6:
-            print("Warning: An element of the exit rate vector deviates at least 1e-6 from the absolute row sum of the PH generator.")
+        if np.max(abs(np.add(np.sum(phasegen, axis=1), exitrates))) > 1e-6:
+            print(
+                "Warning: An element of the exit rate vector deviates at least 1e-6 from the absolute row sum of the PH generator."
+            )
             return True
-        #check exit rates
-        if self.nphases!=exitrates.size:
-            print("Error: The size of the exit rate vector does not match the number of phases.")
+        # check exit rates
+        if self.nphases != exitrates.size:
+            print(
+                "Error: The size of the exit rate vector does not match the number of phases."
+            )
             return False
-        if np.where(np.isnan(exitrates))[0].size>0 or np.where(np.isinf(exitrates))[0].size>0 or np.where(np.isneginf(exitrates))[0].size>0:
+        if (
+            np.where(np.isnan(exitrates))[0].size > 0
+            or np.where(np.isinf(exitrates))[0].size > 0
+            or np.where(np.isneginf(exitrates))[0].size > 0
+        ):
             print("Error: The exit rate vector contains NaN or/and infinity values.")
             return False
-        if np.any(exitrates<0):
+        if np.any(exitrates < 0):
             print("Error: The exit rate vector contains negative values.")
             return False
         return True
 
-    def __correctinitdist(self,initdist):
-        #returns True if the initial distribution
-        #is feasible
-        
-        if initdist.size!=self.nphases:
-            print("Error: The size of the initial distribution does not match the number of phases.")
+    def __correctinitdist(self, initdist):
+        # returns True if the initial distribution
+        # is feasible
+
+        if initdist.size != self.nphases:
+            print(
+                "Error: The size of the initial distribution does not match the number of phases."
+            )
             return False
-        if np.where(np.isnan(initdist))[0].size>0 or np.where(np.isinf(initdist))[0].size>0 or np.where(np.isneginf(initdist))[0].size>0:
-            print("Error: The initial distribution contains NaN or/and infinity values.")
+        if (
+            np.where(np.isnan(initdist))[0].size > 0
+            or np.where(np.isinf(initdist))[0].size > 0
+            or np.where(np.isneginf(initdist))[0].size > 0
+        ):
+            print(
+                "Error: The initial distribution contains NaN or/and infinity values."
+            )
             return False
-        if np.any(initdist<0.0):
+        if np.any(initdist < 0.0):
             print("Error: The initial distribution contains negative values.")
             return False
-        if np.abs(np.sum(initdist)-1.0)>1e-14:
-            print("Warning: Prior to adjusting for zeros in the observations the initial distribution summed to " + str(np.sum(initdist)))
+        if np.abs(np.sum(initdist) - 1.0) > 1e-14:
+            print(
+                "Warning: Prior to adjusting for zeros in the observations the initial distribution summed to "
+                + str(np.sum(initdist))
+            )
             return False
         return True
-        
+
     def __makedist(self):
-        
-        #set distribution type
-        if self.dtype=="general":
+
+        # set distribution type
+        if self.dtype == "general":
             self.__general()
-        elif self.dtype=="generlang":
+        elif self.dtype == "generlang":
             self.__generlang()
-        elif self.dtype=="hyperexp":
+        elif self.dtype == "hyperexp":
             self.__hyperexp()
-        elif self.dtype=="coxian":
+        elif self.dtype == "coxian":
             self.__coxian()
-        elif self.dtype=="gencoxian":
+        elif self.dtype == "gencoxian":
             self.__gencoxian()
-        elif self.dtype!="custom":
+        elif self.dtype != "custom":
             print("Error: Unknown distribution type.")
             return 1
 
     def __general(self):
-        #general phase-type distribution
-        self.initdist=np.matrix(np.ones((1,self.nphases)))
-        self.initphgen=np.matrix(np.ones((self.nphases,self.nphases)))
-        self.initexitrates=np.matrix(np.ones((self.nphases,1)))
+        # general phase-type distribution
+        self.initdist = np.matrix(np.ones((1, self.nphases)))
+        self.initphgen = np.matrix(np.ones((self.nphases, self.nphases)))
+        self.initexitrates = np.matrix(np.ones((self.nphases, 1)))
 
     def __generlang(self):
-        #generalized Erlang distribution        
-        self.initdist=np.matrix(np.zeros((1,self.nphases)))
-        self.initdist[0,0]=1
-        
-        self.initexitrates=np.matrix(np.zeros((self.nphases,1)))
-        self.initexitrates[self.nphases-1,0]=1
-        
-        self.initphgen=np.matrix(np.zeros((self.nphases,self.nphases)))
+        # generalized Erlang distribution
+        self.initdist = np.matrix(np.zeros((1, self.nphases)))
+        self.initdist[0, 0] = 1
+
+        self.initexitrates = np.matrix(np.zeros((self.nphases, 1)))
+        self.initexitrates[self.nphases - 1, 0] = 1
+
+        self.initphgen = np.matrix(np.zeros((self.nphases, self.nphases)))
         for i in range(self.nphases):
-            self.initphgen[i,i]=1
-            if i<(self.nphases-1):
-                self.initphgen[i,i+1]=1
-            
+            self.initphgen[i, i] = 1
+            if i < (self.nphases - 1):
+                self.initphgen[i, i + 1] = 1
+
     def __hyperexp(self):
-        #hyper-exponential distribution
-        self.initdist=np.matrix(np.ones((1,self.nphases)))
-        
-        self.initphgen=np.matrix(np.zeros((self.nphases,self.nphases)))
-        self.initexitrates=np.matrix(np.ones((self.nphases,1)))
+        # hyper-exponential distribution
+        self.initdist = np.matrix(np.ones((1, self.nphases)))
+
+        self.initphgen = np.matrix(np.zeros((self.nphases, self.nphases)))
+        self.initexitrates = np.matrix(np.ones((self.nphases, 1)))
         for i in range(self.nphases):
-            self.initphgen[i,i]=1
-        
+            self.initphgen[i, i] = 1
+
     def __coxian(self):
-        #Coxian distribution
-        self.initdist=np.matrix(np.zeros((1,self.nphases)))
-        self.initdist[0,0]=1
-        
-        self.initexitrates=np.matrix(np.ones((self.nphases,1)))
-        
-        self.initphgen=np.matrix(np.zeros((self.nphases,self.nphases)))
+        # Coxian distribution
+        self.initdist = np.matrix(np.zeros((1, self.nphases)))
+        self.initdist[0, 0] = 1
+
+        self.initexitrates = np.matrix(np.ones((self.nphases, 1)))
+
+        self.initphgen = np.matrix(np.zeros((self.nphases, self.nphases)))
         for i in range(self.nphases):
-            self.initphgen[i,i]=1
-            if i<(self.nphases-1):
-                self.initphgen[i,i+1]=1
+            self.initphgen[i, i] = 1
+            if i < (self.nphases - 1):
+                self.initphgen[i, i + 1] = 1
 
     def __gencoxian(self):
-        #generalized Coxian distribution
-        self.initdist=np.matrix(np.ones((1,self.nphases)))
-        self.initexitrates=np.matrix(np.ones((self.nphases,1)))
-        
-        self.initphgen=np.matrix(np.zeros((self.nphases,self.nphases)))
-        for i in range(self.nphases):
-            self.initphgen[i,i]=1
-            if i<(self.nphases-1):
-                self.initphgen[i,i+1]=1
+        # generalized Coxian distribution
+        self.initdist = np.matrix(np.ones((1, self.nphases)))
+        self.initexitrates = np.matrix(np.ones((self.nphases, 1)))
 
-    def __initialize(self):    
+        self.initphgen = np.matrix(np.zeros((self.nphases, self.nphases)))
+        for i in range(self.nphases):
+            self.initphgen[i, i] = 1
+            if i < (self.nphases - 1):
+                self.initphgen[i, i + 1] = 1
+
+    def __initialize(self):
         if self.seed is not None:
             np.random.seed(self.seed)
-        
-        #convert data types
+
+        # convert data types
         self.steps = int(self.steps)
         self.initpi = self.initdist.astype(float)
         self.initphgen = self.initphgen.astype(float)
         self.initexitrates = self.initexitrates.astype(float)
-        
-        #copy to output parameters    
-        self.pi = self.initdist      
+
+        # copy to output parameters
+        self.pi = self.initdist
         self.phgen = self.initphgen
-        self.exitrates = self.initexitrates    
-        
-        #initialize with random parameters
-        #accounting for the specified structure
+        self.exitrates = self.initexitrates
+
+        # initialize with random parameters
+        # accounting for the specified structure
         if self.randominit:
             self.__initrandom()
-                    
-        #create the cumulated probabilities and evaluation points
-        self.__computeyvector()    
-            
+
+        # create the cumulated probabilities and evaluation points
+        self.__computeyvector()
+
     def __initrandom(self):
-        #initialize with a random CPH distribution
-        
-        #make a random initial distribution (pi)
+        # initialize with a random CPH distribution
+
+        # make a random initial distribution (pi)
         nzidx = np.nonzero(self.pi)[1]
-        u = np.random.uniform(low=0.0,high=1.0,size=len(nzidx))
-        u = u/np.sum(u)
-        self.pi[0,nzidx] = u
-        
-        #make a random exit vector
+        u = np.random.uniform(low=0.0, high=1.0, size=len(nzidx))
+        u = u / np.sum(u)
+        self.pi[0, nzidx] = u
+
+        # make a random exit vector
         nzidx = np.nonzero(self.exitrates)[0]
         u = np.random.uniform(low=0.0, high=10.0, size=len(nzidx))
-        self.exitrates[nzidx,0] = u
-        
-        #make a random PH generator
+        self.exitrates[nzidx, 0] = u
+
+        # make a random PH generator
         for i in range(self.nphases):
-            nzidx = np.nonzero(self.phgen[i,:])[1]
+            nzidx = np.nonzero(self.phgen[i, :])[1]
             msk = nzidx != i
             nzidx = nzidx[msk]
             u = np.random.uniform(low=0.0, high=10.0, size=len(nzidx))
-            self.phgen[i,nzidx] = u
-            self.phgen[i,i] = -(np.sum(u)+self.exitrates[i,0])
-        
+            self.phgen[i, nzidx] = u
+            self.phgen[i, i] = -(np.sum(u) + self.exitrates[i, 0])
+
     def __estep(self):
-        #performs the E-step
-        
+        # performs the E-step
+
         self.bi = np.zeros(self.nphases)
         self.zi = np.zeros(self.nphases)
         self.ni = np.zeros(self.nphases)
-        self.nij = np.zeros((self.nphases,self.nphases))
-        
-        #pre-compute eTy and pieTyt
+        self.nij = np.zeros((self.nphases, self.nphases))
+
+        # pre-compute eTy and pieTyt
         self.eTy = [None] * self.steps
-        self.eTyut = [[None] * (self.steps+1) for _ in range(self.steps)]
-        self.pieTu = [[None] * (self.steps+1) for _ in range(self.steps)]
+        self.eTyut = [[None] * (self.steps + 1) for _ in range(self.steps)]
+        self.pieTu = [[None] * (self.steps + 1) for _ in range(self.steps)]
         self.pieTyt = np.zeros(self.steps)
         for k in range(self.steps):
-            self.eTy[k] = expm(self.phgen*self.y[k])
-            self.pieTyt[k] = np.matmul(self.pi,np.matmul(self.eTy[k],self.exitrates))
-            
-        for i in range(self.nphases):
-            
-            #bi
-            for k in range(self.steps):
-                eTyt = np.matmul(self.eTy[k],self.exitrates) 
-                Gy = ((self.pi[0,i]*eTyt[i,0])/self.pieTyt[k])
-                self.bi[i] += Gy*self.hy[k]
+            self.eTy[k] = expm(self.phgen * self.y[k])
+            self.pieTyt[k] = np.matmul(self.pi, np.matmul(self.eTy[k], self.exitrates))
 
-            #zi (denominator used in calculation of PH generator and exit rates)
+        for i in range(self.nphases):
+
+            # bi
             for k in range(self.steps):
-                #inner integral
-                innerint=0.0
-                if self.y[k]>0:
-                    u = np.linspace(0,self.y[k],self.steps+1)
-                    for l in range(0,len(u)-2,2):
-                        #inner fa
-                        self.pieTu[k][l] = np.matmul(self.pi,expm(self.phgen*u[l]))
-                        self.eTyut[k][l] = np.matmul(expm(self.phgen*(self.y[k]-u[l])),self.exitrates)
-                        inner_fa = self.pieTu[k][l][0,i]*self.eTyut[k][l][i,0]
-                        #inner fmid
-                        self.pieTu[k][l+1] = np.matmul(self.pi,expm(self.phgen*u[l+1]))
-                        self.eTyut[k][l+1] = np.matmul(expm(self.phgen*(self.y[k]-u[l+1])),self.exitrates)
-                        inner_fmid = self.pieTu[k][l+1][0,i]*self.eTyut[k][l+1][i,0]
-                        #inner fb
-                        self.pieTu[k][l+2] = np.matmul(self.pi,expm(self.phgen*u[l+2]))
-                        self.eTyut[k][l+2] = np.matmul(expm(self.phgen*(self.y[k]-u[l+2])),self.exitrates)
-                        inner_fb = self.pieTu[k][l+2][0,i]*self.eTyut[k][l+2][i,0]
-                        
-                        innerint += self.__simpsonsrule(u[l],u[l+2],inner_fa,inner_fmid,inner_fb)
-                #outer integral    
-                Gy = innerint/self.pieTyt[k]
-                self.zi[i] += Gy*self.hy[k]
-                        
-            #ni (numerator used in calculation of exit rates)
+                eTyt = np.matmul(self.eTy[k], self.exitrates)
+                Gy = (self.pi[0, i] * eTyt[i, 0]) / self.pieTyt[k]
+                self.bi[i] += Gy * self.hy[k]
+
+            # zi (denominator used in calculation of PH generator and exit rates)
             for k in range(self.steps):
-                pieTy = np.matmul(self.pi,self.eTy[k])
-                Gy = (pieTy[0,i]/self.pieTyt[k])*self.exitrates[i,0]
-                self.ni[i] += Gy*self.hy[k]
-                    
+                # inner integral
+                innerint = 0.0
+                if self.y[k] > 0:
+                    u = np.linspace(0, self.y[k], self.steps + 1)
+                    for l in range(0, len(u) - 2, 2):
+                        # inner fa
+                        self.pieTu[k][l] = np.matmul(self.pi, expm(self.phgen * u[l]))
+                        self.eTyut[k][l] = np.matmul(
+                            expm(self.phgen * (self.y[k] - u[l])), self.exitrates
+                        )
+                        inner_fa = self.pieTu[k][l][0, i] * self.eTyut[k][l][i, 0]
+                        # inner fmid
+                        self.pieTu[k][l + 1] = np.matmul(
+                            self.pi, expm(self.phgen * u[l + 1])
+                        )
+                        self.eTyut[k][l + 1] = np.matmul(
+                            expm(self.phgen * (self.y[k] - u[l + 1])), self.exitrates
+                        )
+                        inner_fmid = (
+                            self.pieTu[k][l + 1][0, i] * self.eTyut[k][l + 1][i, 0]
+                        )
+                        # inner fb
+                        self.pieTu[k][l + 2] = np.matmul(
+                            self.pi, expm(self.phgen * u[l + 2])
+                        )
+                        self.eTyut[k][l + 2] = np.matmul(
+                            expm(self.phgen * (self.y[k] - u[l + 2])), self.exitrates
+                        )
+                        inner_fb = (
+                            self.pieTu[k][l + 2][0, i] * self.eTyut[k][l + 2][i, 0]
+                        )
+
+                        innerint += self.__simpsonsrule(
+                            u[l], u[l + 2], inner_fa, inner_fmid, inner_fb
+                        )
+                # outer integral
+                Gy = innerint / self.pieTyt[k]
+                self.zi[i] += Gy * self.hy[k]
+
+            # ni (numerator used in calculation of exit rates)
+            for k in range(self.steps):
+                pieTy = np.matmul(self.pi, self.eTy[k])
+                Gy = (pieTy[0, i] / self.pieTyt[k]) * self.exitrates[i, 0]
+                self.ni[i] += Gy * self.hy[k]
+
             for j in range(self.nphases):
-                #nij (numerator used in calculation of PH generator)
-                if j!=i and self.phgen[i,j]>0.0:
+                # nij (numerator used in calculation of PH generator)
+                if j != i and self.phgen[i, j] > 0.0:
                     for k in range(self.steps):
-                        #inner integral
-                        innerint=0.0
-                        if self.y[k]>0:
-                            u = np.linspace(0,self.y[k],self.steps+1)
-                            for l in range(0,len(u)-2,2):
-                                #inner fa
-                                inner_fa = self.pieTu[k][l][0,i]*self.eTyut[k][l][j,0]
-                                #inner fmid
-                                inner_fmid = self.pieTu[k][l+1][0,i]*self.eTyut[k][l+1][j,0]
-                                #inner fb
-                                inner_fb = self.pieTu[k][l+2][0,i]*self.eTyut[k][l+2][j,0]
+                        # inner integral
+                        innerint = 0.0
+                        if self.y[k] > 0:
+                            u = np.linspace(0, self.y[k], self.steps + 1)
+                            for l in range(0, len(u) - 2, 2):
+                                # inner fa
+                                inner_fa = (
+                                    self.pieTu[k][l][0, i] * self.eTyut[k][l][j, 0]
+                                )
+                                # inner fmid
+                                inner_fmid = (
+                                    self.pieTu[k][l + 1][0, i]
+                                    * self.eTyut[k][l + 1][j, 0]
+                                )
+                                # inner fb
+                                inner_fb = (
+                                    self.pieTu[k][l + 2][0, i]
+                                    * self.eTyut[k][l + 2][j, 0]
+                                )
 
-                                innerint += self.__simpsonsrule(u[l],u[l+2],inner_fa,inner_fmid,inner_fb)
-                        #outer integral
-                        Gy = (self.phgen[i,j]/self.pieTyt[k])*innerint
-                        self.nij[i,j] += Gy*self.hy[k]
-        
+                                innerint += self.__simpsonsrule(
+                                    u[l], u[l + 2], inner_fa, inner_fmid, inner_fb
+                                )
+                        # outer integral
+                        Gy = (self.phgen[i, j] / self.pieTyt[k]) * innerint
+                        self.nij[i, j] += Gy * self.hy[k]
+
     def __mstep(self):
-        #performs the M-step
-        
-        #update the initial distribution
+        # performs the M-step
+
+        # update the initial distribution
         for i in range(self.nphases):
-            self.pi[0,i] = self.bi[i]
-        self.pi = self.pi/np.sum(self.pi)
-            
-        #update the exit rates
+            self.pi[0, i] = self.bi[i]
+        self.pi = self.pi / np.sum(self.pi)
+
+        # update the exit rates
         for i in range(self.nphases):
-            self.exitrates[i,0] = self.ni[i]/self.zi[i]
-        
-        #update the PH generator
+            self.exitrates[i, 0] = self.ni[i] / self.zi[i]
+
+        # update the PH generator
         for i in range(self.nphases):
-            sm=self.exitrates[i,0]
+            sm = self.exitrates[i, 0]
             for j in range(self.nphases):
-                if j!=i:
-                    self.phgen[i,j] = self.nij[i,j]/self.zi[i]
-                    sm += self.phgen[i,j]
-            self.phgen[i,i] = -sm
-                    
-        
+                if j != i:
+                    self.phgen[i, j] = self.nij[i, j] / self.zi[i]
+                    sm += self.phgen[i, j]
+            self.phgen[i, i] = -sm
+
     def __updateEpsilon(self):
-    #get the largest absolute difference in parameters
-        #eps1 = np.max(np.abs(np.divide(np.subtract(self.pi[np.nonzero(self.pi0)],self.pi0[np.nonzero(self.pi0)]),self.pi0[np.nonzero(self.pi0)])))
-        #eps2 = np.max(np.abs(np.divide(np.subtract(self.phgen[np.nonzero(self.phgen0)],self.phgen0[np.nonzero(self.phgen0)]),self.phgen0[np.nonzero(self.phgen0)])))
-        eps1 = np.max(np.abs(np.subtract(self.pi[np.nonzero(self.pi0)],self.pi0[np.nonzero(self.pi0)])))
-        eps2 = np.max(np.abs(np.subtract(self.phgen[np.nonzero(self.phgen0)],self.phgen0[np.nonzero(self.phgen0)])))
-        self.eps = np.max(np.array([eps1,eps2]))
-   
+        # get the largest absolute difference in parameters
+        # eps1 = np.max(np.abs(np.divide(np.subtract(self.pi[np.nonzero(self.pi0)],self.pi0[np.nonzero(self.pi0)]),self.pi0[np.nonzero(self.pi0)])))
+        # eps2 = np.max(np.abs(np.divide(np.subtract(self.phgen[np.nonzero(self.phgen0)],self.phgen0[np.nonzero(self.phgen0)]),self.phgen0[np.nonzero(self.phgen0)])))
+        eps1 = np.max(
+            np.abs(
+                np.subtract(
+                    self.pi[np.nonzero(self.pi0)], self.pi0[np.nonzero(self.pi0)]
+                )
+            )
+        )
+        eps2 = np.max(
+            np.abs(
+                np.subtract(
+                    self.phgen[np.nonzero(self.phgen0)],
+                    self.phgen0[np.nonzero(self.phgen0)],
+                )
+            )
+        )
+        self.eps = np.max(np.array([eps1, eps2]))
+
     def __computeyvector(self):
-        #pre-compute evaluation points for the
-        #numerical integral
-        
-        #make evaluation points
-        if self.disttype=="lognorm":
-            self.y = np.linspace(0,lognorm.ppf(self.truncation,self.param2,scale=np.exp(self.param1)),self.steps+1)
-        elif self.disttype=="gamma":
-            self.y = np.linspace(0,gamma.ppf(self.truncation,self.param1,scale=self.param2),self.steps+1)
-        elif self.disttype=="norm":
-            self.y = np.linspace(0,self.__normtruncquantfun(self.param1,self.param2),self.steps+1)
-        elif self.disttype=="weibull":
-            self.y = np.linspace(0,weibull_min.ppf(self.truncation,self.param1,scale=self.param2),self.steps+1)
-        elif self.disttype=="chisq":
-            self.y = np.linspace(0,chi2.ppf(self.truncation,self.param1),self.steps+1)
-        elif self.disttype=="ph":
-            d = dist(discrete=False,initdist=self.param1,phgen=self.param2)
-            self.y = np.linspace(0,d.getquantile(self.truncation),self.steps+1)
-        elif self.disttype=="per":
-            self.y = np.linspace(0,np.max(self.param2),self.steps+1)
-        
-        #compute cumulated probability segments
+        # pre-compute evaluation points for the
+        # numerical integral
+
+        # make evaluation points
+        if self.disttype == "lognorm":
+            self.y = np.linspace(
+                0,
+                lognorm.ppf(self.truncation, self.param2, scale=np.exp(self.param1)),
+                self.steps + 1,
+            )
+        elif self.disttype == "gamma":
+            self.y = np.linspace(
+                0,
+                gamma.ppf(self.truncation, self.param1, scale=self.param2),
+                self.steps + 1,
+            )
+        elif self.disttype == "norm":
+            self.y = np.linspace(
+                0, self.__normtruncquantfun(self.param1, self.param2), self.steps + 1
+            )
+        elif self.disttype == "weibull":
+            self.y = np.linspace(
+                0,
+                weibull_min.ppf(self.truncation, self.param1, scale=self.param2),
+                self.steps + 1,
+            )
+        elif self.disttype == "chisq":
+            self.y = np.linspace(
+                0, chi2.ppf(self.truncation, self.param1), self.steps + 1
+            )
+        elif self.disttype == "ph":
+            d = dist(discrete=False, initdist=self.param1, phgen=self.param2)
+            self.y = np.linspace(0, d.getquantile(self.truncation), self.steps + 1)
+        elif self.disttype == "per":
+            self.y = np.linspace(0, np.max(self.param2), self.steps + 1)
+
+        # compute cumulated probability segments
         self.hy = np.zeros(self.steps)
         for i in range(self.steps):
-            if self.disttype=="lognorm":
-                self.hy[i] = self.__lognorm_dcdf(self.y[i],self.y[i+1])
-            elif self.disttype=="gamma":
-                self.hy[i] = self.__gamma_dcdf(self.y[i],self.y[i+1])
-            elif self.disttype=="norm":
-                self.hy[i] = self.__normtrunc_dcdf(self.y[i],self.y[i+1])
-            elif self.disttype=="weibull":
-                self.hy[i] = self.__weib_dcdf(self.y[i],self.y[i+1])
-            elif self.disttype=="chisq":
-                self.hy[i] = self.__chisq_dcdf(self.y[i],self.y[i+1])
-            elif self.disttype=="ph":
-                self.hy[i] = self.__ph_dcdf(self.y[i],self.y[i+1])
-            elif self.disttype=="per":
-                self.hy[i] = self.__per_dcdf(self.y[i],self.y[i+1])
-        
-        #adjust y's for the E-step
+            if self.disttype == "lognorm":
+                self.hy[i] = self.__lognorm_dcdf(self.y[i], self.y[i + 1])
+            elif self.disttype == "gamma":
+                self.hy[i] = self.__gamma_dcdf(self.y[i], self.y[i + 1])
+            elif self.disttype == "norm":
+                self.hy[i] = self.__normtrunc_dcdf(self.y[i], self.y[i + 1])
+            elif self.disttype == "weibull":
+                self.hy[i] = self.__weib_dcdf(self.y[i], self.y[i + 1])
+            elif self.disttype == "chisq":
+                self.hy[i] = self.__chisq_dcdf(self.y[i], self.y[i + 1])
+            elif self.disttype == "ph":
+                self.hy[i] = self.__ph_dcdf(self.y[i], self.y[i + 1])
+            elif self.disttype == "per":
+                self.hy[i] = self.__per_dcdf(self.y[i], self.y[i + 1])
+
+        # adjust y's for the E-step
         self.y = self.y[1:]
-        
-    def __simpsonsrule(self,a,b,fa,fmid,fb):
-       #returns Simpson's 1/3 rule
-       #note: fmid = f((a+b)/2)
-       return ((b-a)/6)*(fa+4*fmid+fb)
-       
-    def lognormdensity(self,x):
-        #PDF of the log-normal distribution
-       return (1/(x*np.sqrt(self.param2)*np.sqrt(2*np.pi)))*np.exp(-(np.power(np.log(x)-self.param1,2)/(2*self.param2)))
 
-    def __lognorm_dcdf(self,x0,x1):
-        #Cumulated probability *between* x0 and x1
-        #of the log-normal distribution
-        if x0==0:
-            return norm.cdf((np.log(x1)-self.param1)/np.sqrt(self.param2))
-        else:
-            return norm.cdf((np.log(x1)-self.param1)/np.sqrt(self.param2))-norm.cdf((np.log(x0)-self.param1)/np.sqrt(self.param2))
+    def __simpsonsrule(self, a, b, fa, fmid, fb):
+        # returns Simpson's 1/3 rule
+        # note: fmid = f((a+b)/2)
+        return ((b - a) / 6) * (fa + 4 * fmid + fb)
 
-    def __gamma_dcdf(self,x0,x1):
-        #Cumulated probability *between* x0 and x1
-        #of the gamma distribution
-        if x0==0:
-            return gamma.cdf(x1,self.param1,scale=self.param2)
-        else:
-            return gamma.cdf(x1,self.param1,scale=self.param2)-gamma.cdf(x0,self.param1,scale=self.param2)
+    def lognormdensity(self, x):
+        # PDF of the log-normal distribution
+        return (1 / (x * np.sqrt(self.param2) * np.sqrt(2 * np.pi))) * np.exp(
+            -(np.power(np.log(x) - self.param1, 2) / (2 * self.param2))
+        )
 
-    def __normtrunc_dcdf(self,x0,x1):
-        #Cumulated probability *between* x0 and x1
-        #of the truncated normal distribution
-        
-        return (norm.cdf((x1-self.param1)/self.param2)-norm.cdf((x0-self.param1)/self.param2))/(1-norm.cdf((-self.param1)/self.param2))
+    def __lognorm_dcdf(self, x0, x1):
+        # Cumulated probability *between* x0 and x1
+        # of the log-normal distribution
+        if x0 == 0:
+            return norm.cdf((np.log(x1) - self.param1) / np.sqrt(self.param2))
+        else:
+            return norm.cdf(
+                (np.log(x1) - self.param1) / np.sqrt(self.param2)
+            ) - norm.cdf((np.log(x0) - self.param1) / np.sqrt(self.param2))
 
-    def __weib_dcdf(self,x0,x1):
-        #Cumulated probability *between* x0 and x1
-        #of the Weibull distribution
-        
-        if x0==0:
-            return weibull_min.cdf(x1,self.param1,scale=self.param2)
+    def __gamma_dcdf(self, x0, x1):
+        # Cumulated probability *between* x0 and x1
+        # of the gamma distribution
+        if x0 == 0:
+            return gamma.cdf(x1, self.param1, scale=self.param2)
         else:
-            return weibull_min.cdf(x1,self.param1,scale=self.param2)-weibull_min.cdf(x0,self.param1,scale=self.param2)
-    
-    def __chisq_dcdf(self,x0,x1):
-        #Cumulated probability *between* x0 and x1
-        #of the Chi-square distribution
-        
-        if x0==0:
-            return chi2.cdf(x1,self.param1)
+            return gamma.cdf(x1, self.param1, scale=self.param2) - gamma.cdf(
+                x0, self.param1, scale=self.param2
+            )
+
+    def __normtrunc_dcdf(self, x0, x1):
+        # Cumulated probability *between* x0 and x1
+        # of the truncated normal distribution
+
+        return (
+            norm.cdf((x1 - self.param1) / self.param2)
+            - norm.cdf((x0 - self.param1) / self.param2)
+        ) / (1 - norm.cdf((-self.param1) / self.param2))
+
+    def __weib_dcdf(self, x0, x1):
+        # Cumulated probability *between* x0 and x1
+        # of the Weibull distribution
+
+        if x0 == 0:
+            return weibull_min.cdf(x1, self.param1, scale=self.param2)
         else:
-            return chi2.cdf(x1,self.param1)-chi2.cdf(x0,self.param1)
-        
-    def __ph_dcdf(self,x0,x1):
-        #Cumulated probability *between* x0 and x1
-        #of the PH distribution
-        
-        if x0==0:
-            return 1-np.sum(np.matmul(self.param1,expm(self.param2*x1)))
+            return weibull_min.cdf(
+                x1, self.param1, scale=self.param2
+            ) - weibull_min.cdf(x0, self.param1, scale=self.param2)
+
+    def __chisq_dcdf(self, x0, x1):
+        # Cumulated probability *between* x0 and x1
+        # of the Chi-square distribution
+
+        if x0 == 0:
+            return chi2.cdf(x1, self.param1)
         else:
-            return np.sum(np.matmul(self.param1,expm(self.param2*x0)))-np.sum(np.matmul(self.param1,expm(self.param2*x1)))
-        
-    def __per_dcdf(self,x0,x1):
-        #Cumulated probability *between* x0 and x1
-        #for percentiles provided by the user
-        if x0==0:
+            return chi2.cdf(x1, self.param1) - chi2.cdf(x0, self.param1)
+
+    def __ph_dcdf(self, x0, x1):
+        # Cumulated probability *between* x0 and x1
+        # of the PH distribution
+
+        if x0 == 0:
+            return 1 - np.sum(np.matmul(self.param1, expm(self.param2 * x1)))
+        else:
+            return np.sum(np.matmul(self.param1, expm(self.param2 * x0))) - np.sum(
+                np.matmul(self.param1, expm(self.param2 * x1))
+            )
+
+    def __per_dcdf(self, x0, x1):
+        # Cumulated probability *between* x0 and x1
+        # for percentiles provided by the user
+        if x0 == 0:
             return self.__per_cdf(x1)
         else:
-            return self.__per_cdf(x1)-self.__per_cdf(x0)
-    
-    def __per_cdf(self,x):
-        #Cumulated probability for percentiles
-        #provided by the user
-        idx1 = np.min(np.where(self.param2>=x))
-        if idx1>0:
-            idx0=idx1-1
-            return self.param1[idx0]+(self.param1[idx1]-self.param1[idx0])*((x-self.param2[idx0])/(self.param2[idx1]-self.param2[idx0]))
-        else:
-            return self.param1[idx1]*(x/self.param2[idx1])
+            return self.__per_cdf(x1) - self.__per_cdf(x0)
 
-    def __normtruncquantfun(self,mu,sigma):
-        #numerical quantile function for the truncated
-        #normal distribution
-        cmp=1-norm.cdf(-mu/sigma)
-        x=np.max(np.array([sigma*self.tolerance,mu]))
-        trc=(norm.cdf((x-mu)/sigma)-norm.cdf(-mu/sigma))/cmp
-        dd = sigma*self.tolerance
-        iter=0
-        while np.abs(trc-self.truncation)>self.tolerance and iter<self.itermax:
-                x1=x+dd
-                f1 = (norm.cdf((x1-mu)/sigma)-norm.cdf(-mu/sigma))/cmp
-                grad = (f1-trc)/dd
-                x = x - (trc-self.truncation)/grad
-                trc = (norm.cdf((x-mu)/sigma)-norm.cdf(-mu/sigma))/cmp
-                iter+=1          
-        return x            
+    def __per_cdf(self, x):
+        # Cumulated probability for percentiles
+        # provided by the user
+        idx1 = np.min(np.where(self.param2 >= x))
+        if idx1 > 0:
+            idx0 = idx1 - 1
+            return self.param1[idx0] + (self.param1[idx1] - self.param1[idx0]) * (
+                (x - self.param2[idx0]) / (self.param2[idx1] - self.param2[idx0])
+            )
+        else:
+            return self.param1[idx1] * (x / self.param2[idx1])
+
+    def __normtruncquantfun(self, mu, sigma):
+        # numerical quantile function for the truncated
+        # normal distribution
+        cmp = 1 - norm.cdf(-mu / sigma)
+        x = np.max(np.array([sigma * self.tolerance, mu]))
+        trc = (norm.cdf((x - mu) / sigma) - norm.cdf(-mu / sigma)) / cmp
+        dd = sigma * self.tolerance
+        iter = 0
+        while np.abs(trc - self.truncation) > self.tolerance and iter < self.itermax:
+            x1 = x + dd
+            f1 = (norm.cdf((x1 - mu) / sigma) - norm.cdf(-mu / sigma)) / cmp
+            grad = (f1 - trc) / dd
+            x = x - (trc - self.truncation) / grad
+            trc = (norm.cdf((x - mu) / sigma) - norm.cdf(-mu / sigma)) / cmp
+            iter += 1
+        return x
