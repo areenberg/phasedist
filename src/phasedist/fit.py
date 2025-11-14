@@ -9,8 +9,22 @@ from phasedist.dist import dist
 
 class fit:
     """
-    Fit continuous or discrete-time phase-type
-    distributions.
+    Fit continuous or discrete-time phase-type (PH) distributions to data.
+
+    This class provides a unified interface for estimating the parameters of
+    continuous (CPH) or discrete (DPH) phase-type distributions using the
+    Expectation-Maximization (EM) algorithm. Users may specify initial
+    parameters, impose specific structural constraints (e.g., Coxian,
+    hyper-exponential), or rely on random initialization.
+
+    The fitted distribution is returned as a :class:`phasedist.dist.dist`
+    object that supports evaluation of densities, CDFs, quantiles, and random
+    sampling.
+
+    Notes
+    -----
+    Input validation is performed automatically. If validation fails,
+    program execution terminates.
     """
     
     def __init__(
@@ -57,11 +71,6 @@ class fit:
             Maximum number of iterations.
         verbose : bool, default=False
             If True, prints progress output during fitting.
-
-        Notes
-        -----
-        Input validation is performed automatically. If validation fails,
-        program execution terminates.
         """
 
         # set parameters
@@ -89,51 +98,152 @@ class fit:
     # ----------------------------------------------------------------------
 
     def getinitdist(self) -> np.array:
-        # returns the initial distribution
+        """
+        Return the fitted initial distribution vector.
+
+        Returns
+        -------
+        np.array
+            Row vector representing the initial phase probabilities.
+        """        
         return self.dist.getinitdist()
 
     def getphasegen(self) -> np.array:
-        # returns the phase-type generator
+        """
+        Return the fitted phase-type generator matrix.
+
+        Returns
+        -------
+        np.array
+            Sub-intensity matrix (CPH) or sub-transition matrix (DPH).
+        """
         return self.dist.getphasegen()
 
     def getexitrates(self) -> np.array:
-        # returns the exit rate vector
+        """
+        Return the fitted exit rate vector.
+
+        Returns
+        -------
+        np.array
+            Column vector of exit rates from each phase.
+        """
         return self.dist.getexitrates()
 
     def getmean(self) -> float:
-        # returns the mean
+        """
+        Return the mean of the fitted PH distribution.
+
+        Returns
+        -------
+        float
+            The mean of the distribution.
+        """
         return self.dist.getmean()
 
     def getvar(self) -> float:
-        # returns the variance
+        """
+        Return the variance of the fitted PH distribution.
+
+        Returns
+        -------
+        float
+            The variance of the distribution.
+        """
         return self.dist.getvar()
 
     def getdensity(self, x: float) -> float:
-        # returns the density
+        """
+        Evaluate the fitted distribution's density at point ``x``.
+
+        Parameters
+        ----------
+        x : float
+            Evaluation point.
+
+        Returns
+        -------
+        float
+            Probability density (CPH) or probability mass (DPH).
+        """
         return self.dist.getdensity(x)
 
     def getcumprob(self, x: float) -> float:
-        # returns the cumulated probability P(X<=x)
+        """
+        Evaluate the fitted cumulative distribution function at point ``x``.
+
+        Parameters
+        ----------
+        x : float
+            Evaluation point.
+
+        Returns
+        -------
+        float
+            Cumulative distribution value ``P(X ≤ x)``.
+        """
         return self.dist.getcumprob(x)
 
     def getquantile(self, p: float, tolerance: float = 1e-6) -> int | float:
-        # returns the quantile corresponding to
-        # the probability 'p'
+        """
+        Compute the ``p``-quantile of the fitted PH distribution.
+
+        Parameters
+        ----------
+        p : float
+            Cumulative probability in the interval [0, 1].
+        tolerance : float, optional
+            Numerical tolerance for the quantile search.
+
+        Returns
+        -------
+        int or float
+            The ``p``-quantile.
+        """
         return self.dist.getquantile(p, tolerance)
 
     def getloglik(self) -> float:
+        """
+        Return the log-likelihood for the fitted PH model.
+
+        Returns
+        -------
+        float
+            Log-likelihood evaluated at the fitted parameters.
+        """        
         return self.d.getloglik()
 
     def getaic(self) -> float:
-        # returns the Akaike's Information Criteria (AIC)
+        """
+        Compute Akaike's Information Criterion (AIC).
+
+        Returns
+        -------
+        float
+            The AIC value of the fitted model.
+        """
         return self.d.getaic()
 
     def getbic(self) -> float:
-        # returns the Bayesian Information Criteria (BIC)
+        """
+        Compute Bayesian Information Criterion (BIC).
+
+        Returns
+        -------
+        float
+            The BIC value of the fitted model.
+        """
         return self.d.getbic()
 
     def getdist(self) -> dist:
-        # returns a phase-type distribution object
+        """
+        Return the fitted PH distribution as a :class:`dist` object.
+
+        Returns
+        -------
+        dist
+            Fully constructed phase-type distribution object.
+        """
         return self.dist
 
     def plot(
@@ -146,7 +256,31 @@ class fit:
         labelfitted: str = "Fitted CDF",
         labelempirical: str = "Empirical CDF",
     ) -> None:
-        # compares the empirical and theoretical CDFs in a plot
+        """
+        Plot empirical and fitted cumulative distribution functions (CDFs).
+
+        Parameters
+        ----------
+        confint : bool, default=True
+            Whether to include confidence intervals for the empirical CDF.
+        confidence : float, default=0.95
+            Confidence level for the intervals.
+        xlabel : str, default="x"
+            Label for the x-axis.
+        ylabel : str, default="CDF"
+            Label for the y-axis.
+        title : str, default="Empirical and Fitted CDFs"
+            Plot title.
+        labelfitted : str, default="Fitted CDF"
+            Legend label for the fitted CDF.
+        labelempirical : str, default="Empirical CDF"
+            Legend label for the empirical CDF.
+
+        Returns
+        -------
+        None
+            Displays the plot.
+        """
 
         obssorted = np.sort(self.obs)
 
@@ -252,8 +386,14 @@ class fit:
     # ----------------------------------------------------------------------
 
     def __checkinputs(self) -> bool:
-        # check the feasibility of all input parameters
-        # before proceeding
+        """
+        Validate input parameters prior to fitting.
+
+        Returns
+        -------
+        bool
+            True if all inputs are valid; otherwise False.
+        """
 
         # check data types and convert if necesarry
         if isinstance(self.obs, list):
@@ -340,6 +480,14 @@ class fit:
         return True
 
     def __fitdist(self) -> int:
+        """
+        Fit the PH distribution parameters using the chosen model type and EM algorithm.
+
+        Returns
+        -------
+        int
+            0 if successful, 1 otherwise.
+        """
 
         # set distribution type
         if self.dtype == "general":
@@ -410,13 +558,17 @@ class fit:
             return 1
 
     def __general(self) -> None:
-        # general phase-type distribution
+        """
+        Initialize parameters for a fully general PH distribution.
+        """
         self.initdist = np.matrix(np.ones((1, self.nphases)))
         self.initphgen = np.matrix(np.ones((self.nphases, self.nphases)))
         self.initexitrates = np.matrix(np.ones((self.nphases, 1)))
 
     def __generlang(self) -> None:
-        # generalized Erlang distribution
+        """
+        Initialize parameters for a generalized Erlang distribution.
+        """
         self.initdist = np.matrix(np.zeros((1, self.nphases)))
         self.initdist[0, 0] = 1
 
@@ -430,7 +582,9 @@ class fit:
                 self.initphgen[i, i + 1] = 1
 
     def __hyperexp(self) -> None:
-        # hyper-exponential distribution
+        """
+        Initialize parameters for a hyper-exponential distribution.
+        """
         self.initdist = np.matrix(np.ones((1, self.nphases)))
 
         self.initphgen = np.matrix(np.zeros((self.nphases, self.nphases)))
@@ -439,7 +593,9 @@ class fit:
             self.initphgen[i, i] = 1
 
     def __coxian(self) -> None:
-        # Coxian distribution
+        """
+        Initialize parameters for a Coxian distribution.
+        """
         self.initdist = np.matrix(np.zeros((1, self.nphases)))
         self.initdist[0, 0] = 1
 
@@ -452,7 +608,9 @@ class fit:
                 self.initphgen[i, i + 1] = 1
 
     def __gencoxian(self) -> None:
-        # generalized Coxian distribution
+        """
+        Initialize parameters for a generalized Coxian distribution.
+        """
         self.initdist = np.matrix(np.ones((1, self.nphases)))
         self.initexitrates = np.matrix(np.ones((self.nphases, 1)))
 
@@ -463,12 +621,21 @@ class fit:
                 self.initphgen[i, i + 1] = 1
 
     def __checkzeros(self):
-        # check for zeros in observations
+        """
+        Detect zero observations and compute their empirical proportion.
+
+        Returns
+        -------
+        tuple
+            (nonzero observations, proportion of zeros)
+        """
         nz = np.nonzero(self.obs)[0]
         return self.obs[nz], 1 - (nz.size / self.obs.size)
 
     def __checkfit(self) -> None:
-        # check feasibility of fitted parameters
+        """
+        Check feasibility of the fitted PH parameters.
+        """
         self.fitaccepted = True
         if self.__correctphgen(
             self.d.getphasegen(), self.d.getexitrates()
@@ -478,8 +645,21 @@ class fit:
             self.fitaccepted = False
 
     def __correctphgen(self, phasegen: np.array, exitrates: np.array) -> bool:
-        # returns True if the PH generator and
-        # exit rates are feasible
+        """
+        Validate a PH generator matrix and exit rate vector.
+
+        Parameters
+        ----------
+        phasegen : np.array
+            Candidate PH generator matrix.
+        exitrates : np.array
+            Candidate exit rate vector.
+
+        Returns
+        -------
+        bool
+            True if the structure is feasible.
+        """
 
         # check PH generator
         if phasegen.shape[0] != phasegen.shape[1] or phasegen.shape[0] != self.nphases:
@@ -527,8 +707,19 @@ class fit:
         return True
 
     def __correctinitdist(self, initdist: np.array) -> bool:
-        # returns True if the initial distribution
-        # is feasible
+        """
+        Validate an initial distribution vector.
+
+        Parameters
+        ----------
+        initdist : np.array
+            Candidate initial distribution.
+
+        Returns
+        -------
+        bool
+            True if valid.
+        """
 
         if initdist.size != self.nphases:
             print(
