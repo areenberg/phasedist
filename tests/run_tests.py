@@ -128,4 +128,9 @@ if not round(phdist.getdensity(x=1),3)==0.322:
     sys.exit("Validation test failed at estimation of density.")
 if phdist.getrandom(size=1)>6.0:
     sys.exit("Validation test failed since an unlikely high number was sampled. Try running the test again. If the problem persist, check your installation.")
-    
+
+#---------------------------------------------------------------------------
+# FINAL VALIDATION
+#---------------------------------------------------------------------------
+
+print("All tests completed successfully!")
