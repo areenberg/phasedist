@@ -1,15 +1,16 @@
 import numpy as np
 from scipy.linalg import expm
 
-# REFERENCES
-
-# Bladt, M., & Nielsen, B. F. (2017). Matrix-Exponential Distributions in Applied Probability.
-# Springer. https://doi.org/10.1007/978-1-4939-7049-0
-
 
 class fitcph:
-    # fit continuous-time phase-type distributions using the
-    # EM algorithm from p. 678 Bladt and Nielsen (2017).
+    """
+    Fits continuous-time phase-type distributions using the
+    EM algorithm from p. 678 Bladt and Nielsen (2017).
+
+    References:
+        Bladt, M., & Nielsen, B. F. (2017). Matrix-Exponential Distributions in Applied Probability.
+        Springer. https://doi.org/10.1007/978-1-4939-7049-0
+    """
 
     def __init__(
         self,
@@ -23,6 +24,20 @@ class fitcph:
         itermax=1e6,
         verbose=False,
     ):
+        """
+        Initializes the continuous-time phase-type distribution fitter.
+
+        Args:
+            obs (array-like): Observed realizations of the phase-type distribution.
+            initpi (ndarray): Initial distribution vector.
+            initphgen (ndarray): Initial phase-type generator matrix.
+            initexitrates (ndarray): Initial exit rate vector.
+            randominit (bool): Whether to randomize initial parameters.
+            seed (int): Random seed for reproducibility.
+            tolerance (float): Convergence tolerance for the EM algorithm.
+            itermax (int): Maximum number of EM iterations.
+            verbose (bool): Whether to print intermediate fitting information.
+        """
         self.obs = obs  # observed realizations of the PH distribution
         self.initpi = initpi
         self.initphgen = initphgen
@@ -36,6 +51,15 @@ class fitcph:
         self.__initialize()
 
     def fit(self):
+        """
+        Fits the continuous-time phase-type distribution using the EM algorithm.
+
+        Args:
+            None
+
+        Returns:
+            None
+        """
         # fit the CPH distribution
         iter = 0
         eps = np.inf
@@ -44,7 +68,6 @@ class fitcph:
             self.__estep()
             self.__mstep()
             eps = self.loglikelihood - loglik0  # loglik is evaluated within the E-step
-            # print(self.loglikelihood,loglik0,eps)
             loglik0 = self.loglikelihood
             iter += 1
             if self.verbose and iter % 25 == 0:
@@ -66,87 +89,177 @@ class fitcph:
         self.__updatelikelihood()  # evaluate final loglik
 
     def getinitdist(self):
-        # returns the initial distribution
+        """
+        Returns the initial distribution vector.
+
+        Args:
+            None
+
+        Returns:
+            ndarray: The initial distribution.
+        """
         return self.pi
 
     def getphasegen(self):
-        # returns the phase-type generator
+        """
+        Returns the phase-type generator matrix.
+
+        Args:
+            None
+
+        Returns:
+            ndarray: The phase-type generator.
+        """
         return self.phgen
 
     def getexitrates(self):
-        # returns the exit rate vector
+        """
+        Returns the exit rate vector.
+
+        Args:
+            None
+
+        Returns:
+            ndarray: The exit rates.
+        """
         return self.exitrates
 
     def getmean(self):
-        # returns the mean of the CPH
+        """
+        Returns the mean of the continuous-time phase-type distribution.
+
+        Args:
+            None
+
+        Returns:
+            float: The mean of the distribution.
+        """
         return -np.sum(np.matmul(self.pi, np.linalg.inv(self.phgen)))
 
     def getvar(self):
-        # returns the variance of the CPH
+        """
+        Returns the variance of the continuous-time phase-type distribution.
+
+        Args:
+            None
+
+        Returns:
+            float: The variance of the distribution.
+        """
         phinv = np.linalg.inv(self.phgen)
         return 2 * np.sum(
             np.matmul(self.pi, np.linalg.matrix_power(phinv, 2))
         ) - np.power(np.sum(np.matmul(self.pi, phinv)), 2)
 
     def getdensity(self, x):
-        # returns the density of the CPH
+        """
+        Returns the distribution's density, f(x).
+
+        Args:
+            x (float): The distribution's density will be computed at time of x.
+
+        Returns:
+            float: The computed density.
+        """
         return np.matmul(
             self.pi, np.matmul(expm(self.phgen * x), self.exitrates)
         ).item()
 
     def getcumprob(self, x):
-        # returns the cumulated probability P(X<=x) of the CPH
+        """
+        Returns the cumulative distribution function P(X ≤ x).
+
+        Args:
+            x (float): The time at which the cumulative probability is evaluated.
+
+        Returns:
+            float: The cumulative probability.
+        """
         return 1 - np.sum(np.matmul(self.pi, expm(self.phgen * x)))
 
     def getloglik(self):
+        """
+        Returns the log-likelihood of the fitted model.
+
+        Args:
+            None
+
+        Returns:
+            float: The log-likelihood value.
+        """
         return self.loglikelihood
 
     def getaic(self):
-        # returns the Akaike's Information Criteria (AIC)
+        """
+        Returns Akaike's Information Criterion (AIC).
+
+        Args:
+            None
+
+        Returns:
+            float: The AIC value.
+        """
         return -2 * self.loglikelihood + 2 * self.nparam
 
     def getbic(self):
-        # returns the Bayesian Information Criteria (BIC)
+        """
+        Returns the Bayesian Information Criterion (BIC).
+
+        Args:
+            None
+
+        Returns:
+            float: The BIC value.
+        """
         return -2 * self.loglikelihood + self.nparam * np.log(len(self.obs))
 
     def __initialize(self):
+        """
+        Initializes internal parameters and prepares the model for fitting.
+
+        Args:
+            None
+
+        Returns:
+            None
+        """
         if self.seed is not None:
             np.random.seed(self.seed)
 
-        # convert data types
-        self.obs = self.obs.astype(float)  # observations must be float
+        self.obs = self.obs.astype(float)
         self.initpi = self.initpi.astype(float)
         self.initphgen = self.initphgen.astype(float)
         self.initexitrates = self.initexitrates.astype(float)
         self.identity = np.eye(self.nphases)
 
-        # copy to output parameters
         self.pi = self.initpi
         self.phgen = self.initphgen
         self.exitrates = self.initexitrates
 
-        # initialize with random parameters
-        # accounting for the specified structure
         if self.randominit:
             self.__initrandom()
-        # self.__updatelikelihood() #compute the log-likelihood
+
         self.__countParameters()
 
     def __initrandom(self):
-        # initialize with a random CPH distribution
+        """
+        Randomly initializes the parameters of the phase-type distribution.
 
-        # make a random initial distribution (pi)
+        Args:
+            None
+
+        Returns:
+            None
+        """
         nzidx = np.nonzero(self.pi)[1]
         u = np.random.uniform(low=0.0, high=1.0, size=len(nzidx))
         u = u / np.sum(u)
         self.pi[0, nzidx] = u
 
-        # make a random exit vector
         nzidx = np.nonzero(self.exitrates)[0]
         u = np.random.uniform(low=0.0, high=10.0, size=len(nzidx))
         self.exitrates[nzidx, 0] = u
 
-        # make a random PH generator
         for i in range(self.nphases):
             nzidx = np.nonzero(self.phgen[i, :])[1]
             msk = nzidx != i
@@ -156,8 +269,15 @@ class fitcph:
             self.phgen[i, i] = -(np.sum(u) + self.exitrates[i, 0])
 
     def __estep(self):
-        # performs the E-step
+        """
+        Performs the expectation (E) step of the EM algorithm.
 
+        Args:
+            None
+
+        Returns:
+            None
+        """
         self.bi = np.zeros(self.nphases)
         self.zi = np.zeros(self.nphases)
         self.ni = np.zeros(self.nphases)
@@ -165,35 +285,35 @@ class fitcph:
         self.loglikelihood = 0.0
 
         for y in self.obs:
-            self.__Jmatrix(y)  # update J matrix and exp(T*y)
+            self.__Jmatrix(y)
             eTyt = np.matmul(self.eTy, self.exitrates)
             pieTy = np.matmul(self.pi, self.eTy)
             pieTyt = np.matmul(pieTy, self.exitrates)
             self.loglikelihood += np.log(pieTyt)
             for i in range(self.nphases):
-                # compute B_i (expected number of times starting in phase i)
                 self.bi[i] += (self.pi[0, i] * eTyt[i, 0]) / pieTyt
-                # compute Z_i (expected time spend in phase i)
                 self.zi[i] += self.Jmat[i, i] / pieTyt
-                # compute N_ij (expected transitions between phase i and j)
                 for j in range(self.nphases):
                     if j != i:
                         self.nij[i, j] += (self.phgen[i, j] * self.Jmat[j, i]) / pieTyt
-                # compute N_i (expected number of transitions to absorbing state from phase i)
                 self.ni[i] += (pieTy[0, i] * self.exitrates[i, 0]) / pieTyt
 
     def __mstep(self):
-        # performs the M-step
+        """
+        Performs the maximization (M) step of the EM algorithm.
 
-        # update the initial distribution
+        Args:
+            None
+
+        Returns:
+            None
+        """
         for i in range(self.nphases):
             self.pi[0, i] = self.bi[i] / len(self.obs)
 
-        # update the exit rates
         for i in range(self.nphases):
             self.exitrates[i, 0] = self.ni[i] / self.zi[i]
 
-        # update the PH generator
         for i in range(self.nphases):
             sm = self.exitrates[i, 0]
             for j in range(self.nphases):
@@ -203,14 +323,29 @@ class fitcph:
             self.phgen[i, i] = -sm
 
     def __updatelikelihood(self):
+        """
+        Updates the log-likelihood based on current model parameters.
+
+        Args:
+            None
+
+        Returns:
+            None
+        """
         self.loglikelihood = 0.0
         for y in self.obs:
             self.loglikelihood += np.log(self.getdensity(y))
 
     def __Jmatrix(self, y):
-        # computes the matrix-function 'J' as well as
-        # the matrix 'exp(T*y)' for the observations 'y'
+        """
+        Computes the J matrix and matrix exponential exp(Ty).
 
+        Args:
+            y (float): Observation value.
+
+        Returns:
+            None
+        """
         mat = expm(
             np.block(
                 [
@@ -225,26 +360,35 @@ class fitcph:
         self.Jmat = mat[: self.nphases, self.nphases : 2 * self.nphases]
 
     def __countParameters(self):
-        # count the number of independent parameters
+        """
+        Counts the number of independent model parameters.
+
+        Args:
+            None
+
+        Returns:
+            None
+        """
         phg = 0
-        for i in range(
-            self.nphases
-        ):  # independent parameters in each phase of the PH generator and exit vector
+        for i in range(self.nphases):
             phg += (
                 np.count_nonzero(self.phgen[i, :])
                 + np.count_nonzero(self.exitrates[i, 0])
                 - 1
-            )  # subtract the diagonal element
-        self.nparam = phg + (
-            np.count_nonzero(self.pi) - 1
-        )  # add the number of independent parameters in the initial distribution
+            )
+        self.nparam = phg + (np.count_nonzero(self.pi) - 1)
 
     def __polish(self):
-        # polish parameters
+        """
+        Normalizes and enforces consistency constraints on model parameters.
 
-        # normalize initial distribution
+        Args:
+            None
+
+        Returns:
+            None
+        """
         self.pi = self.pi / np.sum(self.pi)
-        # compute diagonal for the PH generator
         np.fill_diagonal(self.phgen, 0.0)
         v = np.add(np.sum(self.phgen, axis=1), self.exitrates)
         np.fill_diagonal(self.phgen, -v)
