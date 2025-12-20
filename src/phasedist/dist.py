@@ -25,20 +25,20 @@ class dist:
         Initialize a phase-type distribution object.
 
         Args:
-            discrete (bool):
+            discrete (bool, default=False):
                 If True, the distribution is treated as a discrete
                 phase-type (DPH) distribution. If False, it is treated as a
-                continuous phase-type (CPH) distribution. Defaults to False.
+                continuous phase-type (CPH) distribution.
             initdist (np.array):
                 The initial distribution vector (row vector). Must have
                 length equal to the number of phases. If None, no explicit
-                initial distribution is enforced. Defaults to None.
+                initial distribution is enforced.
             phgen (np.array):
                 The PH generator matrix. For CPH this must be a sub-intensity
                 matrix; for DPH, a sub-transition matrix. Its dimension
-                defines the number of phases. Defaults to None.
+                defines the number of phases.
             seed (int):
-                Random seed used for reproducible sampling. Defaults to None.
+                Random seed used for reproducible sampling.
 
         Notes
         -----
@@ -175,7 +175,7 @@ class dist:
 
         Args:
             p (float): The cumulated probability.
-            tolerance (float, optional): Tolerance for the numerical algorithm. Defaults to 1e-9.
+            tolerance (float, default=1e-9): Tolerance for the numerical algorithm.
 
         Returns:
             int or float: The numerically evaluated quantile.
@@ -194,7 +194,7 @@ class dist:
         Samples a pseudo-random number from the distribution.
 
         Args:
-            size (int, optional): The sample size. Defaults to 1.
+            size (int, default=1): The sample size.
 
         Returns:
             int | float: The generated random number.
@@ -221,7 +221,7 @@ class dist:
         Plots the density or cumulated distribution function.
 
         Args:
-            type (str, optional): The plotted function ("pdf" or "cdf"). Defaults to "pdf".
+            type (str, default="pdf"): The plotted function ("pdf" or "cdf").
 
         Returns:
             None
@@ -379,7 +379,7 @@ class dist:
 
         Args:
             p (float): The cumulated probability.
-            tolerance (float, optional): The tolerance used in the numerical algorithm. Defaults to 1e-9.
+            tolerance (float, default=1e-9): The tolerance used in the numerical algorithm.
 
         Returns:
             int | float: The computed quantile.
@@ -438,8 +438,8 @@ class dist:
 
         Args:
             prob (float): The cumulated probability, P(X<=x).
-            tol (float, optional): The tolerance for the numerical algorithm. Defaults to 1e-9.
-            itermax (int, optional): The maximum number of iterations. Defaults to 1000000.
+            tol (float, default=1e-9): The tolerance for the numerical algorithm.
+            itermax (int, default=1000000): The maximum number of iterations.
 
         Returns:
             float: The numerically evaluated quantile.
@@ -479,7 +479,7 @@ class dist:
 
         Args:
             prob (float): The cumulated probability, P(X<=x).
-            itermax (int, optional): The maximum number of iterations. Defaults to 1000000.
+            itermax (int, default=1000000): The maximum number of iterations.
 
         Returns:
             int: The computed quantile.
