@@ -8,8 +8,10 @@ from typing import Union
 
 class dist:
     """
-    Phase-type distribution object for computing various metrics
-    and generating simulated samples
+    Phase-type distribution object that sets up a discrete or continuous phase-type (PH)
+    distribution based on a provided initial distribution vector and
+    phase-type generator matrix. The object supports evaluation of
+    density, cumulative distribution, quantiles, and random sampling.
     """
 
     def __init__(
@@ -22,27 +24,21 @@ class dist:
         """
         Initialize a phase-type distribution object.
 
-        This constructor sets up a discrete or continuous phase-type (PH)
-        distribution based on a provided initial distribution vector and
-        phase-type generator matrix. The object supports evaluation of
-        density, cumulative distribution, quantiles, and random sampling.
-
         Args:
-            discrete (bool, optional):
+            discrete (bool):
                 If True, the distribution is treated as a discrete
                 phase-type (DPH) distribution. If False, it is treated as a
                 continuous phase-type (CPH) distribution. Defaults to False.
-            initdist (np.array, optional):
+            initdist (np.array):
                 The initial distribution vector (row vector). Must have
                 length equal to the number of phases. If None, no explicit
                 initial distribution is enforced. Defaults to None.
-            phgen (np.array, optional):
+            phgen (np.array):
                 The PH generator matrix. For CPH this must be a sub-intensity
                 matrix; for DPH, a sub-transition matrix. Its dimension
                 defines the number of phases. Defaults to None.
-            seed (int, optional):
+            seed (int):
                 Random seed used for reproducible sampling. Defaults to None.
-
 
         Notes
         -----
