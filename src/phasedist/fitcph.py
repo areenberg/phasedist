@@ -14,16 +14,16 @@ class fitcph:
 
     def __init__(
         self,
-        obs=None,
-        initpi=None,
-        initphgen=None,
-        initexitrates=None,
-        randominit=True,
-        seed=None,
-        tolerance=1e-6,
-        itermax=1e6,
-        verbose=False,
-    ):
+        obs: np.array = None,
+        initpi: np.array = None,
+        initphgen: np.array = None,
+        initexitrates: np.array = None,
+        randominit: bool = True,
+        seed: int = None,
+        tolerance: float = 1e-6,
+        itermax: int = 1000000,
+        verbose: bool = False,
+    ) -> None:
         """
         Initializes the continuous-time phase-type distribution fitter.
 
@@ -32,11 +32,11 @@ class fitcph:
             initpi (ndarray): Initial distribution vector.
             initphgen (ndarray): Initial phase-type generator matrix.
             initexitrates (ndarray): Initial exit rate vector.
-            randominit (bool): Whether to randomize initial parameters.
+            randominit (bool, default=True): Whether to randomize initial parameters.
             seed (int): Random seed for reproducibility.
-            tolerance (float): Convergence tolerance for the EM algorithm.
-            itermax (int): Maximum number of EM iterations.
-            verbose (bool): Whether to print intermediate fitting information.
+            tolerance (float, default=1e-6): Convergence tolerance for the EM algorithm.
+            itermax (int, default=1000000): Maximum number of EM iterations.
+            verbose (bool, default=False): Whether to print intermediate fitting information.
         """
         self.obs = obs  # observed realizations of the PH distribution
         self.initpi = initpi
@@ -50,7 +50,7 @@ class fitcph:
         self.verbose = verbose
         self.__initialize()
 
-    def fit(self):
+    def fit(self) -> None:
         """
         Fits the continuous-time phase-type distribution using the EM algorithm.
 
@@ -88,7 +88,7 @@ class fitcph:
         self.__polish()
         self.__updatelikelihood()  # evaluate final loglik
 
-    def getinitdist(self):
+    def getinitdist(self) -> np.array:
         """
         Returns the initial distribution vector.
 
@@ -100,7 +100,7 @@ class fitcph:
         """
         return self.pi
 
-    def getphasegen(self):
+    def getphasegen(self) -> np.array:
         """
         Returns the phase-type generator matrix.
 
@@ -112,7 +112,7 @@ class fitcph:
         """
         return self.phgen
 
-    def getexitrates(self):
+    def getexitrates(self) -> np.array:
         """
         Returns the exit rate vector.
 
@@ -124,7 +124,7 @@ class fitcph:
         """
         return self.exitrates
 
-    def getmean(self):
+    def getmean(self) -> float:
         """
         Returns the mean of the continuous-time phase-type distribution.
 
@@ -136,7 +136,7 @@ class fitcph:
         """
         return -np.sum(np.matmul(self.pi, np.linalg.inv(self.phgen)))
 
-    def getvar(self):
+    def getvar(self) -> float:
         """
         Returns the variance of the continuous-time phase-type distribution.
 
@@ -151,7 +151,7 @@ class fitcph:
             np.matmul(self.pi, np.linalg.matrix_power(phinv, 2))
         ) - np.power(np.sum(np.matmul(self.pi, phinv)), 2)
 
-    def getdensity(self, x):
+    def getdensity(self, x: float) -> float:
         """
         Returns the distribution's density, f(x).
 
@@ -165,7 +165,7 @@ class fitcph:
             self.pi, np.matmul(expm(self.phgen * x), self.exitrates)
         ).item()
 
-    def getcumprob(self, x):
+    def getcumprob(self, x: float) -> float:
         """
         Returns the cumulative distribution function P(X ≤ x).
 
@@ -177,7 +177,7 @@ class fitcph:
         """
         return 1 - np.sum(np.matmul(self.pi, expm(self.phgen * x)))
 
-    def getloglik(self):
+    def getloglik(self) -> float:
         """
         Returns the log-likelihood of the fitted model.
 
@@ -189,7 +189,7 @@ class fitcph:
         """
         return self.loglikelihood
 
-    def getaic(self):
+    def getaic(self) -> float:
         """
         Returns Akaike's Information Criterion (AIC).
 
@@ -201,7 +201,7 @@ class fitcph:
         """
         return -2 * self.loglikelihood + 2 * self.nparam
 
-    def getbic(self):
+    def getbic(self) -> float:
         """
         Returns the Bayesian Information Criterion (BIC).
 
@@ -213,7 +213,7 @@ class fitcph:
         """
         return -2 * self.loglikelihood + self.nparam * np.log(len(self.obs))
 
-    def __initialize(self):
+    def __initialize(self) -> None:
         """
         Initializes internal parameters and prepares the model for fitting.
 
@@ -241,7 +241,7 @@ class fitcph:
 
         self.__countParameters()
 
-    def __initrandom(self):
+    def __initrandom(self) -> None:
         """
         Randomly initializes the parameters of the phase-type distribution.
 
@@ -268,7 +268,7 @@ class fitcph:
             self.phgen[i, nzidx] = u
             self.phgen[i, i] = -(np.sum(u) + self.exitrates[i, 0])
 
-    def __estep(self):
+    def __estep(self) -> None:
         """
         Performs the expectation (E) step of the EM algorithm.
 
@@ -298,7 +298,7 @@ class fitcph:
                         self.nij[i, j] += (self.phgen[i, j] * self.Jmat[j, i]) / pieTyt
                 self.ni[i] += (pieTy[0, i] * self.exitrates[i, 0]) / pieTyt
 
-    def __mstep(self):
+    def __mstep(self) -> None:
         """
         Performs the maximization (M) step of the EM algorithm.
 
@@ -322,7 +322,7 @@ class fitcph:
                     sm += self.phgen[i, j]
             self.phgen[i, i] = -sm
 
-    def __updatelikelihood(self):
+    def __updatelikelihood(self) -> None:
         """
         Updates the log-likelihood based on current model parameters.
 
@@ -336,7 +336,7 @@ class fitcph:
         for y in self.obs:
             self.loglikelihood += np.log(self.getdensity(y))
 
-    def __Jmatrix(self, y):
+    def __Jmatrix(self, y: float) -> None:
         """
         Computes the J matrix and matrix exponential exp(Ty).
 
@@ -359,7 +359,7 @@ class fitcph:
         self.eTy = mat[: self.nphases, : self.nphases]
         self.Jmat = mat[: self.nphases, self.nphases : 2 * self.nphases]
 
-    def __countParameters(self):
+    def __countParameters(self) -> None:
         """
         Counts the number of independent model parameters.
 
@@ -378,7 +378,7 @@ class fitcph:
             )
         self.nparam = phg + (np.count_nonzero(self.pi) - 1)
 
-    def __polish(self):
+    def __polish(self) -> None:
         """
         Normalizes and enforces consistency constraints on model parameters.
 
