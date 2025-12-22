@@ -56,10 +56,13 @@ fit.plot()
 phdist = fit.getdist()
 
 print(phdist.getmean())
+#1.455814
 
 print(phdist.getvar())
+#0.706466
 
 print(phdist.getquantile(p=0.95))
+#3.055169
 ```
 
 Find the complete example in the file `quickstart_example.py`.
