@@ -29,7 +29,7 @@ class fit:
         dtype: str = "general",
         discrete: bool = False,
         initdist: np.array = None,
-        initphgen: bool = None,
+        initphgen: np.array = None,
         initexitrates: np.array = None,
         randominit: bool = True,
         seed: int = None,
@@ -50,11 +50,11 @@ class fit:
             discrete (bool, default=False):
                 Whether a discrete PH distribution is assumed.
             initdist (np.array, optional):
-                Initial distribution vector for custom initialization.
+                Initial distribution vector for custom structure or initialization.
             initphgen (np.array, optional):
-                Initial phase-type generator matrix for custom initialization.
+                Initial phase-type generator matrix for custom structure or initialization.
             initexitrates (np.array, optional):
-                Initial exit rate vector for custom initialization.
+                Initial exit rate vector for custom structure or initialization.
             randominit (bool, default=True):
                 Whether to use random initialization instead of provided initial parameters.
             seed (int, optional):
