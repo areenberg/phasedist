@@ -46,7 +46,7 @@ class fit:
             nphases (int, default=2):
                 Number of phases in the PH distribution.
             dtype (str, default="general"):
-                Distribution structure type (e.g., "general", "hyperexp").
+                Distribution type (e.g., "general", "hyperexp").
             discrete (bool, default=False):
                 Whether a discrete PH distribution is assumed.
             initdist (np.array, optional):
