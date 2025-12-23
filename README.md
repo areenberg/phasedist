@@ -1,6 +1,6 @@
 # PhaseDist
 
-<img src="https://github.com/areenberg/phasedist/blob/main/images/PhaseDist_logo.png" alt="Example" width="500">
+<img src="https://github.com/areenberg/phasedist/blob/main/images/PhaseDist_logo.png" alt="Example" width="300">
 
 PhaseDist is a Python package for fitting continuous and discrete phase-type distributions.
 
