@@ -5,33 +5,54 @@ from scipy.stats import lognorm, norm, gamma, weibull_min, chi2
 import matplotlib.pyplot as plt
 from phasedist.dist import dist
 
-# REFERENCES
-
-# Bladt, M., & Nielsen, B. F. (2017). Matrix-Exponential Distributions in Applied Probability.
-# Springer. https://doi.org/10.1007/978-1-4939-7049-0
-
 
 class fitcph2dist:
-    # fit a continuous-time phase-type distributions to
-    # a distribution with a continuous density using
-    # the EM algorithm from p. 681 Bladt and Nielsen (2017).
+    """
+    Fit a continuous-time phase-type distribution to
+    a distribution with a continuous density using
+    the EM algorithm from p. 681 Bladt and Nielsen (2017).
+
+    References:
+        Bladt, M., & Nielsen, B. F. (2017). Matrix-Exponential Distributions in Applied Probability.
+        Springer. https://doi.org/10.1007/978-1-4939-7049-0
+    """
 
     def __init__(
         self,
-        nphases=2,
-        dtype="general",
-        initdist=None,
-        initphgen=None,
-        initexitrates=None,
-        randominit=True,
-        seed=None,
-        tolerance=1e-3,
-        truncation=0.99,
-        steps=50,
-        itermax=1000000000,
-        verbose=False,
-    ):
-
+        nphases: int = 2,
+        dtype: str = "general",
+        initdist: np.array = None,
+        initphgen: np.array = None,
+        initexitrates: np.array = None,
+        randominit: bool = True,
+        seed: int = None,
+        tolerance: float = 1e-3,
+        truncation: float = 0.99,
+        steps: int = 50,
+        itermax: int = 1000000000,
+        verbose: bool = False,
+    ) -> None:
+        """
+        Initializes the phase-type distribution fitting object.
+        
+        Args:
+            nphases (int): Number of phases.
+            dtype (str): Distribution structure type.
+            initdist (np.array): Initial distribution vector.
+            initphgen (np.array): Initial generator matrix.
+            initexitrates (np.array): Initial exit rates.
+            randominit (bool): Whether to randomly initialize parameters.
+            seed (int): Random seed.
+            tolerance (float): Convergence tolerance.
+            truncation (float): Truncation level.
+            steps (int): Number of integration steps.
+            itermax (int): Maximum number of iterations.
+            verbose (bool): Verbosity flag.
+            
+        Returns:
+            None
+        """
+        
         self.nphases = nphases
         self.dtype = dtype
         self.initdist = initdist
@@ -57,8 +78,19 @@ class fitcph2dist:
     #   PUBLIC METHODS
     # ----------------------------------------------------------------------
 
-    def lognorm(self, mu=None, sigma=None, mean=None, var=None):
-        # approximate a log-normal distribution
+    def lognorm(self, mu: float = None, sigma: float = None, mean: float = None, var: float = None) -> None:
+        """
+        Configures approximation to a log-normal distribution.
+        
+        Args:
+            mu (float): Mean of underlying normal distribution.
+            sigma (float): Standard deviation of underlying normal distribution.
+            mean (float): Mean of the log-normal distribution.
+            var (float): Variance of the log-normal distribution.
+        
+        Returns:
+            None
+        """     
         if mu is None and mean is not None:
             if mean <= 0:
                 print("Error: 'mean<=0' is infeasible for the lognormal distribution.")
@@ -71,15 +103,34 @@ class fitcph2dist:
         self.disttype = "lognorm"
         self.__initialize()
 
-    def norm(self, mu=None, sigma=None):
-        # approximate a (truncated) normal distribution
+    def norm(self, mu: float = None, sigma: float = None) -> None:
+        """
+        Configures approximation to a truncated normal distribution.
+        
+        Args:
+            mu (float): Mean of the normal distribution.
+            sigma (float): Standard deviation of the normal distribution.
+        
+        Returns:
+            None
+        """
         self.param1 = mu
         self.param2 = sigma
         self.disttype = "norm"
         self.__initialize()
 
-    def gamma(self, shape=None, scale=None, rate=None):
-        # approximate a gamma distribution
+    def gamma(self, shape: float = None, scale: float = None, rate: float = None) -> None:
+        """
+        Configures approximation to a gamma distribution.
+        
+        Args:
+            shape (float): Shape parameter.
+            scale (float): Scale parameter.
+            rate (float): Rate parameter.
+        
+        Returns:
+            None
+        """
         self.param1 = shape
         if scale is None:
             self.param2 = 1 / rate
@@ -88,38 +139,78 @@ class fitcph2dist:
         self.disttype = "gamma"
         self.__initialize()
 
-    def chisq(self, df=None):
-        # approximate a chi-squared distribution
+    def chisq(self, df: int = None) -> None:
+        """
+        Configures approximation to a chi-squared distribution.
+        
+        Args:
+            df (int): Degrees of freedom.
+        
+        Returns:
+            None
+        """
         self.param1 = df
         self.disttype = "chisq"
         self.__initialize()
 
-    def weibull(self, shape=None, scale=None):
-        # approximate a weibull distribution
+    def weibull(self, shape: float = None, scale: float = None) -> None:
+        """
+        Configures approximation to a Weibull distribution.
+        
+        Args:
+            shape (float): Shape parameter.
+            scale (float): Scale parameter.
+        
+        Returns:
+            None
+        """
         self.param1 = shape
         self.param2 = scale
         self.disttype = "weibull"
         self.__initialize()
 
-    def phasedist(self, initdist, phgen):
-        # approximate another phase-type distribution
+    def phasedist(self, initdist: np.array, phgen: np.array) -> None:
+        """
+        Configures approximation to an existing phase-type distribution.
+        
+        Args:
+            initdist (np.array): Initial distribution vector.
+            phgen (np.array): Generator matrix.
+        
+        Returns:
+            None
+        """
         self.param1 = initdist
         self.param2 = phgen
         self.disttype = "ph"
         self.__initialize()
 
-    def percentiles(self, cumprobs=None, x=None):
-        # create a PH approximation based on the
-        # cumulated probabilities (could be empirically
-        # determined) in the numpy array 'cumprobs' and
-        # the corresponding response values in 'x'.
+    def percentiles(self, cumprobs: float = None, x: float = None) -> None:
+        """
+        Configures approximation using empirical percentiles.
+        
+        Args:
+            cumprobs (np.array): Cumulative probabilities.
+            x (np.array): Corresponding values.
+        
+        Returns:
+            None
+        """
         self.param1 = cumprobs
         self.param2 = x
         self.disttype = "per"
         self.__initialize()
 
-    def fit(self):
-        # approximate the CPH distribution
+    def fit(self) -> int:
+        """
+        Fits the phase-type distribution using the EM algorithm.
+        
+        Args:
+            None
+        
+        Returns:
+            int: Status code.
+        """
         if self.disttype is None:
             print("Error: Select a distribution for the approximation.")
             return 1
@@ -154,11 +245,16 @@ class fitcph2dist:
 
         return 0
 
-    def plot(self):
-        # conduct a visual comparison of the approximate and true
-        # distributions
-
-        # compute densities for approximate and true distributions
+    def plot(self) -> None:
+        """
+        Plots the fitted distribution and target distribution.
+        
+        Args:
+            None
+        
+        Returns:
+            None
+        """
         x = np.linspace(0.0, self.y.max(), 500)
         dist_pdf = np.zeros(len(x))
         ph_pdf = np.zeros(len(x))
@@ -190,76 +286,153 @@ class fitcph2dist:
 
         return None
 
-    def getinitdist(self):
-        # returns the initial distribution
+    def getinitdist(self) -> np.array:
+        """
+        Returns the initial distribution vector.
+        
+        Args:
+            None
+        
+        Returns:
+            np.array: Initial distribution.
+        """
         if self.dist is not None:
             return self.dist.getinitdist()
         else:
             return np.nan
 
-    def getphasegen(self):
-        # returns the phase-type generator
+    def getphasegen(self) -> np.array:
+        """
+        Returns the phase generator matrix.
+        
+        Args:
+            None
+        
+        Returns:
+            np.array: Generator matrix.
+        """
         if self.dist is not None:
             return self.dist.getphasegen()
         else:
             return np.nan
 
-    def getexitrates(self):
-        # returns the exit rate vector
+    def getexitrates(self) -> np.array:
+        """
+        Returns the exit rate vector.
+        
+        Args:
+            None
+        
+        Returns:
+            np.array: Exit rates.
+        """
         if self.dist is not None:
             return self.dist.getexitrates()
         else:
             return np.nan
 
-    def getmean(self):
-        # returns the mean
+    def getmean(self) -> float:
+        """
+        Returns the mean of the fitted distribution.
+        
+        Args:
+            None
+        
+        Returns:
+            float: Mean.
+        """
         if self.dist is not None:
             return self.dist.getmean()
         else:
             return np.nan
 
-    def getvar(self):
-        # returns the variance
+    def getvar(self) -> float:
+        """
+        Returns the variance of the fitted distribution.
+        
+        Args:
+            None
+        
+        Returns:
+            float: Variance.
+        """
         if self.dist is not None:
             return self.dist.getvar()
         else:
             return np.nan
 
-    def getdensity(self, x):
-        # returns the density
+    def getdensity(self, x: float) -> float:
+        """
+        Returns the distribution's density, f(x).
+        
+        Args:
+            x (float): The distribution's density will be computed at time of x.
+        
+        Returns:
+            float: The computed density.
+        """
         if self.dist is not None:
             return self.dist.getdensity(x)
         else:
             return np.nan
 
-    def getcumprob(self, x):
-        # returns the cumulated probability P(X<=x)
+    def getcumprob(self, x: float) -> float:
+        """
+        Returns the cumulative distribution value at x.
+        
+        Args:
+            x (float): Evaluation point.
+        
+        Returns:
+            float: Cumulative probability.
+        """
         if self.dist is not None:
             return self.dist.getcumprob(x)
         else:
             return np.nan
 
-    def getquantile(self, p, tolerance=1e-9):
-        # returns the quantile corresponding to
-        # the probability 'p'
+    def getquantile(self, p: float, tolerance: float = 1e-9) -> float:
+        """
+        Returns the quantile corresponding to probability p.
+        
+        Args:
+            p (float): Probability level.
+            tolerance (float): Numerical tolerance.
+        
+        Returns:
+            float: Quantile value.
+        """
         if self.dist is not None:
             return self.dist.getquantile(p, tolerance)
         else:
             return np.nan
 
-    def getdist(self):
-        # returns a phase-type distribution object
+    def getdist(self) -> dist:
+        """
+        Returns the fitted phase-type distribution object.
+        
+        Args:
+            None
+        
+        Returns:
+            dist: Phase-type distribution.
+        """
         return self.dist
 
     # ----------------------------------------------------------------------
     #   PRIVATE METHODS
     # ----------------------------------------------------------------------
 
-    def __checkinputs(self):
-        # check the feasibility of all input parameters
-        # before proceeding
-
-        # check data types and convert if necesarry
+    def __checkinputs(self) -> bool | int:
+        """
+        Checks feasibility and validity of all input parameters.
+        
+        Args:
+            None
+        
+        Returns:
+            bool | int: True if inputs are valid, False or 0 otherwise.
+        """
         if not isinstance(self.nphases, int) or self.nphases < 1:
             print(
                 "Error: The number of phases can only be specified as an integer larger than 0."
@@ -324,9 +497,17 @@ class fitcph2dist:
 
         return True
 
-    def __correctphgen(self, phasegen, exitrates):
-        # returns True if the PH generator and
-        # exit rates are feasible
+    def __correctphgen(self, phasegen: np.array, exitrates: np.array) -> bool:
+        """
+        Checks feasibility of the PH generator and exit rate vector.
+        
+        Args:
+            phasegen (np.array): Phase-type generator matrix.
+            exitrates (np.array): Exit rate vector.
+        
+        Returns:
+            bool: True if feasible, False otherwise.
+        """
 
         # check PH generator
         if phasegen.shape[0] != phasegen.shape[1] or phasegen.shape[0] != self.nphases:
@@ -370,10 +551,16 @@ class fitcph2dist:
             return False
         return True
 
-    def __correctinitdist(self, initdist):
-        # returns True if the initial distribution
-        # is feasible
-
+    def __correctinitdist(self, initdist: np.array) -> bool:
+        """
+        Checks feasibility of the initial distribution.
+        
+        Args:
+            initdist (np.array): Initial distribution vector.
+        
+        Returns:
+            bool: True if feasible, False otherwise.
+        """
         if initdist.size != self.nphases:
             print(
                 "Error: The size of the initial distribution does not match the number of phases."
@@ -399,9 +586,16 @@ class fitcph2dist:
             return False
         return True
 
-    def __makedist(self):
-
-        # set distribution type
+    def __makedist(self) -> None | int:
+        """
+        Initializes distribution structure based on the specified type.
+        
+        Args:
+            None
+        
+        Returns:
+            None | int: None if successful, error code otherwise.
+        """
         if self.dtype == "general":
             self.__general()
         elif self.dtype == "generlang":
@@ -416,14 +610,30 @@ class fitcph2dist:
             print("Error: Unknown distribution type.")
             return 1
 
-    def __general(self):
-        # general phase-type distribution
+    def __general(self) -> None:
+        """
+        Initializes parameters for a general phase-type distribution.
+        
+        Args:
+            None
+        
+        Returns:
+            None
+        """
         self.initdist = np.matrix(np.ones((1, self.nphases)))
         self.initphgen = np.matrix(np.ones((self.nphases, self.nphases)))
         self.initexitrates = np.matrix(np.ones((self.nphases, 1)))
 
-    def __generlang(self):
-        # generalized Erlang distribution
+    def __generlang(self) -> None:
+        """
+        Initializes parameters for a generalized Erlang distribution.
+        
+        Args:
+            None
+        
+        Returns:
+            None
+        """
         self.initdist = np.matrix(np.zeros((1, self.nphases)))
         self.initdist[0, 0] = 1
 
@@ -436,8 +646,16 @@ class fitcph2dist:
             if i < (self.nphases - 1):
                 self.initphgen[i, i + 1] = 1
 
-    def __hyperexp(self):
-        # hyper-exponential distribution
+    def __hyperexp(self) -> None:
+        """
+        Initializes parameters for a hyper-exponential distribution.
+        
+        Args:
+            None
+        
+        Returns:
+            None
+        """
         self.initdist = np.matrix(np.ones((1, self.nphases)))
 
         self.initphgen = np.matrix(np.zeros((self.nphases, self.nphases)))
@@ -445,8 +663,16 @@ class fitcph2dist:
         for i in range(self.nphases):
             self.initphgen[i, i] = 1
 
-    def __coxian(self):
-        # Coxian distribution
+    def __coxian(self) -> None:
+        """
+        Initializes parameters for a Coxian distribution.
+        
+        Args:
+            None
+        
+        Returns:
+            None
+        """
         self.initdist = np.matrix(np.zeros((1, self.nphases)))
         self.initdist[0, 0] = 1
 
@@ -458,8 +684,16 @@ class fitcph2dist:
             if i < (self.nphases - 1):
                 self.initphgen[i, i + 1] = 1
 
-    def __gencoxian(self):
-        # generalized Coxian distribution
+    def __gencoxian(self) -> None:
+        """
+        Initializes parameters for a generalized Coxian distribution.
+        
+        Args:
+            None
+        
+        Returns:
+            None
+        """
         self.initdist = np.matrix(np.ones((1, self.nphases)))
         self.initexitrates = np.matrix(np.ones((self.nphases, 1)))
 
@@ -469,7 +703,16 @@ class fitcph2dist:
             if i < (self.nphases - 1):
                 self.initphgen[i, i + 1] = 1
 
-    def __initialize(self):
+    def __initialize(self) -> None:
+        """
+        Initializes parameters, random values, and numerical integration grid.
+        
+        Args:
+            None
+        
+        Returns:
+            None
+        """        
         if self.seed is not None:
             np.random.seed(self.seed)
 
@@ -492,9 +735,17 @@ class fitcph2dist:
         # create the cumulated probabilities and evaluation points
         self.__computeyvector()
 
-    def __initrandom(self):
-        # initialize with a random CPH distribution
-
+    def __initrandom(self) -> None:
+        """
+        Randomly initializes parameters of a continuous-time PH distribution.
+        
+        Args:
+            None
+        
+        Returns:
+            None
+        """                
+        
         # make a random initial distribution (pi)
         nzidx = np.nonzero(self.pi)[1]
         u = np.random.uniform(low=0.0, high=1.0, size=len(nzidx))
@@ -515,9 +766,16 @@ class fitcph2dist:
             self.phgen[i, nzidx] = u
             self.phgen[i, i] = -(np.sum(u) + self.exitrates[i, 0])
 
-    def __estep(self):
-        # performs the E-step
-
+    def __estep(self) -> None:
+        """
+        Performs the expectation step of the EM algorithm.
+        
+        Args:
+            None
+        
+        Returns:
+            None
+        """
         self.bi = np.zeros(self.nphases)
         self.zi = np.zeros(self.nphases)
         self.ni = np.zeros(self.nphases)
@@ -618,8 +876,16 @@ class fitcph2dist:
                         Gy = (self.phgen[i, j] / self.pieTyt[k]) * innerint
                         self.nij[i, j] += Gy * self.hy[k]
 
-    def __mstep(self):
-        # performs the M-step
+    def __mstep(self) -> None:
+        """
+        Performs the maximization step of the EM algorithm.
+        
+        Args:
+            None
+        
+        Returns:
+            None
+        """
 
         # update the initial distribution
         for i in range(self.nphases):
@@ -640,7 +906,15 @@ class fitcph2dist:
             self.phgen[i, i] = -sm
 
     def __updateEpsilon(self):
-        # get the largest absolute difference in parameters
+        """
+        Computes the maximum absolute change in parameters.
+        
+        Args:
+            None
+        
+        Returns:
+            None
+        """        
         # eps1 = np.max(np.abs(np.divide(np.subtract(self.pi[np.nonzero(self.pi0)],self.pi0[np.nonzero(self.pi0)]),self.pi0[np.nonzero(self.pi0)])))
         # eps2 = np.max(np.abs(np.divide(np.subtract(self.phgen[np.nonzero(self.phgen0)],self.phgen0[np.nonzero(self.phgen0)]),self.phgen0[np.nonzero(self.phgen0)])))
         eps1 = np.max(
@@ -660,9 +934,16 @@ class fitcph2dist:
         )
         self.eps = np.max(np.array([eps1, eps2]))
 
-    def __computeyvector(self):
-        # pre-compute evaluation points for the
-        # numerical integral
+    def __computeyvector(self) -> None:
+        """
+        Computes evaluation points and probability weights for numerical integration.
+        
+        Args:
+            None
+        
+        Returns:
+            None
+        """
 
         # make evaluation points
         if self.disttype == "lognorm":
@@ -718,20 +999,48 @@ class fitcph2dist:
         # adjust y's for the E-step
         self.y = self.y[1:]
 
-    def __simpsonsrule(self, a, b, fa, fmid, fb):
-        # returns Simpson's 1/3 rule
+    def __simpsonsrule(self, a: float, b: float, fa: float, fmid: float, fb: float) -> float:
+        """
+        Computes Simpson’s 1/3 rule approximation.
+        
+        Args:
+            a (float): Lower bound.
+            b (float): Upper bound.
+            fa (float): Function value at a.
+            fmid (float): Function value at midpoint.
+            fb (float): Function value at b.
+        
+        Returns:
+            float: Approximated integral value.
+        """
         # note: fmid = f((a+b)/2)
         return ((b - a) / 6) * (fa + 4 * fmid + fb)
 
-    def lognormdensity(self, x):
-        # PDF of the log-normal distribution
+    def lognormdensity(self, x: float) -> float:
+        """
+        Probability density function of the log-normal distribution.
+        
+        Args:
+            x (float): Compute the density at x.
+        
+        Returns:
+            float: Density.
+        """        
         return (1 / (x * np.sqrt(self.param2) * np.sqrt(2 * np.pi))) * np.exp(
             -(np.power(np.log(x) - self.param1, 2) / (2 * self.param2))
         )
 
-    def __lognorm_dcdf(self, x0, x1):
-        # Cumulated probability *between* x0 and x1
-        # of the log-normal distribution
+    def __lognorm_dcdf(self, x0: float, x1: float) -> float:
+        """
+        Computes cumulative probability between two points for a log-normal distribution.
+        
+        Args:
+            x0 (float): Lower bound.
+            x1 (float): Upper bound.
+        
+        Returns:
+            float: Cumulative probability.
+        """
         if x0 == 0:
             return norm.cdf((np.log(x1) - self.param1) / np.sqrt(self.param2))
         else:
@@ -739,9 +1048,17 @@ class fitcph2dist:
                 (np.log(x1) - self.param1) / np.sqrt(self.param2)
             ) - norm.cdf((np.log(x0) - self.param1) / np.sqrt(self.param2))
 
-    def __gamma_dcdf(self, x0, x1):
-        # Cumulated probability *between* x0 and x1
-        # of the gamma distribution
+    def __gamma_dcdf(self, x0: float, x1: float) -> float:
+        """
+        Computes cumulative probability between two points for a gamma distribution.
+        
+        Args:
+            x0 (float): Lower bound.
+            x1 (float): Upper bound.
+        
+        Returns:
+            float: Cumulative probability.
+        """
         if x0 == 0:
             return gamma.cdf(x1, self.param1, scale=self.param2)
         else:
@@ -749,19 +1066,33 @@ class fitcph2dist:
                 x0, self.param1, scale=self.param2
             )
 
-    def __normtrunc_dcdf(self, x0, x1):
-        # Cumulated probability *between* x0 and x1
-        # of the truncated normal distribution
-
+    def __normtrunc_dcdf(self, x0: float, x1: float) -> float:
+        """
+        Computes cumulative probability between two points for a truncated normal distribution.
+        
+        Args:
+            x0 (float): Lower bound.
+            x1 (float): Upper bound.
+        
+        Returns:
+            float: Cumulative probability.
+        """
         return (
             norm.cdf((x1 - self.param1) / self.param2)
             - norm.cdf((x0 - self.param1) / self.param2)
         ) / (1 - norm.cdf((-self.param1) / self.param2))
 
-    def __weib_dcdf(self, x0, x1):
-        # Cumulated probability *between* x0 and x1
-        # of the Weibull distribution
-
+    def __weib_dcdf(self, x0: float, x1: float) -> float:
+        """
+        Computes cumulative probability between two points for a Weibull distribution.
+        
+        Args:
+            x0 (float): Lower bound.
+            x1 (float): Upper bound.
+        
+        Returns:
+            float: Cumulative probability.
+        """
         if x0 == 0:
             return weibull_min.cdf(x1, self.param1, scale=self.param2)
         else:
@@ -769,19 +1100,33 @@ class fitcph2dist:
                 x1, self.param1, scale=self.param2
             ) - weibull_min.cdf(x0, self.param1, scale=self.param2)
 
-    def __chisq_dcdf(self, x0, x1):
-        # Cumulated probability *between* x0 and x1
-        # of the Chi-square distribution
-
+    def __chisq_dcdf(self, x0: float, x1: float) -> float:
+        """
+        Computes cumulative probability between two points for a chi-square distribution.
+        
+        Args:
+            x0 (float): Lower bound.
+            x1 (float): Upper bound.
+        
+        Returns:
+            float: Cumulative probability.
+        """
         if x0 == 0:
             return chi2.cdf(x1, self.param1)
         else:
             return chi2.cdf(x1, self.param1) - chi2.cdf(x0, self.param1)
 
-    def __ph_dcdf(self, x0, x1):
-        # Cumulated probability *between* x0 and x1
-        # of the PH distribution
-
+    def __ph_dcdf(self, x0: float, x1: float) -> float:
+        """
+        Computes cumulative probability between two points for a PH distribution.
+        
+        Args:
+            x0 (float): Lower bound.
+            x1 (float): Upper bound.
+        
+        Returns:
+            float: Cumulative probability.
+        """
         if x0 == 0:
             return 1 - np.sum(np.matmul(self.param1, expm(self.param2 * x1)))
         else:
@@ -789,17 +1134,32 @@ class fitcph2dist:
                 np.matmul(self.param1, expm(self.param2 * x1))
             )
 
-    def __per_dcdf(self, x0, x1):
-        # Cumulated probability *between* x0 and x1
-        # for percentiles provided by the user
+    def __per_dcdf(self, x0: float, x1: float) -> float:
+        """
+        Computes cumulative probability between two points using empirical percentiles.
+        
+        Args:
+            x0 (float): Lower bound.
+            x1 (float): Upper bound.
+        
+        Returns:
+            float: Cumulative probability.
+        """
         if x0 == 0:
             return self.__per_cdf(x1)
         else:
             return self.__per_cdf(x1) - self.__per_cdf(x0)
 
-    def __per_cdf(self, x):
-        # Cumulated probability for percentiles
-        # provided by the user
+    def __per_cdf(self, x: float) -> float:
+        """
+        Computes cumulative probability at a point using empirical percentiles.
+        
+        Args:
+            x (float): Evaluation point.
+        
+        Returns:
+            float: Cumulative probability.
+        """
         idx1 = np.min(np.where(self.param2 >= x))
         if idx1 > 0:
             idx0 = idx1 - 1
@@ -809,9 +1169,17 @@ class fitcph2dist:
         else:
             return self.param1[idx1] * (x / self.param2[idx1])
 
-    def __normtruncquantfun(self, mu, sigma):
-        # numerical quantile function for the truncated
-        # normal distribution
+    def __normtruncquantfun(self, mu: float, sigma: float) -> float:
+        """
+        Computes numerical quantile for a truncated normal distribution.
+        
+        Args:
+            mu (float): Mean of the normal distribution.
+            sigma (float): Standard deviation.
+        
+        Returns:
+            float: Quantile value.
+        """
         cmp = 1 - norm.cdf(-mu / sigma)
         x = np.max(np.array([sigma * self.tolerance, mu]))
         trc = (norm.cdf((x - mu) / sigma) - norm.cdf(-mu / sigma)) / cmp
