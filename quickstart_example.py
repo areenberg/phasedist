@@ -1,6 +1,12 @@
 #Load the PhaseDist and NumPy packages
-import phasedist as ph
+import os
+import sys
 import numpy as np
+project_root = os.path.dirname(os.path.abspath(__file__))
+src_path = os.path.join("src")
+sys.path.append(os.path.abspath(src_path))
+import phasedist as ph
+
 
 #Load the observed data
 obs = np.array([1.48246359,1.13468709,0.66779536,0.61823347,0.8888217,1.10124776,0.1424737,2.1228061,

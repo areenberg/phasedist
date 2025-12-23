@@ -50,6 +50,8 @@ fit = ph.fit(obs=obs,
 fit.plot()
 ```
 
+<img src="https://github.com/areenberg/phasedist/blob/main/images/quickstart_example_CDF.png" alt="Example" width="180">
+
 (4) Store the fitted distribution in the object `phdist` and compute the mean, variance, and 95% quantile.
 
 ```python
