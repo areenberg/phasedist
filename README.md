@@ -44,7 +44,7 @@ fit = ph.fit(obs=obs,
              dtype="generlang")
 ```
 
-(3) Compare the CDF of the fitted distribution to the observed data.
+(3) Compare the CDF of the fitted distribution to the empirical CDF.
 
 ```python
 fit.plot()
