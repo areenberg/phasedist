@@ -1,4 +1,3 @@
-# PhaseDist
 
 <img src="https://github.com/areenberg/phasedist/blob/main/images/PhaseDist_logo.png" alt="Example" width="300">
 
