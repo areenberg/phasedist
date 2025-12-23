@@ -20,7 +20,7 @@ pip install phasedist
 
 # Quick start guide
 
-The following shows how to use PhaseDist for fitting a continuous phase-type distribution. 
+The following shows how to use PhaseDist for fitting a continuous phase-type distribution from observed data. 
 
 (1) Start by loading PhaseDist, NumPy, and defining the observed data.
 
