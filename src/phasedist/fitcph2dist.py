@@ -185,9 +185,9 @@ class fitcph2dist:
         self.disttype = "ph"
         self.__initialize()
 
-    def percentiles(self, cumprobs: float = None, x: float = None) -> None:
+    def percentiles(self, cumprobs: np.array = None, x: np.array = None) -> None:
         """
-        Configures approximation using empirical percentiles.
+        Configures approximation using (empirical) cumulative probabilities.
         
         Args:
             cumprobs (np.array): Cumulative probabilities.
