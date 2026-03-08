@@ -243,7 +243,7 @@ class fitcph:
 
     def __initrandom(self) -> None:
         """
-        Randomly initializes the parameters of the phase-type distribution.
+        Randomly initializes the parameters of the continuous phase-type distribution.
 
         Args:
             None
