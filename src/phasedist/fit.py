@@ -236,6 +236,7 @@ class fit:
             title (str, default="Empirical and Fitted CDFs"): Plot title.
             labelfitted (str, default="Fitted CDF"): Legend label for the fitted CDF.
             labelempirical (str, default="Empirical CDF"): Legend label for the empirical CDF.
+            filename (str, default="CDFcheck.png"): Filename of the generated graph.
 
         Returns:
             None: Displays the plot.
