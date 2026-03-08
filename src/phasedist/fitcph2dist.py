@@ -245,12 +245,15 @@ class fitcph2dist:
 
         return 0
 
-    def plot(self) -> None:
+    def plot(
+        self,
+        filename: str = "compare.png"
+    ) -> None:
         """
         Plots the fitted distribution and target distribution.
         
         Args:
-            None
+            filename (str, default="compare.png"): Filename of the generated graph.
         
         Returns:
             None
@@ -282,7 +285,7 @@ class fitcph2dist:
         plt.title("Approximation validation")
         plt.legend()
         plt.grid(True)
-        plt.show()
+        plt.savefig(filename)
 
         return None
 
@@ -723,9 +726,9 @@ class fitcph2dist:
         self.initexitrates = self.initexitrates.astype(float)
 
         # copy to output parameters
-        self.pi = self.initdist
+        self.pi = np.array(self.initdist, dtype=float).flatten()
         self.phgen = self.initphgen
-        self.exitrates = self.initexitrates
+        self.exitrates = np.array(self.initexitrates, dtype=float).flatten()
 
         # initialize with random parameters
         # accounting for the specified structure
@@ -745,26 +748,22 @@ class fitcph2dist:
         Returns:
             None
         """                
-        
-        # make a random initial distribution (pi)
-        nzidx = np.nonzero(self.pi)[1]
+        nzidx = np.nonzero(self.pi)
         u = np.random.uniform(low=0.0, high=1.0, size=len(nzidx))
         u = u / np.sum(u)
-        self.pi[0, nzidx] = u
+        self.pi[nzidx] = u
 
-        # make a random exit vector
-        nzidx = np.nonzero(self.exitrates)[0]
-        u = np.random.uniform(low=0.0, high=10.0, size=len(nzidx))
-        self.exitrates[nzidx, 0] = u
+        nzidx = np.nonzero(self.exitrates)
+        u = np.random.uniform(low=0.0, high=1.0, size=len(nzidx))
+        self.exitrates[nzidx] = u
 
-        # make a random PH generator
         for i in range(self.nphases):
-            nzidx = np.nonzero(self.phgen[i, :])[1]
+            nzidx = np.nonzero(np.ravel(self.phgen[i, :]))[0]
             msk = nzidx != i
             nzidx = nzidx[msk]
-            u = np.random.uniform(low=0.0, high=10.0, size=len(nzidx))
+            u = np.random.uniform(low=0.0, high=1.0, size=len(nzidx))
             self.phgen[i, nzidx] = u
-            self.phgen[i, i] = -(np.sum(u) + self.exitrates[i, 0])
+            self.phgen[i, i] = -(np.sum(u) + self.exitrates[i])
 
     def __estep(self) -> None:
         """
@@ -795,7 +794,7 @@ class fitcph2dist:
             # bi
             for k in range(self.steps):
                 eTyt = np.matmul(self.eTy[k], self.exitrates)
-                Gy = (self.pi[0, i] * eTyt[i, 0]) / self.pieTyt[k]
+                Gy = (self.pi[i] * eTyt[i]) / self.pieTyt[k]
                 self.bi[i] += Gy * self.hy[k]
 
             # zi (denominator used in calculation of PH generator and exit rates)
@@ -810,7 +809,7 @@ class fitcph2dist:
                         self.eTyut[k][l] = np.matmul(
                             expm(self.phgen * (self.y[k] - u[l])), self.exitrates
                         )
-                        inner_fa = self.pieTu[k][l][0, i] * self.eTyut[k][l][i, 0]
+                        inner_fa = self.pieTu[k][l][i] * self.eTyut[k][l][i]
                         # inner fmid
                         self.pieTu[k][l + 1] = np.matmul(
                             self.pi, expm(self.phgen * u[l + 1])
@@ -819,7 +818,7 @@ class fitcph2dist:
                             expm(self.phgen * (self.y[k] - u[l + 1])), self.exitrates
                         )
                         inner_fmid = (
-                            self.pieTu[k][l + 1][0, i] * self.eTyut[k][l + 1][i, 0]
+                            self.pieTu[k][l + 1][i] * self.eTyut[k][l + 1][i]
                         )
                         # inner fb
                         self.pieTu[k][l + 2] = np.matmul(
@@ -829,7 +828,7 @@ class fitcph2dist:
                             expm(self.phgen * (self.y[k] - u[l + 2])), self.exitrates
                         )
                         inner_fb = (
-                            self.pieTu[k][l + 2][0, i] * self.eTyut[k][l + 2][i, 0]
+                            self.pieTu[k][l + 2][i] * self.eTyut[k][l + 2][i]
                         )
 
                         innerint += self.__simpsonsrule(
@@ -842,7 +841,7 @@ class fitcph2dist:
             # ni (numerator used in calculation of exit rates)
             for k in range(self.steps):
                 pieTy = np.matmul(self.pi, self.eTy[k])
-                Gy = (pieTy[0, i] / self.pieTyt[k]) * self.exitrates[i, 0]
+                Gy = (pieTy[i] / self.pieTyt[k]) * self.exitrates[i]
                 self.ni[i] += Gy * self.hy[k]
 
             for j in range(self.nphases):
@@ -856,17 +855,17 @@ class fitcph2dist:
                             for l in range(0, len(u) - 2, 2):
                                 # inner fa
                                 inner_fa = (
-                                    self.pieTu[k][l][0, i] * self.eTyut[k][l][j, 0]
+                                    self.pieTu[k][l][i] * self.eTyut[k][l][j]
                                 )
                                 # inner fmid
                                 inner_fmid = (
-                                    self.pieTu[k][l + 1][0, i]
-                                    * self.eTyut[k][l + 1][j, 0]
+                                    self.pieTu[k][l + 1][i]
+                                    * self.eTyut[k][l + 1][j]
                                 )
                                 # inner fb
                                 inner_fb = (
-                                    self.pieTu[k][l + 2][0, i]
-                                    * self.eTyut[k][l + 2][j, 0]
+                                    self.pieTu[k][l + 2][i]
+                                    * self.eTyut[k][l + 2][j]
                                 )
 
                                 innerint += self.__simpsonsrule(
@@ -889,16 +888,16 @@ class fitcph2dist:
 
         # update the initial distribution
         for i in range(self.nphases):
-            self.pi[0, i] = self.bi[i]
+            self.pi[i] = self.bi[i]
         self.pi = self.pi / np.sum(self.pi)
 
         # update the exit rates
         for i in range(self.nphases):
-            self.exitrates[i, 0] = self.ni[i] / self.zi[i]
+            self.exitrates[i] = self.ni[i] / self.zi[i]
 
         # update the PH generator
         for i in range(self.nphases):
-            sm = self.exitrates[i, 0]
+            sm = self.exitrates[i]
             for j in range(self.nphases):
                 if j != i:
                     self.phgen[i, j] = self.nij[i, j] / self.zi[i]
