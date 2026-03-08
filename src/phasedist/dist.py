@@ -216,12 +216,13 @@ class dist:
                     obs[i] = self.__cphsample()
             return obs
 
-    def plot(self, type: str = "pdf") -> None:
+    def plot(self, type: str = "pdf", filename: str = "dist.png") -> None:
         """
         Plots the density or cumulated distribution function.
 
         Args:
             type (str, default="pdf"): The plotted function ("pdf" or "cdf").
+            filename (str, default="dist.png"): Filename of the saved graph.
 
         Returns:
             None
@@ -251,7 +252,7 @@ class dist:
         plt.title(tl)
         plt.legend()
         plt.grid(True)
-        plt.show()
+        plt.savefig(filename)
 
         return None
 
