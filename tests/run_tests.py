@@ -31,7 +31,7 @@ fit = ph.fit(obs=obs,
              initexitrates=exitrates,
              randominit=False,
              discrete=False,
-             verbose=True,
+             verbose=False,
              tolerance=1e-9)
 phdist = fit.getdist()
 
@@ -77,7 +77,7 @@ fit = ph.fit(obs=obs,
              initexitrates=exitrates,
              randominit=False,
              discrete=True,
-             verbose=True,
+             verbose=False,
              tolerance=1e-9)
 phdist = fit.getdist()
 
@@ -127,7 +127,52 @@ if not round(phdist.getquantile(p=0.95),3)==1.953:
 if not round(phdist.getdensity(x=1),3)==0.322:
     sys.exit("Validation test failed at estimation of density.")
 if phdist.getrandom(size=1)>6.0:
-    sys.exit("Validation test failed since an unlikely high number was sampled. Try running the test again. If the problem persist, check your installation.")
+    sys.exit("Validation Test 3 failed since an unlikely high number was sampled. Try running the test again. If the problem persist, check your installation.")
+
+#---------------------------------------------------------------------------
+# TEST 4: Test the approximation of continuous density to PH method
+#---------------------------------------------------------------------------    
+
+initdist = np.array([1.0,0.0,0.0])
+phasegen = np.array([[-1.50,1.0,0.0],
+                     [0.0,-4.0,3.0],
+                     [0.0,0.0,-12.0]])
+exitrates = np.array([0.5,1.0,12.0])
+
+fit = ph.fitcph2dist(nphases = 3,
+                    initdist=initdist,
+                    initphgen=phasegen,
+                    initexitrates=exitrates,
+                    dtype = "coxian",
+                    tolerance=0.01,
+                    verbose=False)
+
+fit.chisq(df = 3)
+fit.fit()
+
+phdist = fit.getdist()
+
+# Compare estimated parameters to the expected results
+
+if not np.array_equal(
+    np.round(phdist.getinitdist(), 3),
+    np.round(np.array([[1.0,0.0,0.0]]), 3),
+):
+    sys.exit("Validation test failed at approximation of Chi-squared distribution.")
+    
+if not np.array_equal(
+    np.round(phdist.getphasegen(), 6),
+    np.round(np.array([[-0.82841462,0.7202343,0.0],
+                      [0.0,-0.89193789,0.4978001],
+                      [0.0,0.0,-0.58758287]]), 6),
+):
+    sys.exit("Validation test failed at approximation of Chi-squared distribution.")
+    
+if not np.array_equal(
+    np.round(phdist.getexitrates(), 6),
+    np.round(np.array([[0.10818032],[0.39413778],[0.58758287]]), 6),
+):
+    sys.exit("Validation test failed at approximation of Chi-squared distribution.")
 
 #---------------------------------------------------------------------------
 # FINAL VALIDATION
