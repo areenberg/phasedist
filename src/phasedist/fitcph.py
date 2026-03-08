@@ -232,9 +232,9 @@ class fitcph:
         self.initexitrates = self.initexitrates.astype(float)
         self.identity = np.eye(self.nphases)
 
-        self.pi = self.initpi
+        self.pi = np.array(self.initpi, dtype=float).flatten()
         self.phgen = self.initphgen
-        self.exitrates = self.initexitrates
+        self.exitrates = np.array(self.initexitrates, dtype=float).flatten()
 
         if self.randominit:
             self.__initrandom()
@@ -251,22 +251,23 @@ class fitcph:
         Returns:
             None
         """
-        nzidx = np.nonzero(self.pi)[1]
+
+        nzidx = np.nonzero(self.pi)
         u = np.random.uniform(low=0.0, high=1.0, size=len(nzidx))
         u = u / np.sum(u)
-        self.pi[0, nzidx] = u
+        self.pi[nzidx] = u
 
-        nzidx = np.nonzero(self.exitrates)[0]
-        u = np.random.uniform(low=0.0, high=10.0, size=len(nzidx))
-        self.exitrates[nzidx, 0] = u
+        nzidx = np.nonzero(self.exitrates)
+        u = np.random.uniform(low=0.0, high=1.0, size=len(nzidx))
+        self.exitrates[nzidx] = u
 
         for i in range(self.nphases):
-            nzidx = np.nonzero(self.phgen[i, :])[1]
+            nzidx = np.nonzero(np.ravel(self.phgen[i, :]))[0]
             msk = nzidx != i
             nzidx = nzidx[msk]
-            u = np.random.uniform(low=0.0, high=10.0, size=len(nzidx))
+            u = np.random.uniform(low=0.0, high=1.0, size=len(nzidx))
             self.phgen[i, nzidx] = u
-            self.phgen[i, i] = -(np.sum(u) + self.exitrates[i, 0])
+            self.phgen[i, i] = -(np.sum(u) + self.exitrates[i])
 
     def __estep(self) -> None:
         """
@@ -291,12 +292,12 @@ class fitcph:
             pieTyt = np.matmul(pieTy, self.exitrates)
             self.loglikelihood += np.log(pieTyt)
             for i in range(self.nphases):
-                self.bi[i] += (self.pi[0, i] * eTyt[i, 0]) / pieTyt
+                self.bi[i] += (self.pi[i] * eTyt[i]) / pieTyt
                 self.zi[i] += self.Jmat[i, i] / pieTyt
                 for j in range(self.nphases):
                     if j != i:
                         self.nij[i, j] += (self.phgen[i, j] * self.Jmat[j, i]) / pieTyt
-                self.ni[i] += (pieTy[0, i] * self.exitrates[i, 0]) / pieTyt
+                self.ni[i] += (pieTy[i] * self.exitrates[i]) / pieTyt
 
     def __mstep(self) -> None:
         """
@@ -308,19 +309,17 @@ class fitcph:
         Returns:
             None
         """
-        for i in range(self.nphases):
-            self.pi[0, i] = self.bi[i] / len(self.obs)
+        self.pi = self.bi / self.obs.size
+
+        self.exitrates = self.ni / self.zi
 
         for i in range(self.nphases):
-            self.exitrates[i, 0] = self.ni[i] / self.zi[i]
-
-        for i in range(self.nphases):
-            sm = self.exitrates[i, 0]
             for j in range(self.nphases):
                 if j != i:
                     self.phgen[i, j] = self.nij[i, j] / self.zi[i]
-                    sm += self.phgen[i, j]
-            self.phgen[i, i] = -sm
+            off_diag_sum = np.sum([self.phgen[i, j] for j in range(self.nphases) if j != i])
+            self.phgen[i, i] = -(off_diag_sum + self.exitrates[i])
+
 
     def __updatelikelihood(self) -> None:
         """
@@ -346,18 +345,20 @@ class fitcph:
         Returns:
             None
         """
+
+        t = self.exitrates[:, None]
+        pi = self.pi[None, :]
+
         mat = expm(
-            np.block(
-                [
-                    [self.phgen, np.matmul(self.exitrates, self.pi)],
-                    [np.zeros((self.nphases, self.nphases)), self.phgen],
-                ]
-            )
-            * y
+            np.block([
+                [self.phgen, np.matmul(t,pi)],
+                [np.zeros((self.nphases, self.nphases)), self.phgen],
+            ]) * y
         )
 
         self.eTy = mat[: self.nphases, : self.nphases]
         self.Jmat = mat[: self.nphases, self.nphases : 2 * self.nphases]
+
 
     def __countParameters(self) -> None:
         """
@@ -373,14 +374,14 @@ class fitcph:
         for i in range(self.nphases):
             phg += (
                 np.count_nonzero(self.phgen[i, :])
-                + np.count_nonzero(self.exitrates[i, 0])
+                + np.count_nonzero(self.exitrates[i])
                 - 1
             )
         self.nparam = phg + (np.count_nonzero(self.pi) - 1)
 
     def __polish(self) -> None:
         """
-        Normalizes and enforces consistency constraints on model parameters.
+        Normalizes model parameters.
 
         Args:
             None
@@ -389,6 +390,3 @@ class fitcph:
             None
         """
         self.pi = self.pi / np.sum(self.pi)
-        np.fill_diagonal(self.phgen, 0.0)
-        v = np.add(np.sum(self.phgen, axis=1), self.exitrates)
-        np.fill_diagonal(self.phgen, -v)

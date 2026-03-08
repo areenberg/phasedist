@@ -88,7 +88,7 @@ class fitdph:
                     "  var =",
                     self.getvar(),
                 )
-        # self.__polish()
+        self.__polish()
 
     def getinitdist(self) -> np.array:
         """
@@ -254,9 +254,9 @@ class fitdph:
         self.initexitrates = self.initexitrates.astype(float)
         self.identity = np.eye(self.nphases)
 
-        self.pi = self.initpi
+        self.pi = np.array(self.initpi, dtype=float).flatten()
         self.phgen = self.initphgen
-        self.exitrates = self.initexitrates
+        self.exitrates = np.array(self.initexitrates, dtype=float).flatten()
 
         if self.randominit:
             self.__initrandom()
@@ -273,19 +273,19 @@ class fitdph:
         Returns:
             None
         """
-        nzidx = np.nonzero(self.pi)[1]
+        nzidx = np.nonzero(self.pi)
         u = np.random.uniform(low=0.0, high=1.0, size=len(nzidx))
         u = u / np.sum(u)
-        self.pi[0, nzidx] = u
+        self.pi[nzidx] = u
 
-        nzidx = np.nonzero(self.exitrates)[0]
+        nzidx = np.nonzero(self.exitrates)
         u = np.random.uniform(low=0.0, high=1.0, size=len(nzidx))
-        self.exitrates[nzidx, 0] = u
+        self.exitrates[nzidx] = u
 
         for i in range(self.nphases):
-            nzidx = np.nonzero(self.phgen[i, :])[1]
-            u = np.random.uniform(low=0.0, high=1.0, size=len(nzidx))
-            u = (u / np.sum(u)) * (1.0 - self.exitrates[i, 0])
+            nzidx = np.nonzero(np.ravel(self.phgen[i, :]))
+            u = np.random.uniform(low=0.0, high=1.0, size=nzidx[0].size)
+            u = (u / np.sum(u)) * (1.0 - self.exitrates[i])
             self.phgen[i, nzidx] = u
 
     def __estep(self) -> None:
@@ -308,28 +308,29 @@ class fitdph:
             if y != y0:
                 if y == 1:
                     Tpow = self.identity
-                    Ttprod = self.exitrates
+                    Ttprod = self.exitrates.flatten()
                 else:
-                    Tpow = np.linalg.matrix_power(self.phgen, (y - 1))
-                    Ttprod = np.matmul(Tpow, self.exitrates)
+                    Tpow = np.linalg.matrix_power(self.phgen, y - 1)
+                    Ttprod = np.ravel(np.matmul(Tpow, self.exitrates))
+
                 piTtprod = np.matmul(self.pi, Ttprod)
 
                 if y >= 2:
                     self.__Kmatrix(y)
+
             y0 = y
 
             if piTtprod != 0.0:
+                piTpow = np.ravel(np.matmul(self.pi, Tpow))
+
                 for i in range(self.nphases):
-                    self.bi[i] += self.pi[0, i] * Ttprod[i, 0] / piTtprod
-                    piTpow = np.matmul(self.pi, Tpow)
-                    self.ni[i] += piTpow[0, i] * self.exitrates[i, 0] / piTtprod
+                    self.bi[i] += self.pi[i] * Ttprod[i] / piTtprod
+                    self.ni[i] += piTpow[i] * self.exitrates[i] / piTtprod
 
                     if y >= 2:
                         for j in range(self.nphases):
-                            self.nij[i, j] += (
-                                self.phgen[i, j] * self.Kmat[j, i] / piTtprod
-                            )
-
+                            self.nij[i, j] += (self.phgen[i, j] * self.Kmat[j, i]) / piTtprod
+                            
     def __mstep(self) -> None:
         """
         Performs the maximization (M) step of the EM algorithm.
@@ -341,13 +342,13 @@ class fitdph:
             None
         """
         for i in range(self.nphases):
-            self.pi[0, i] = self.bi[i] / len(self.obs)
+            self.pi[i] = self.bi[i] / self.obs.size
 
         for i in range(self.nphases):
             sm = self.ni[i]
             for j in range(self.nphases):
                 sm += self.nij[i, j]
-            self.exitrates[i, 0] = self.ni[i] / sm
+            self.exitrates[i] = self.ni[i] / sm
 
         for i in range(self.nphases):
             for j in range(self.nphases):
@@ -380,8 +381,9 @@ class fitdph:
         Returns:
             float: The probability mass.
         """
+        t = self.exitrates[:, None]
         return np.matmul(
-            self.pi, np.matmul(np.linalg.matrix_power(self.phgen, y), self.exitrates)
+            self.pi, np.matmul(np.linalg.matrix_power(self.phgen, y), t)
         )
 
     def __Kmatrix(self, y: int) -> None:
@@ -393,7 +395,7 @@ class fitdph:
 
         Returns:
             None
-        """
+        
         if y < 2:
             return
 
@@ -409,6 +411,27 @@ class fitdph:
                 Ty = np.matmul(Ty, self.phgeninv)
                 exit_prod = np.matmul(Ty, self.exitrates)
                 pi_mat = np.matmul(pi_mat, self.phgen)
+        """
+
+        if y < 2:
+            self.Kmat = np.zeros((self.nphases, self.nphases))
+            return
+
+        self.Kmat = np.zeros((self.nphases, self.nphases))
+
+        Ty = np.linalg.matrix_power(self.phgen, y - 2)
+
+        exit_prod = np.matmul(Ty, self.exitrates).flatten()
+        pi_mat = self.pi.flatten()
+
+        for k in range(y - 1):
+            self.Kmat += np.outer(exit_prod, pi_mat)
+
+            if k < y - 2:
+                Ty = np.matmul(Ty, self.phgeninv)
+                exit_prod = np.matmul(Ty, self.exitrates).flatten()
+                pi_mat = np.matmul(pi_mat, self.phgen).flatten()        
+
 
     def __countParameters(self) -> None:
         """
@@ -424,14 +447,14 @@ class fitdph:
         for i in range(self.nphases):
             phg += (
                 np.count_nonzero(self.phgen[i, :])
-                + np.count_nonzero(self.exitrates[i, 0])
+                + np.count_nonzero(self.exitrates[i])
                 - 1
             )
         self.nparam = phg + (np.count_nonzero(self.pi) - 1)
 
     def __polish(self) -> None:
         """
-        Normalizes and enforces consistency constraints on model parameters.
+        Normalizes model parameters.
 
         Args:
             None
@@ -440,9 +463,3 @@ class fitdph:
             None
         """
         self.pi = self.pi / np.sum(self.pi)
-        np.fill_diagonal(self.phgen, 0.0)
-        v = np.subtract(
-            np.ones((self.nphases, 1)),
-            np.add(np.sum(self.phgen, axis=1), self.exitrates),
-        )
-        np.fill_diagonal(self.phgen, v)

@@ -647,14 +647,7 @@ class fit:
         if not self.discrete and np.any(phasegen[np.eye(self.nphases, dtype=bool)] > 0):
             print("Error: The PH generator contains positive diagonal values.")
             return False
-        if (
-            not self.discrete
-            and np.max(abs(np.add(np.sum(phasegen, axis=1), exitrates))) > 1e-6
-        ):
-            print(
-                "Warning: An element of the exit rate vector deviates at least 1e-6 from the absolute row sum of the PH generator."
-            )
-            return True
+        
         # check exit rates
         if self.nphases != exitrates.size:
             print(
