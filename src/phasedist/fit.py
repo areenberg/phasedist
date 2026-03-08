@@ -223,6 +223,7 @@ class fit:
         title: str = "Empirical and Fitted CDFs",
         labelfitted: str = "Fitted CDF",
         labelempirical: str = "Empirical CDF",
+        filename: str = "CDFcheck.png"
     ) -> None:
         """
         Plot empirical and fitted cumulative distribution functions (CDFs).
@@ -337,7 +338,7 @@ class fit:
         plt.title(title)
         plt.legend()
         plt.grid()
-        plt.show()
+        plt.savefig(filename)
 
     # ----------------------------------------------------------------------
     #   PRIVATE METHODS
