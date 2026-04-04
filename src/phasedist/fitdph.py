@@ -395,24 +395,7 @@ class fitdph:
 
         Returns:
             None
-        
-        if y < 2:
-            return
-
-        self.Kmat = np.zeros((self.nphases, self.nphases))
-
-        Ty = np.linalg.matrix_power(self.phgen, y - 2)
-        exit_prod = np.matmul(Ty, self.exitrates)
-        pi_mat = self.pi
-
-        for k in range(y - 1):
-            self.Kmat += np.outer(exit_prod, pi_mat)
-            if k < y - 2:
-                Ty = np.matmul(Ty, self.phgeninv)
-                exit_prod = np.matmul(Ty, self.exitrates)
-                pi_mat = np.matmul(pi_mat, self.phgen)
         """
-
         if y < 2:
             self.Kmat = np.zeros((self.nphases, self.nphases))
             return
