@@ -35,6 +35,7 @@ class fit:
         seed: int = None,
         tolerance: float = 1e-6,
         itermax: int = 1000000,
+        fixediter: int = None,
         verbose: bool = False,
     ) -> None:
         """
@@ -63,6 +64,8 @@ class fit:
                 Convergence tolerance for the EM algorithm.
             itermax (int, default=1000000):
                 Maximum number of iterations.
+            fixediter (int, optional):
+                Fixed number of iterations for the EM algorithm.    
             verbose (bool, default=False):
                 If True, prints progress output during fitting.
                 
@@ -84,6 +87,7 @@ class fit:
         self.seed = seed
         self.tolerance = tolerance
         self.itermax = itermax
+        self.fixediter = fixediter
         self.verbose = verbose
 
         # checking and fitting
@@ -412,6 +416,9 @@ class fit:
         if not isinstance(self.itermax, float) and not isinstance(self.itermax, int):
             print("Error: The argument 'itermax' needs to be of type 'float' or 'int'.")
             return False
+        if self.fixediter is not None and not isinstance(self.fixediter, int):
+            print("Error: The argument 'fixediter' needs to be of type 'int'.")
+            return False        
         if not isinstance(self.verbose, bool):
             print("Error: The argument 'verbose' needs to be of type 'bool'.")
             return False
@@ -459,6 +466,11 @@ class fit:
         elif self.dtype != "custom":
             print("Error: Unknown distribution type.")
             return 1
+
+        # check if fixed iterations requested
+        if self.fixediter is not None and self.fixediter>0:
+            self.tolerance=0.0
+            self.itermax=self.fixediter
 
         # check for zeros in observations
         obsnonzero, fraczero = self.__checkzeros()
