@@ -68,6 +68,6 @@ class mcph:
             off_diag_sum = np.sum([self.phgen[i, j] for j in range(self.nphases) if j != i])
             self.phgen[i, i] = -(off_diag_sum + self.exitrates[i])
 
-        return self.initdist,self.phgen,self.exitrates 
+        return self.initdist,self.phgen,self.exitrates
 
     
