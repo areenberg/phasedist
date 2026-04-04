@@ -469,7 +469,7 @@ class fit:
 
         # check if fixed iterations requested
         if self.fixediter is not None and self.fixediter>0:
-            self.tolerance=0.0
+            self.tolerance=-np.inf
             self.itermax=self.fixediter
 
         # check for zeros in observations
