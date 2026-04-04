@@ -2,7 +2,7 @@ import numpy as np
 from scipy.linalg import expm
 
 
-class mcph:
+class mdph:
     """
     Performs the M-step of the EM algorithm for a Discrete-Time Phase Type (DPH) distribution 
     from p. 675 Bladt and Nielsen (2017). Note: This class has no input checks.
