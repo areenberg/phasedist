@@ -6,9 +6,9 @@ PhaseDist is a Python package for fitting continuous and discrete phase-type dis
 ## Features
 
 * Fit continuous and discrete phase-type distributions using EM algorithms.
-* Use built-in methods to easily check the fitted distribution.
-* Evaluate various metrics, such as the mean, density, quantile function, AIC and more.
-* Simulate observations from phase-type distributions.
+* Use built-in methods to check the fitted distribution.
+* Compute metrics, such as the mean, density, and quantile function.
+* Simulate observations from a phase-type distribution.
 * Approximate another distribution, e.g. a log-normal distribution, using a phase-type distribution.
 
 # Installation
