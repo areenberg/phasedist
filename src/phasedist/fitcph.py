@@ -1,6 +1,7 @@
 import numpy as np
 from scipy.linalg import expm
-
+from phasedist.ecph import ecph
+from phasedist.mcph import mcph
 
 class fitcph:
     """
@@ -61,12 +62,29 @@ class fitcph:
             None
         """
         # fit the CPH distribution
+
+        self.estep = ecph(nphases=self.nphases)
+        self.mstep = mcph(nphases=self.nphases,
+                          nobs=self.obs.size)
+
         iter = 0
         eps = np.inf
         loglik0 = -np.inf
         while iter < self.itermax and eps > self.tolerance:
-            self.__estep()
-            self.__mstep()
+
+            #E-step
+            self.bi,self.zi,self.ni,self.nij = self.estep.run(obs=self.obs,
+                                                              initdist=self.pi,
+                                                              phgen=self.phgen,
+                                                              exitrates=self.exitrates)
+            self.loglikelihood = self.estep.loglikelihood
+
+            #M-step
+            self.pi,self.phgen,self.exitrates = self.mstep.run(bi=self.bi,
+                                                               zi=self.zi,
+                                                               ni=self.ni,
+                                                               nij=self.nij)
+
             eps = self.loglikelihood - loglik0  # loglik is evaluated within the E-step
             loglik0 = self.loglikelihood
             iter += 1
@@ -269,6 +287,7 @@ class fitcph:
             self.phgen[i, nzidx] = u
             self.phgen[i, i] = -(np.sum(u) + self.exitrates[i])
 
+    '''
     def __estep(self) -> None:
         """
         Performs the expectation (E) step of the EM algorithm.
@@ -298,7 +317,9 @@ class fitcph:
                     if j != i:
                         self.nij[i, j] += (self.phgen[i, j] * self.Jmat[j, i]) / pieTyt
                 self.ni[i] += (pieTy[i] * self.exitrates[i]) / pieTyt
-
+    '''
+                
+    '''
     def __mstep(self) -> None:
         """
         Performs the maximization (M) step of the EM algorithm.
@@ -319,7 +340,7 @@ class fitcph:
                     self.phgen[i, j] = self.nij[i, j] / self.zi[i]
             off_diag_sum = np.sum([self.phgen[i, j] for j in range(self.nphases) if j != i])
             self.phgen[i, i] = -(off_diag_sum + self.exitrates[i])
-
+    '''
 
     def __updatelikelihood(self) -> None:
         """
@@ -335,6 +356,7 @@ class fitcph:
         for y in self.obs:
             self.loglikelihood += np.log(self.getdensity(y))
 
+    '''
     def __Jmatrix(self, y: float) -> None:
         """
         Computes the J matrix and matrix exponential exp(Ty).
@@ -358,7 +380,7 @@ class fitcph:
 
         self.eTy = mat[: self.nphases, : self.nphases]
         self.Jmat = mat[: self.nphases, self.nphases : 2 * self.nphases]
-
+    '''
 
     def __countParameters(self) -> None:
         """

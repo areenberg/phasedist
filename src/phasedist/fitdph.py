@@ -1,5 +1,6 @@
 import numpy as np
-
+from phasedist.edph import edph
+from phasedist.mdph import mdph
 
 class fitdph:
     """
@@ -63,12 +64,27 @@ class fitdph:
             None
         """
         # fit the DPH distribution
+
+        self.estep = edph(nphases=self.nphases)
+        self.mstep = mdph(nphases=self.nphases,
+                          nobs=self.obs.size)
+
         iter = 0
         eps = np.inf
         loglik0 = self.loglikelihood
         while iter < self.itermax and eps > self.tolerance:
-            self.__estep()
-            self.__mstep()
+            
+            #E-step
+            self.bi,self.ni,self.nij = self.estep.run(obs=self.obs,
+                                                      initdist=self.pi,
+                                                      phgen=self.phgen,
+                                                      exitrates=self.exitrates)
+            
+            #M-step
+            self.pi,self.phgen,self.exitrates = self.mstep.run(bi=self.bi,
+                                                               ni=self.ni,
+                                                               nij=self.nij)            
+            
             self.__updatelikelihood()
             eps = self.loglikelihood - loglik0
             loglik0 = self.loglikelihood
@@ -288,6 +304,8 @@ class fitdph:
             u = (u / np.sum(u)) * (1.0 - self.exitrates[i])
             self.phgen[i, nzidx] = u
 
+
+    '''
     def __estep(self) -> None:
         """
         Performs the expectation (E) step of the EM algorithm.
@@ -330,7 +348,9 @@ class fitdph:
                     if y >= 2:
                         for j in range(self.nphases):
                             self.nij[i, j] += (self.phgen[i, j] * self.Kmat[j, i]) / piTtprod
-                            
+    '''
+
+    '''
     def __mstep(self) -> None:
         """
         Performs the maximization (M) step of the EM algorithm.
@@ -356,6 +376,7 @@ class fitdph:
                 for k in range(self.nphases):
                     sm += self.nij[i, k]
                 self.phgen[i, j] = self.nij[i, j] / sm
+    '''        
 
     def __updatelikelihood(self) -> None:
         """
@@ -386,6 +407,7 @@ class fitdph:
             self.pi, np.matmul(np.linalg.matrix_power(self.phgen, y), t)
         )
 
+    '''
     def __Kmatrix(self, y: int) -> None:
         """
         Computes the matrix-function K for a given observation.
@@ -414,7 +436,7 @@ class fitdph:
                 Ty = np.matmul(Ty, self.phgeninv)
                 exit_prod = np.matmul(Ty, self.exitrates).flatten()
                 pi_mat = np.matmul(pi_mat, self.phgen).flatten()        
-
+    '''
 
     def __countParameters(self) -> None:
         """
