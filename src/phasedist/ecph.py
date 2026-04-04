@@ -79,14 +79,12 @@ class ecph:
         self.zi = np.zeros(self.nphases)
         self.ni = np.zeros(self.nphases)
         self.nij = np.zeros((self.nphases, self.nphases))
-        self.loglikelihood = 0.0
-
+        
         for y in obs:
             self.__Jmatrix(y)
             eTyt = np.matmul(self.eTy, self.exitrates)
             pieTy = np.matmul(self.initdist, self.eTy)
             pieTyt = np.matmul(pieTy, self.exitrates)
-            self.loglikelihood += np.log(pieTyt)
             for i in range(self.nphases):
                 self.bi[i] += (self.initdist[i] * eTyt[i]) / pieTyt
                 self.zi[i] += self.Jmat[i, i] / pieTyt
@@ -97,15 +95,3 @@ class ecph:
 
 
         return self.bi,self.zi,self.ni,self.nij
-
-    def getLogLikelihood(self) -> float:
-        """
-        Returns the log-likelihood computed during the E-step.
-
-        Args:
-            None.
-
-        Returns:
-            float: The log-likelihood.
-        """
-        return self.loglikelihood
