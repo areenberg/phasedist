@@ -1,6 +1,4 @@
 import numpy as np
-from scipy.linalg import expm
-
 
 class edph:
     """
@@ -62,7 +60,7 @@ class edph:
             initdist: np.array,
             phgen: np.array,
             exitrates: np.array
-        ) -> np.array | np.array | np.array | np.array:
+        ):
         """
         Performs the calculations of the E-step.
 
@@ -96,7 +94,7 @@ class edph:
                     Tpow = np.linalg.matrix_power(self.phgen, y - 1)
                     Ttprod = np.ravel(np.matmul(Tpow, self.exitrates))
 
-                piTtprod = np.matmul(self.pi, Ttprod)
+                piTtprod = np.matmul(self.initdist, Ttprod)
 
                 if y >= 2:
                     self.__Kmatrix(y)
@@ -107,7 +105,7 @@ class edph:
                 piTpow = np.ravel(np.matmul(self.initdist, Tpow))
 
                 for i in range(self.nphases):
-                    self.bi[i] += self.pi[i] * Ttprod[i] / piTtprod
+                    self.bi[i] += self.initdist[i] * Ttprod[i] / piTtprod
                     self.ni[i] += piTpow[i] * self.exitrates[i] / piTtprod
 
                     if y >= 2:
