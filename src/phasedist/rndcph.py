@@ -81,7 +81,7 @@ class rndcph:
         self.new_initdist = np.copy(self.initdist)
 
         #get indices of the non-zero elements
-        nzidx = np.nonzero(self.pi)
+        nzidx = np.nonzero(self.initdist)
 
         #sample numbers
         u = np.random.uniform(low=0.0, high=1.0, size=len(nzidx))
