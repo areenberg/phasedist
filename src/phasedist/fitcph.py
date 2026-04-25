@@ -2,6 +2,7 @@ import numpy as np
 from scipy.linalg import expm
 from phasedist.ecph import ecph
 from phasedist.mcph import mcph
+from phasedist.rndcph import rndcph
 
 class fitcph:
     """
@@ -270,6 +271,16 @@ class fitcph:
             None
         """
 
+        rnd = rndcph(nphases=self.nphases,
+                     initdist=self.pi,
+                     phgen=self.phgen,
+                     exitrates=self.exitrates)
+
+        self.pi, self.phgen, self.exitrates = rnd.run()
+
+        return None
+
+        '''
         nzidx = np.nonzero(self.pi)
         u = np.random.uniform(low=0.0, high=1.0, size=len(nzidx))
         u = u / np.sum(u)
@@ -286,6 +297,7 @@ class fitcph:
             u = np.random.uniform(low=0.0, high=1.0, size=len(nzidx))
             self.phgen[i, nzidx] = u
             self.phgen[i, i] = -(np.sum(u) + self.exitrates[i])
+        '''    
 
     '''
     def __estep(self) -> None:
