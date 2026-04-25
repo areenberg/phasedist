@@ -78,7 +78,7 @@ class rndcph:
         """
 
         #initialize the output vector
-        self.new_initdist = np.copy(self.initdist.size)
+        self.new_initdist = np.copy(self.initdist)
 
         #get indicies of the non-zero elements
         nzidx = np.nonzero(self.pi)
