@@ -80,7 +80,7 @@ class rndcph:
         #initialize the output vector
         self.new_initdist = np.copy(self.initdist)
 
-        #get indicies of the non-zero elements
+        #get indices of the non-zero elements
         nzidx = np.nonzero(self.pi)
 
         #sample numbers
@@ -109,7 +109,7 @@ class rndcph:
         #generate matrix one row (i.e. phase) at a time
         for i in range(self.nphases):
 
-            #get indicies of the non-zero elements
+            #get indices of the non-zero elements
             nzidx = np.nonzero(np.ravel(self.phgen[i, :]))[0]
             msk = nzidx != i
             nzidx = nzidx[msk]
@@ -137,7 +137,7 @@ class rndcph:
         #initialize the output vector
         self.new_exitrates = np.copy(self.exitrates)
 
-        #get indicies of the non-zero elements
+        #get indices of the non-zero elements
         nzidx = np.nonzero(self.exitrates)
         
         #sample numbers
