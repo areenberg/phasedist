@@ -1,6 +1,7 @@
 import numpy as np
 from phasedist.edph import edph
 from phasedist.mdph import mdph
+from phasedist.rnddph import rnddph
 
 class fitdph:
     """
@@ -289,6 +290,15 @@ class fitdph:
         Returns:
             None
         """
+
+        rnd = rnddph(nphases=self.nphases,
+                     initdist=self.pi,
+                     phgen=self.phgen,
+                     exitrates=self.exitrates)
+
+        self.pi, self.phgen, self.exitrates = rnd.run()
+
+        '''
         nzidx = np.nonzero(self.pi)
         u = np.random.uniform(low=0.0, high=1.0, size=len(nzidx))
         u = u / np.sum(u)
@@ -303,6 +313,7 @@ class fitdph:
             u = np.random.uniform(low=0.0, high=1.0, size=nzidx[0].size)
             u = (u / np.sum(u)) * (1.0 - self.exitrates[i])
             self.phgen[i, nzidx] = u
+        '''    
 
 
     '''
