@@ -191,13 +191,13 @@ class dist:
 
     def getrandom(self, size: int = 1) -> int | float:
         """
-        Samples a pseudo-random number from the distribution.
+        Generates pseudo-random samples from the PH distribution.
 
         Args:
-            size (int, default=1): The sample size.
+            size (int, default=1): The number of samples returned.
 
         Returns:
-            int | float: The generated random number.
+            int | float: The generated samples.
         """
 
         if size == 1:
@@ -397,14 +397,31 @@ class dist:
         else:
             return self.__cphquantfun(prob=p, tol=tolerance, itermax=1000000)
 
-    def __cphsample(self) -> float:
+    def __cphsample(self, method: str = "direct") -> float:
         """
-        Samples a pseudo-random value from a continuous phase-type (CPH) distribution.
-
+        Simulates a pseudo-random sample from a continuous phase-type (CPH) distribution
+        using the selected method.
+        
         Returns:
-            float: The sampled value.
+            float: The simulated sample.
         """
 
+        if method == "direct":
+            return self.__cphrnddirect()
+        elif method == "quantile":
+            return self.__cphrndquantile()
+        else:
+            print("Error: Simulation method not recognized. Available methods: 'direct', 'quantile'")
+            return None
+
+    def __cphrnddirect(self) -> float:
+        """
+        Simulates a pseudo-random sample from a continuous phase-type (CPH) distribution
+        by simulating each transition directly.
+        
+        Returns:
+            float: The simulated sample.
+        """
         t = 0.0
         s = np.random.choice(self.nphases, size=1, p=self.flatinitdist)[0]
         while True:
@@ -413,15 +430,40 @@ class dist:
             s = np.random.choice((self.nphases + 1), size=1, p=a)[0]
             if s == self.nphases:
                 return t
-
-    def __dphsample(self) -> int:
+        
+    def __cphrndquantile(self,tolerance: float = 1e-9) -> float:
         """
-        Samples a pseudo-random value from a discrete phase-type (DPH) distribution.
+        Simulates a pseudo-random sample from a continuous phase-type (CPH) distribution
+        using the quantile function.
+        
+        Returns:
+            float: The simulated sample.
+        """
+        return self.__computequantile(np.random.rand(),tolerance)
+
+    def __dphsample(self, method: str = "direct") -> int:
+        """
+        Samples a pseudo-random value from a discrete phase-type (DPH) distribution
+        using the selected method.
 
         Returns:
             int: The sampled value.
         """
 
+        if method == "direct":
+            return self.__dphrnddirect()
+        else:
+            print("Error: Simulation method not recognized. Available methods: 'direct'")
+            return None
+
+    def __dphrnddirect(self) -> int:
+        """
+        Simulates a pseudo-random sample from a discrete phase-type (DPH) distribution
+        by simulating each transition directly.
+        
+        Returns:
+            int: The simulated sample.
+        """
         t = 0  # Time in discrete steps
         s = np.random.choice(self.nphases, size=1, p=self.flatinitdist)[0]
         while True:
