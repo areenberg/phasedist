@@ -439,7 +439,7 @@ class dist:
         Returns:
             float: The simulated sample.
         """
-        return self.__computequantile(np.random.rand(),tolerance)
+        return self.__cphquantfun(prob=np.random.rand(), tol=tolerance, itermax=1000000)
 
     def __dphsample(self, method: str = "direct") -> int:
         """
