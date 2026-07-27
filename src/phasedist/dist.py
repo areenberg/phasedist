@@ -216,6 +216,25 @@ class dist:
                     obs[i] = self.__cphsample()
             return obs
 
+    def countParameters(self) -> None:
+        """
+        Counts the number of independent model parameters.
+
+        Args:
+            None
+
+        Returns:
+            None
+        """
+        phg = 0
+        for i in range(self.nphases):
+            phg += (
+                np.count_nonzero(self.phgen[i, :])
+                + np.count_nonzero(self.exitrates[i])
+                - 1
+            )
+        return (phg + (np.count_nonzero(self.initdist) - 1))
+
     def plot(self, type: str = "pdf", filename: str = "dist.png") -> None:
         """
         Plots the density or cumulated distribution function.
