@@ -6,9 +6,6 @@ TEST SCRIPT FOR THE PHASEDIST PACKAGE
 import os
 import sys
 import numpy as np
-project_root = os.path.dirname(os.path.abspath(__file__))
-src_path = os.path.join(project_root, "..", "src")
-sys.path.append(os.path.abspath(src_path))
 import phasedist as ph
 
 #------------------------------------------------------------------
