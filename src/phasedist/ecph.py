@@ -28,6 +28,7 @@ class ecph:
         self.zi = np.zeros(self.nphases)
         self.ni = np.zeros(self.nphases)
         self.nij = np.zeros((self.nphases, self.nphases))
+        self.loglikelihood = 0.0
 
         return None
 
@@ -54,6 +55,54 @@ class ecph:
         self.eTy = mat[: self.nphases, : self.nphases]
         self.Jmat = mat[: self.nphases, self.nphases : 2 * self.nphases]
 
+    def __Mmatrix(self, y: float) -> None:
+        """
+        Computes the M-matrix and matrix exponential exp(Ty), where
+        M(y) = int_0^y exp(Tu) du.
+    
+        Args:
+            y (float): Observation value.
+    
+        Returns:
+            None
+        """
+        mat = expm(
+            np.block([
+                [self.phgen, np.eye(self.nphases)],
+                [np.zeros((self.nphases, self.nphases)), np.zeros((self.nphases, self.nphases))],
+            ]) * y
+        )
+    
+        self.eTy = mat[: self.nphases, : self.nphases]
+        self.Mmat = mat[: self.nphases, self.nphases : 2 * self.nphases]
+    
+    
+    def __Kmatrix(self, y: float) -> None:
+        """
+        Computes the K-matrix and matrix exponential exp(Ty), where
+        K(y) = int_0^y exp(T(y-u)) e pi exp(Tu) du, with e the column vector of
+        ones (i.e. the same construction as __Jmatrix, but with e in place of
+        the exit-rate vector t).
+    
+        Args:
+            y (float): Observation value.
+    
+        Returns:
+            None
+        """
+        e = np.ones((self.nphases, 1))
+        pi = self.initdist[None, :]
+    
+        mat = expm(
+            np.block([
+                [self.phgen, np.matmul(e, pi)],
+                [np.zeros((self.nphases, self.nphases)), self.phgen],
+            ]) * y
+        )
+    
+        self.eTy = mat[: self.nphases, : self.nphases]
+        self.Kmat = mat[: self.nphases, self.nphases : 2 * self.nphases]
+
     def __uncensored(self,y):
         """
         Updates b_i, z_i, n_i, n_ij with the contribution
@@ -66,7 +115,7 @@ class ecph:
             None
         """
 
-        self.__Jmatrix(y)
+        self.__Jmatrix(y) #computes self.eTy and self.Jmat
 
         eTyt = np.matmul(self.eTy, self.exitrates)
         pieTy = np.matmul(self.initdist, self.eTy)
@@ -80,17 +129,120 @@ class ecph:
                     self.nij[i, j] += (self.phgen[i, j] * self.Jmat[j, i]) / self.pieTyt
             self.ni[i] += (pieTy[i] * self.exitrates[i]) / self.pieTyt
 
-    def __rightcensored(self,right):
-        # CODE HERE
-        return 0
+    def __rightcensored(self, right: float) -> None:
+        """
+        Updates b_i, z_i, n_i, n_ij with the contribution from a single
+        right-censored observation known only to satisfy Y > right.
 
-    def __leftcensored(self,left):
-        # CODE HERE
-        return 0
+        Args:
+            right (float): Limit of right-censored observation (i.e. Y > right).
 
-    def __intervalcensored(self,left,right):
-        # CODE HERE
-        return 0
+        Returns:
+            None        
+        """
+
+        self.__Kmatrix(right)
+        eTs = self.eTy
+        Ks = self.Kmat
+
+        pieTs = np.matmul(self.initdist, eTs)
+        den = np.sum(pieTs)  # P(Y > right)
+        self.pieTyt = den
+
+        eTs_rowsum = np.sum(eTs, axis=1)
+
+        for i in range(self.nphases):
+            self.bi[i] += (self.initdist[i] * eTs_rowsum[i]) / den
+            self.zi[i] += Ks[i, i] / den
+            for j in range(self.nphases):
+                if j != i:
+                    self.nij[i, j] += (self.phgen[i, j] * Ks[j, i]) / den
+            # N_i(right) = 0 identically when Y > right, so ni is untouched
+
+    def __leftcensored(self, left: float) -> None:
+        """
+        Updates b_i, z_i, n_i, n_ij with the contribution from a single
+        left-censored observation known only to satisfy Y <= left.
+
+        Equivalent to the method __intervalcensored(0, left).
+
+        Args:
+            left (float): Right endpoint of the left-censoring interval
+                (i.e. it is known that Y <= left).
+
+        Returns:
+            None
+        """
+
+        self.__Mmatrix(left)
+        eTt = self.eTy
+        Mt = self.Mmat
+
+        self.__Kmatrix(left)
+        Kt = self.Kmat
+
+        pieTt = np.matmul(self.initdist, eTt)
+        den = 1.0 - np.sum(pieTt)  # P(Y <= left)
+        self.pieTyt = den
+
+        piM = np.matmul(self.initdist, Mt)
+        eTt_rowsum = np.sum(eTt, axis=1)
+
+        for i in range(self.nphases):
+            self.bi[i] += (self.initdist[i] * (1.0 - eTt_rowsum[i])) / den
+            self.zi[i] += (piM[i] - Kt[i, i]) / den
+            for j in range(self.nphases):
+                if j != i:
+                    self.nij[i, j] += (self.phgen[i, j] * (piM[i] - Kt[j, i])) / den
+            self.ni[i] += (self.exitrates[i] * piM[i]) / den
+
+    def __intervalcensored(self, left: float, right: float) -> None:
+        """
+        Updates b_i, z_i, n_i, n_ij with the contribution from a single
+        interval-censored observation known only to lie in (left, right].
+
+        Args:
+            left (float): Lower/left limit.
+            right (float): Upper/right limit.
+
+        Returns:
+            None
+        """
+
+        self.__Mmatrix(left)
+        eTs = self.eTy
+        Ms = self.Mmat
+
+        self.__Kmatrix(left)
+        Ks = self.Kmat
+
+        self.__Mmatrix(right)
+        eTt = self.eTy
+        Mt = self.Mmat
+
+        self.__Kmatrix(right)
+        Kt = self.Kmat
+
+        pieTs = np.matmul(self.initdist, eTs)
+        pieTt = np.matmul(self.initdist, eTt)
+        pieTse = np.sum(pieTs)
+        pieTte = np.sum(pieTt)
+
+        den = pieTse - pieTte
+        self.pieTyt = den
+
+        piM = np.matmul(self.initdist, Mt - Ms)
+        KtmKs = Kt - Ks
+        eTs_rowsum = np.sum(eTs, axis=1)
+        eTt_rowsum = np.sum(eTt, axis=1)
+
+        for i in range(self.nphases):
+            self.bi[i] += (self.initdist[i] * (eTs_rowsum[i] - eTt_rowsum[i])) / den
+            self.zi[i] += (piM[i] - KtmKs[i, i]) / den
+            for j in range(self.nphases):
+                if j != i:
+                    self.nij[i, j] += (self.phgen[i, j] * (piM[i] - KtmKs[j, i])) / den
+            self.ni[i] += (self.exitrates[i] * piM[i]) / den
 
     def __storefundamental(
                             self,
@@ -129,9 +281,9 @@ class ecph:
         Censored observations can be specified using the (n_obs x 2) censoring ndarray where each
         row corresponds to an observation and the two columns determines if an observation is censored:
         - [np.nan,np.nan] -> uncensored.
-        - [np.nan,float] -> right-censored.
-        - [float,np.nan] -> left-censored.
-        - [float,float] -> interval-censored.
+        - [np.nan,float] -> right-censored (larger or equal to t).
+        - [float,np.nan] -> left-censored (less or equal to s).
+        - [float,float] -> interval-censored (from s to t).
 
         Args:
             obs (ndarray): Array of observations.
@@ -168,7 +320,7 @@ class ecph:
                 elif not np.isnan(censoring[idx,0]) and not np.isnan(censoring[idx,1]):
                     self.__intervalcensored(censoring[idx,0],censoring[idx,1]) #Interval-censored observation
 
-                self.loglikelihood += np.log(self.pieTyt) #<<<--- check if needs to be dependent on censoring type    
+                self.loglikelihood += np.log(self.pieTyt) #depends on censoring type    
 
         else:
             for y in obs:
