@@ -72,7 +72,7 @@ class fitdph:
 
         iter = 0
         eps = np.inf
-        loglik0 = self.loglikelihood
+        loglik0 = -np.inf
         while iter < self.itermax and eps > self.tolerance:
             
             #E-step
