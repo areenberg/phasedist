@@ -80,13 +80,14 @@ class fitdph:
                                                       initdist=self.pi,
                                                       phgen=self.phgen,
                                                       exitrates=self.exitrates)
+            self.loglikelihood = self.estep.loglikelihood
             
             #M-step
             self.pi,self.phgen,self.exitrates = self.mstep.run(bi=self.bi,
                                                                ni=self.ni,
                                                                nij=self.nij)            
             
-            self.__updatelikelihood()
+            #self.__updatelikelihood()
             eps = self.loglikelihood - loglik0
             loglik0 = self.loglikelihood
             iter += 1
@@ -106,6 +107,12 @@ class fitdph:
                     self.getvar(),
                 )
         self.__polish()
+        # evaluate final loglik
+        self.estep.run(obs=self.obs,
+                       initdist=self.pi,
+                       phgen=self.phgen,
+                       exitrates=self.exitrates)
+        self.loglikelihood = self.estep.loglikelihood
 
     def getinitdist(self) -> np.array:
         """
@@ -277,7 +284,8 @@ class fitdph:
 
         if self.randominit:
             self.__initrandom()
-        self.__updatelikelihood()
+        #self.__updatelikelihood()
+        self.loglikelihood = 0.0
         self.__countParameters()
 
     def __initrandom(self) -> None:
@@ -389,6 +397,7 @@ class fitdph:
                 self.phgen[i, j] = self.nij[i, j] / sm
     '''        
 
+    '''
     def __updatelikelihood(self) -> None:
         """
         Updates the log-likelihood based on current model parameters.
@@ -402,7 +411,8 @@ class fitdph:
         self.loglikelihood = 0.0
         for y in self.obs:
             self.loglikelihood += np.log(self.__getProbMass(y)).item()
-
+    '''
+            
     def __getProbMass(self, y: int) -> float:
         """
         Computes the probability mass at observation y.
