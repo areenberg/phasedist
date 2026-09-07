@@ -142,8 +142,10 @@ class edph:
             self.bi[i] += (self.initdist[i] * Ttprod[i]) / piTtprod
             self.ni[i] += (piTpow[i] * self.exitrates[i]) / piTtprod
             for j in range(self.nphases):
-                if j != i:
-                    self.nij[i, j] += (self.phgen[i, j] * self.Jmat[j, i]) / piTtprod
+                # unlike the continuous case, i==j (self-transition, "stay
+                # another discrete step") is a real, estimable DPH parameter
+                # (phgen[i,i]) and must be included here, not skipped.
+                self.nij[i, j] += (self.phgen[i, j] * self.Jmat[j, i]) / piTtprod
 
     def __rightcensored(self, right: int) -> None:
         """
@@ -174,8 +176,8 @@ class edph:
         for i in range(self.nphases):
             self.bi[i] += (self.initdist[i] * Tpow_rowsum[i]) / den
             for j in range(self.nphases):
-                if j != i:
-                    self.nij[i, j] += (self.phgen[i, j] * self.Kmat[j, i]) / den
+                # i==j (self-transition) included -- see note in __uncensored.
+                self.nij[i, j] += (self.phgen[i, j] * self.Kmat[j, i]) / den
             # N_i(right) = 0 identically when Y > right, so ni is untouched
 
     def __leftcensored(self, left: int) -> None:
@@ -210,8 +212,8 @@ class edph:
         for i in range(self.nphases):
             self.bi[i] += (self.initdist[i] * (1.0 - Tpow_rowsum[i])) / den
             for j in range(self.nphases):
-                if j != i:
-                    self.nij[i, j] += (self.phgen[i, j] * (piM[i] - Kmat[j, i])) / den
+                # i==j (self-transition) included -- see note in __uncensored.
+                self.nij[i, j] += (self.phgen[i, j] * (piM[i] - Kmat[j, i])) / den
             self.ni[i] += (self.exitrates[i] * piM[i]) / den
 
     def __intervalcensored(self, left: int, right: int) -> None:
@@ -254,8 +256,8 @@ class edph:
         for i in range(self.nphases):
             self.bi[i] += (self.initdist[i] * (TpowL_rowsum[i] - TpowR_rowsum[i])) / den
             for j in range(self.nphases):
-                if j != i:
-                    self.nij[i, j] += (self.phgen[i, j] * (piM[i] - KmatDiff[j, i])) / den
+                # i==j (self-transition) included -- see note in __uncensored.
+                self.nij[i, j] += (self.phgen[i, j] * (piM[i] - KmatDiff[j, i])) / den
             self.ni[i] += (self.exitrates[i] * piM[i]) / den
 
     def __storefundamental(
@@ -268,13 +270,22 @@ class edph:
         Stores the DPH distribution's fundamental parameters as instance attributes so they
         can be accessed by the other methods during the E-step calculations.
 
-        initdist and exitrates are coerced to flat 1-D arrays: if either is passed as a
-        column vector (shape (nphases,1), as e.g. fitdph.py evidently does) rather than a
-        flat vector (shape (nphases,)), every matmul below that expects a 1-D result would
-        instead silently return a (nphases,1)/(1,) array, and per-entry assignments such as
-        `self.bi[i] += ...` would then fail with "setting an array element with a sequence."
-        Flattening once here (as the original edph.py did piecemeal via .flatten()/np.ravel()
-        at each call site) avoids needing that everywhere else.
+        initdist and exitrates are coerced to flat 1-D arrays, and phgen to a plain 2-D
+        ndarray: if initdist/exitrates are passed as column vectors (shape (nphases,1))
+        rather than flat vectors (shape (nphases,)), or if phgen is passed as a
+        numpy.matrix rather than a plain ndarray, every matmul below that expects a
+        1-D/plain-ndarray result would instead silently return a (nphases,1)-shaped
+        array, or (if phgen is a numpy.matrix) a numpy.matrix -- a subclass whose
+        arithmetic and indexing *always* stay 2-D, even for what should be a 1-D
+        vector, since matrix multiplication with a numpy.matrix operand promotes the
+        whole computation (block matrix, matrix_power, matmul) to numpy.matrix all the
+        way through. Either way, a per-entry assignment such as `self.bi[i] += ...`
+        then fails with "setting an array element with a sequence," since the
+        right-hand side is a length-1 array/matrix rather than a scalar.
+        `np.asarray(...)` strips both a numpy.matrix's subclass and any extra
+        singleton dimension, so coercing all three inputs here -- once, centrally --
+        avoids needing that at every call site (the original edph.py instead handled
+        the column-vector case piecemeal, via scattered .flatten()/np.ravel() calls).
 
         Args:
             initdist (ndarray): Initial distribution vector.
@@ -286,7 +297,7 @@ class edph:
         """
 
         self.initdist = np.asarray(initdist).reshape(-1)
-        self.phgen = phgen
+        self.phgen = np.asarray(phgen)
         self.exitrates = np.asarray(exitrates).reshape(-1)
 
     def run(
