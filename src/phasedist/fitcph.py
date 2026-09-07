@@ -105,7 +105,13 @@ class fitcph:
                     self.getvar(),
                 )
         self.__polish()
-        self.__updatelikelihood()  # evaluate final loglik
+
+        #self.__updatelikelihood()  # evaluate final loglik
+        self.estep.run(obs=self.obs,
+                       initdist=self.pi,
+                       phgen=self.phgen,
+                       exitrates=self.exitrates)
+        self.loglikelihood = self.estep.loglikelihood
 
     def getinitdist(self) -> np.array:
         """
@@ -354,6 +360,7 @@ class fitcph:
             self.phgen[i, i] = -(off_diag_sum + self.exitrates[i])
     '''
 
+    '''
     def __updatelikelihood(self) -> None:
         """
         Updates the log-likelihood based on current model parameters.
@@ -367,6 +374,7 @@ class fitcph:
         self.loglikelihood = 0.0
         for y in self.obs:
             self.loglikelihood += np.log(self.getdensity(y))
+    '''        
 
     '''
     def __Jmatrix(self, y: float) -> None:
