@@ -25,7 +25,9 @@ Sub-tests:
             steps than after 2 steps.
     Case 2: The same, for a mix of uncensored, interval-, right- and
             left-censored observations.
-    Case 3: The fitted parameters are a feasible CPH representation.
+    Case 3: The M-step reproduces values computed by hand from the sufficient
+            statistics.
+    Case 4: The fitted parameters are a feasible CPH representation.
 
 References:
     Bladt, M., & Nielsen, B. F. (2017). Matrix-Exponential Distributions in
@@ -294,16 +296,69 @@ if min(counts) == 0:
 
 
 # ------------------------------------------------------------------
-# CASE 3: The fitted parameters are a feasible CPH representation
+# CASE 3: The M-step reproduces values computed by hand
+# ------------------------------------------------------------------
+
+# Cases 1 and 2 only observe the M-step through the distribution the EM
+# algorithm converges to, which leaves room for an M-step that is wrong but
+# still converges to something reasonable. This case therefore feeds a fixed
+# set of sufficient statistics straight into mcph and compares the result with
+# the M-step of p. 678 worked out by hand:
+#
+#     pi_i  = B_i/N,   t_i = N_i/Z_i,   t_ij = N_ij/Z_i  (j != i),
+#     t_ii  = -(sum_{j != i} t_ij + t_i).
+#
+# The statistics are chosen so that every quotient is an exact binary fraction,
+# and so that the time spent in each state differs between the states. The
+# latter matters: in the Erlang used above every phase is occupied for the same
+# expected time, so an M-step that divided by the wrong state's occupancy would
+# give the same answer, and cases 1 and 2 could not see the difference.
+CHECKNOBS = 10
+CHECKBI = np.array([3.0, 5.0, 2.0])
+CHECKZI = np.array([4.0, 8.0, 10.0])
+CHECKNI = np.array([1.0, 2.0, 5.0])
+CHECKNIJ = np.array([[0.0, 2.0, 6.0],
+                     [4.0, 0.0, 4.0],
+                     [5.0, 5.0, 0.0]])
+
+EXPECTEDINITDIST = np.array([0.3, 0.5, 0.2])
+EXPECTEDEXITRATES = np.array([0.25, 0.25, 0.5])
+EXPECTEDPHGEN = np.array([[-2.25, 0.50, 1.50],
+                          [0.50, -1.25, 0.50],
+                          [0.50, 0.50, -1.50]])
+
+# The statistics above are written out for three phases, so the case would
+# quietly stop testing anything if the number of phases were changed
+if CHECKBI.size != NPHASES:
+    sys.exit("Validation test failed at case 3: the hand-computed statistics are written for %d phases, but NPHASES is %d." % (CHECKBI.size, NPHASES))
+
+mst = mcph(nphases=NPHASES, nobs=CHECKNOBS)
+initdist, phgen, exitrates = mst.run(bi=CHECKBI,
+                                     zi=CHECKZI,
+                                     ni=CHECKNI,
+                                     nij=CHECKNIJ)
+
+if np.max(np.abs(initdist - EXPECTEDINITDIST)) > TOL:
+    sys.exit("Validation test failed at case 3: the M-step did not return the hand-computed initial distribution.")
+
+if np.max(np.abs(exitrates - EXPECTEDEXITRATES)) > TOL:
+    sys.exit("Validation test failed at case 3: the M-step did not return the hand-computed exit rates.")
+
+if np.max(np.abs(phgen - EXPECTEDPHGEN)) > TOL:
+    sys.exit("Validation test failed at case 3: the M-step did not return the hand-computed phase-type generator.")
+
+
+# ------------------------------------------------------------------
+# CASE 4: The fitted parameters are a feasible CPH representation
 # ------------------------------------------------------------------
 
 for initdist, phgen, exitrates in fitteduncensored:
     if not isfeasible(initdist, phgen, exitrates):
-        sys.exit("Validation test failed at case 3: fitting uncensored data returned parameters that are not a feasible continuous phase-type distribution.")
+        sys.exit("Validation test failed at case 4: fitting uncensored data returned parameters that are not a feasible continuous phase-type distribution.")
 
 for initdist, phgen, exitrates in fittedcensored:
     if not isfeasible(initdist, phgen, exitrates):
-        sys.exit("Validation test failed at case 3: fitting censored data returned parameters that are not a feasible continuous phase-type distribution.")
+        sys.exit("Validation test failed at case 4: fitting censored data returned parameters that are not a feasible continuous phase-type distribution.")
 
 
 # ------------------------------------------------------------------
