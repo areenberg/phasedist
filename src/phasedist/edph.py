@@ -152,12 +152,6 @@ class edph:
         Updates b_i, n_i, n_ij with the contribution from a single
         right-censored observation known only to satisfy Y > right.
 
-        Derived by analogy with the continuous case's (13.38)/(13.40): K(y) is
-        built from the rank-one matrix e*pi, so its (i,i) and (j,i) entries
-        already equal the needed sums directly -- no separate construction
-        is required. N_i(right) = 0 identically, since absorption hasn't
-        happened yet, so ni is left untouched (verified by simulation).
-
         Args:
             right (int): It is known that Y > right.
 
@@ -222,8 +216,8 @@ class edph:
         interval-censored observation known only to lie in (left, right].
 
         Args:
-            left (int): Lower/left limit.
-            right (int): Upper/right limit.
+            left (int): Lower/left limit of interval.
+            right (int): Upper/right limit of interval.
 
         Returns:
             None
@@ -270,26 +264,9 @@ class edph:
         Stores the DPH distribution's fundamental parameters as instance attributes so they
         can be accessed by the other methods during the E-step calculations.
 
-        initdist and exitrates are coerced to flat 1-D arrays, and phgen to a plain 2-D
-        ndarray: if initdist/exitrates are passed as column vectors (shape (nphases,1))
-        rather than flat vectors (shape (nphases,)), or if phgen is passed as a
-        numpy.matrix rather than a plain ndarray, every matmul below that expects a
-        1-D/plain-ndarray result would instead silently return a (nphases,1)-shaped
-        array, or (if phgen is a numpy.matrix) a numpy.matrix -- a subclass whose
-        arithmetic and indexing *always* stay 2-D, even for what should be a 1-D
-        vector, since matrix multiplication with a numpy.matrix operand promotes the
-        whole computation (block matrix, matrix_power, matmul) to numpy.matrix all the
-        way through. Either way, a per-entry assignment such as `self.bi[i] += ...`
-        then fails with "setting an array element with a sequence," since the
-        right-hand side is a length-1 array/matrix rather than a scalar.
-        `np.asarray(...)` strips both a numpy.matrix's subclass and any extra
-        singleton dimension, so coercing all three inputs here -- once, centrally --
-        avoids needing that at every call site (the original edph.py instead handled
-        the column-vector case piecemeal, via scattered .flatten()/np.ravel() calls).
-
         Args:
             initdist (ndarray): Initial distribution vector.
-            phgen (ndarray): Phase-type sub-transition matrix.
+            phgen (ndarray): Phase-type generator matrix.
             exitrates (ndarray): Exit-probability vector.
 
         Returns:
@@ -321,7 +298,7 @@ class edph:
         Args:
             obs (ndarray): Array of observations.
             initdist (ndarray): Initial distribution vector.
-            phgen (ndarray): Phase-type sub-transition matrix.
+            phgen (ndarray): Phase-type generator matrix.
             exitrates (ndarray): Exit-probability vector.
             censoring (ndarray): Specifies censored observations.
 
