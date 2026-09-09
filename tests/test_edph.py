@@ -226,6 +226,13 @@ if abs(resright[3] - resinterval[3]) > TOL:
 if np.max(np.abs(resright[0] - resinterval[0])) > TOL:
     sys.exit("Validation test failed at case 3: right censoring and interval censoring with a large upper limit do not give the same initiation counts.")
 
+# The jump counts are instead checked against the limits directly. A
+# right-censored process is known to be in a transient state at every one of
+# the first limit steps, so it makes exactly limit jumps between transient
+# states in that window, whatever the parameters are.
+if abs(np.sum(resright[2]) - np.sum(limits)) > TOL:
+    sys.exit("Validation test failed at case 3: the number of jumps between transient states does not equal the censoring limits for right-censored observations.")
+
 
 # ------------------------------------------------------------------
 # CASE 4: Interval censoring on (y-1,y] equals the uncensored observation y
