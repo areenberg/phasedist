@@ -61,8 +61,8 @@ class rndcph:
         #generate the exitrate vector
         self.__genexitrates()
 
-        #generate the phase-type distribution
-        self.__genphgen(self.exitrates)
+        #generate the phase-type distribution using the newly generated exit rates
+        self.__genphgen(self.new_exitrates)
 
         return self.new_initdist, self.new_phgen, self.new_exitrates
     
@@ -77,14 +77,16 @@ class rndcph:
             None
         """
 
-        #initialize the output vector
-        self.new_initdist = np.copy(self.initdist)
+        #initialize the output vector. The structure may be specified with integers,
+        #so the copy is made floating point to avoid truncating the sampled values
+        self.new_initdist = np.array(self.initdist, dtype=float)
 
         #get indices of the non-zero elements
         nzidx = np.nonzero(self.initdist)
 
-        #sample numbers
-        u = np.random.uniform(low=0.0, high=1.0, size=len(nzidx))
+        #sample numbers. np.nonzero returns a tuple of index arrays, so the number of
+        #non-zero elements is nzidx[0].size and not len(nzidx)
+        u = np.random.uniform(low=0.0, high=1.0, size=nzidx[0].size)
 
         #normalize
         u = u / np.sum(u)
@@ -103,8 +105,9 @@ class rndcph:
             None
         """
 
-        #initialize the output matrix
-        self.new_phgen = np.copy(self.phgen)
+        #initialize the output matrix. The structure may be specified with integers,
+        #so the copy is made floating point to avoid truncating the sampled values
+        self.new_phgen = np.array(self.phgen, dtype=float)
 
         #generate matrix one row (i.e. phase) at a time
         for i in range(self.nphases):
@@ -134,14 +137,16 @@ class rndcph:
             None
         """
 
-        #initialize the output vector
-        self.new_exitrates = np.copy(self.exitrates)
+        #initialize the output vector. The structure may be specified with integers,
+        #so the copy is made floating point to avoid truncating the sampled values
+        self.new_exitrates = np.array(self.exitrates, dtype=float)
 
         #get indices of the non-zero elements
         nzidx = np.nonzero(self.exitrates)
-        
-        #sample numbers
-        u = np.random.uniform(low=0.0, high=1.0, size=len(nzidx))
+
+        #sample numbers. np.nonzero returns a tuple of index arrays, so the number of
+        #non-zero elements is nzidx[0].size and not len(nzidx)
+        u = np.random.uniform(low=0.0, high=1.0, size=nzidx[0].size)
         self.new_exitrates[nzidx] = u
 
         return None
