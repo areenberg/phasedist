@@ -422,11 +422,6 @@ class fit:
         if not isinstance(self.verbose, bool):
             print("Error: The argument 'verbose' needs to be of type 'bool'.")
             return False
-        if self.discrete and self.dtype == "general":
-            print(
-                "Error: The 'general' option is currently inactivated for discrete PH distributions."
-            )
-            return False
 
         # check observations are equal to or greather than zero
         if np.any(self.obs < 0):
