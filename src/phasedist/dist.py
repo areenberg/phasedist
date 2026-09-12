@@ -189,12 +189,13 @@ class dist:
         else:
             return self.__computequantile(p, tolerance)
 
-    def getrandom(self, size: int = 1) -> int | float:
+    def getrandom(self, size: int = 1, method: str = "direct") -> int | float:
         """
         Generates pseudo-random samples from the PH distribution.
 
         Args:
             size (int, default=1): The number of samples returned.
+            method (str, default="direct"): The sampling method.
 
         Returns:
             int | float: The generated samples.
@@ -202,18 +203,18 @@ class dist:
 
         if size == 1:
             if self.discrete:
-                return self.__dphsample()
+                return self.__dphsample(method=method)
             else:
-                return self.__cphsample()
+                return self.__cphsample(method=method)
         elif size < 1:
             return np.nan
         else:
             obs = np.zeros(size)
             for i in range(size):
                 if self.discrete:
-                    obs[i] = self.__dphsample()
+                    obs[i] = self.__dphsample(method=method)
                 else:
-                    obs[i] = self.__cphsample()
+                    obs[i] = self.__cphsample(method=method)
             return obs
 
     def countParameters(self) -> None:
