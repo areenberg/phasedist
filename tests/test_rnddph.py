@@ -7,11 +7,10 @@ sub-transition matrix and the exit-probability vector are non-zero. The class
 must fill those elements with random values and leave every other element at
 zero, so that the generated distribution belongs to the intended subclass.
 
-The structures tested are the ones fit.py can ask for: generalized Erlang,
-hyper-exponential, Coxian and generalized Coxian, plus a fully dense structure
-standing in for a custom one. The "general" preset is not included because
-fit.py rejects it for discrete phase-type distributions, but the dense custom
-structure has the same shape and therefore covers it anyway.
+The structures tested are the ones fit.py can ask for -- general, generalized
+Erlang, hyper-exponential, Coxian and generalized Coxian -- plus a tridiagonal
+structure standing in for a custom one, which adds transitions back to the
+previous phase and so covers a pattern none of the presets produce.
 
 Sub-tests:
     Case 1: The elements intended to be zero are zero in the output, and the
@@ -51,7 +50,8 @@ NDRAWS = 40                 # number of draws used to judge randomness
 # Every structure the test claims to cover. Declared separately from the
 # structures themselves so that a structure quietly disappearing from the table
 # is caught rather than silently reducing the coverage of case 1.
-STRUCTURENAMES = ("generlang", "hyperexp", "coxian", "gencoxian", "custom")
+STRUCTURENAMES = ("general", "generlang", "hyperexp", "coxian", "gencoxian",
+                  "custom")
 
 
 # ------------------------------------------------------------------
@@ -61,8 +61,9 @@ STRUCTURENAMES = ("generlang", "hyperexp", "coxian", "gencoxian", "custom")
 def structures(nphases):
     '''
     Returns the supported structures for a given number of phases, as a
-    dictionary of (initdist, phgen, exitrates) triples. These mirror the
-    structures set up in fit.py.
+    dictionary of (initdist, phgen, exitrates) triples. The first five mirror
+    the structures set up in fit.py; the last one is an arbitrary custom
+    structure.
     '''
     firstphase = np.zeros(nphases)
     firstphase[0] = 1.0
@@ -72,17 +73,26 @@ def structures(nphases):
 
     # diagonal plus superdiagonal, i.e. phases in series that may be repeated
     band = np.zeros((nphases, nphases))
+
+    # the same, plus transitions back to the previous phase
+    tridiagonal = np.zeros((nphases, nphases))
+
     for i in range(nphases):
         band[i, i] = 1.0
+        tridiagonal[i, i] = 1.0
         if i < nphases - 1:
             band[i, i + 1] = 1.0
+            tridiagonal[i, i + 1] = 1.0
+        if i > 0:
+            tridiagonal[i, i - 1] = 1.0
 
     return {
+        "general": (np.ones(nphases), np.ones((nphases, nphases)), np.ones(nphases)),
         "generlang": (firstphase.copy(), band.copy(), lastphase.copy()),
         "hyperexp": (np.ones(nphases), np.eye(nphases), np.ones(nphases)),
         "coxian": (firstphase.copy(), band.copy(), np.ones(nphases)),
         "gencoxian": (np.ones(nphases), band.copy(), np.ones(nphases)),
-        "custom": (np.ones(nphases), np.ones((nphases, nphases)), np.ones(nphases)),
+        "custom": (np.ones(nphases), tridiagonal.copy(), np.ones(nphases)),
     }
 
 
