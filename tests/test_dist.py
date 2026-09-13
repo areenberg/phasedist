@@ -14,6 +14,16 @@ with success probability PROB. The mean, variance, density, distribution
 function and quantile function can then be compared with the textbook formulas
 for those two distributions rather than with the class's own machinery.
 
+The four methods describing the phases rather than the absorption time
+(getphasetime, getphasetimematrix, getexitprob and getexitprobmatrix) are
+tested on structures where the answer can be written down by hand: phases in
+series, where the process must walk through them in order and can only exit
+from the last one, and phases in parallel, where it exits from whichever phase
+it started in. The general generators give a third check, since equal exit
+rates make the remaining time memoryless and therefore the same from every
+phase. Those structures are also simulated directly, which is the only check
+here that shares no algebra with the class.
+
 getrandom is tested with Pearson chi-square goodness-of-fit tests at the 1%
 level, on three structures per distribution kind and on both sampling methods
 the class offers. The expected bin probabilities are computed here from the
@@ -29,10 +39,14 @@ Sub-tests:
     Case 2: getmean and getvar match the exponential and geometric formulas.
     Case 3: getdensity and getcumprob match those formulas.
     Case 4: getquantile matches those formulas, including its edge cases.
-    Case 5: getrandom passes chi-square goodness-of-fit tests, and its size
+    Case 5: getphasetime, getphasetimematrix, getexitprob and
+            getexitprobmatrix match values worked out by hand, agree with each
+            other and with getmean, and agree with a direct simulation of the
+            underlying process.
+    Case 6: getrandom passes chi-square goodness-of-fit tests, and its size
             argument behaves as documented.
-    Case 6: countParameters reproduces counts worked out by hand.
-    Case 7: plot writes a file for both plot types and both kinds of
+    Case 7: countParameters reproduces counts worked out by hand.
+    Case 8: plot writes a file for both plot types and both kinds of
             distribution.
 
 References:
@@ -46,7 +60,7 @@ import os
 import sys
 import numpy as np
 
-# A non-interactive backend, so that the plots of case 7 can be written without
+# A non-interactive backend, so that the plots of case 8 can be written without
 # a display. This has to be selected before dist is imported, since importing
 # it loads pyplot.
 import matplotlib
@@ -82,13 +96,18 @@ NBINS = 10              # bins used for a continuous chi-square test
 MINBINPROB = 0.05       # smallest probability a discrete bin may carry
 MINEXPECTED = 5.0       # smallest expected count a chi-square bin may have
 
+NSIMPHASES = 20000      # runs simulated for the phase statistics of case 5
+TOLSIMTIME = 0.15       # tolerance for a simulated phase time, as a fraction of it
+TOLSIMEXIT = 0.03       # tolerance for a simulated exit probability
+
 # Every public method of dist. Checked against the class below, so that a new
 # public method cannot slip in without a case covering it.
-COVEREDMETHODS = ("countParameters", "getcumprob", "getdensity", "getexitrates",
-                  "getinitdist", "getmean", "getphasegen", "getquantile",
-                  "getrandom", "getvar", "plot")
+COVEREDMETHODS = ("countParameters", "getcumprob", "getdensity", "getexitprob",
+                  "getexitprobmatrix", "getexitrates", "getinitdist", "getmean",
+                  "getphasegen", "getphasetime", "getphasetimematrix",
+                  "getquantile", "getrandom", "getvar", "plot")
 
-# The two distributions used for cases 1 to 4 and 6. Both generators are fully
+# The two distributions used for cases 1 to 5 and 7. Both generators are fully
 # general, and their rows all sum to the same value, so every exit rate is
 # equal.
 INITDIST = np.array([0.5, 0.3, 0.2])
@@ -101,7 +120,7 @@ DPHGEN = np.array([[0.40, 0.20, 0.10],
                    [0.10, 0.50, 0.10],
                    [0.20, 0.20, 0.30]])    # rows sum to 1-PROB
 
-# Structures used for the chi-square tests of case 5, in the order their seeds
+# Structures used for the chi-square tests of case 6, in the order their seeds
 # are derived from SEED
 CPHSTRUCTURES = (
     ("general", INITDIST, CPHGEN),
@@ -118,6 +137,49 @@ DPHSTRUCTURES = (
     ("hyper-geometric", INITDIST,
      np.array([[0.4, 0.0, 0.0], [0.0, 0.6, 0.0], [0.0, 0.0, 0.8]])),
 )
+
+# Structures used for case 5, together with the phase times worked out by hand.
+# With the phases in series the process walks through them in order and can only
+# exit from the last one, so the expected time in phase j starting from phase i
+# is the mean holding time of phase j when j is at or after i and zero
+# otherwise. With the phases in parallel the process exits from the phase it
+# started in, so the matrix is diagonal. The holding times are all different, so
+# that a mix-up of rows and columns cannot pass unnoticed.
+CPHSERIESGEN = np.array([[-1.0, 1.0, 0.0],
+                         [0.0, -2.0, 2.0],
+                         [0.0, 0.0, -4.0]])
+
+CPHSERIESTIME = np.array([[1.0, 1.0 / 2.0, 1.0 / 4.0],
+                          [0.0, 1.0 / 2.0, 1.0 / 4.0],
+                          [0.0, 0.0, 1.0 / 4.0]])
+
+DPHSERIESGEN = np.array([[0.50, 0.50, 0.00],
+                         [0.00, 0.75, 0.25],
+                         [0.00, 0.00, 0.80]])
+
+DPHSERIESTIME = np.array([[1.0 / 0.50, 1.0 / 0.25, 1.0 / 0.20],
+                          [0.0, 1.0 / 0.25, 1.0 / 0.20],
+                          [0.0, 0.0, 1.0 / 0.20]])
+
+CPHPARALLELGEN = np.array([[-1.0, 0.0, 0.0],
+                           [0.0, -0.5, 0.0],
+                           [0.0, 0.0, -2.0]])
+
+CPHPARALLELTIME = np.diag([1.0 / 1.0, 1.0 / 0.5, 1.0 / 2.0])
+
+DPHPARALLELGEN = np.array([[0.4, 0.0, 0.0],
+                           [0.0, 0.6, 0.0],
+                           [0.0, 0.0, 0.8]])
+
+DPHPARALLELTIME = np.diag([1.0 / 0.6, 1.0 / 0.4, 1.0 / 0.2])
+
+# In series the process always exits from the last phase, whichever phase it
+# starts in; in parallel it always exits from the phase it started in.
+SERIESEXIT = np.array([[0.0, 0.0, 1.0],
+                       [0.0, 0.0, 1.0],
+                       [0.0, 0.0, 1.0]])
+
+PARALLELEXIT = np.eye(3)
 
 # Verify the two main generators really do collapse to a memoryless
 # distribution, otherwise the closed-form comparisons below are meaningless
@@ -287,6 +349,53 @@ def dphchisquare(initdist, phgen, seed, nsamples):
             float(expected.min()))
 
 
+def simulatephases(discrete, initdist, phgen, nsim, seed):
+    '''
+    Simulates the underlying Markov process directly from the generator and
+    returns the average time spent in each phase, measured in steps when the
+    process is discrete, together with the fraction of the runs that exit from
+    each phase. The process is built here from the generator and driven by a
+    generator of random numbers of its own, so this shares neither algebra nor
+    random numbers with the class being tested.
+    '''
+    rng = np.random.default_rng(seed)
+    phgen = np.asarray(phgen, dtype=float)
+    nphases = phgen.shape[0]
+    initdist = np.asarray(initdist, dtype=float).ravel()
+
+    # the distribution of the next phase, absorption being the last column
+    if discrete:
+        rates = None
+        step = np.hstack([phgen, (1.0 - np.sum(phgen, axis=1)).reshape(-1, 1)])
+    else:
+        rates = -np.diag(phgen)
+        step = np.zeros((nphases, nphases + 1))
+        for i in range(nphases):
+            row = np.copy(phgen[i])
+            row[i] = 0.0
+            step[i, :nphases] = row / rates[i]
+            step[i, nphases] = -np.sum(phgen[i]) / rates[i]
+
+    initcumulative = np.cumsum(initdist)
+    stepcumulative = np.cumsum(step, axis=1)
+
+    time = np.zeros(nphases)
+    exits = np.zeros(nphases)
+
+    for _ in range(nsim):
+        s = min(int(np.searchsorted(initcumulative, rng.random())), nphases - 1)
+        while True:
+            time[s] += 1.0 if discrete else rng.exponential(1.0 / rates[s])
+            nxt = min(int(np.searchsorted(stepcumulative[s], rng.random())),
+                      nphases)
+            if nxt == nphases:
+                exits[s] += 1.0
+                break
+            s = nxt
+
+    return time / nsim, exits / nsim
+
+
 CPH = makedist(False, INITDIST, CPHGEN)
 DPH = makedist(True, INITDIST, DPHGEN)
 
@@ -438,29 +547,187 @@ for distribution in (CPH, DPH):
 
 
 # ------------------------------------------------------------------
-# CASE 5: The samples follow the distribution they are drawn from
+# CASE 5: The phase times and the exit-phase probabilities are the ones
+#         worked out by hand
+# ------------------------------------------------------------------
+
+# Each entry is a label, whether the distribution is discrete, its parameters,
+# and the two matrices worked out by hand above.
+PHASECASES = (
+    ("continuous phases in series", False, np.array([1.0, 0.0, 0.0]),
+     CPHSERIESGEN, CPHSERIESTIME, SERIESEXIT),
+    ("discrete phases in series", True, np.array([1.0, 0.0, 0.0]),
+     DPHSERIESGEN, DPHSERIESTIME, SERIESEXIT),
+    ("continuous phases in parallel", False, INITDIST,
+     CPHPARALLELGEN, CPHPARALLELTIME, PARALLELEXIT),
+    ("discrete phases in parallel", True, INITDIST,
+     DPHPARALLELGEN, DPHPARALLELTIME, PARALLELEXIT),
+)
+
+for label, discrete, initdist, phgen, timematrix, exitmatrix in PHASECASES:
+
+    distribution = makedist(discrete, initdist, phgen)
+
+    if np.max(np.abs(np.asarray(distribution.getphasetimematrix())
+                     - timematrix)) > TOL:
+        sys.exit("Validation test failed at case 5: the expected phase times of %s differ from the ones worked out by hand." % label)
+
+    if np.max(np.abs(np.asarray(distribution.getexitprobmatrix())
+                     - exitmatrix)) > TOL:
+        sys.exit("Validation test failed at case 5: the exit-phase probabilities of %s differ from the ones worked out by hand." % label)
+
+    # the vectors are the rows of those matrices weighted by the initial
+    # distribution
+    if np.max(np.abs(np.asarray(distribution.getphasetime()).ravel()
+                     - np.matmul(initdist, timematrix))) > TOL:
+        sys.exit("Validation test failed at case 5: the expected time per phase of %s differs from the one worked out by hand." % label)
+
+    if np.max(np.abs(np.asarray(distribution.getexitprob()).ravel()
+                     - np.matmul(initdist, exitmatrix))) > TOL:
+        sys.exit("Validation test failed at case 5: the probability of exiting from each phase of %s differs from the one worked out by hand." % label)
+
+if len(PHASECASES) != 4:
+    sys.exit("Validation test failed at case 5: the hand-computed structures no longer cover both kinds of distribution in series and in parallel.")
+
+# The general generators give a third hand-computable case. Their exit rates are
+# all equal, so the time still to come is memoryless and does not depend on the
+# phase the process is in: the expected time until it exits is then the mean of
+# the distribution whichever phase it starts in, which is to say every row of
+# the phase-time matrix sums to that mean. The probability of exiting from a
+# phase is the time spent there times the common exit rate.
+for label, distribution, rate in (("the continuous", CPH, RATE),
+                                  ("the discrete", DPH, PROB)):
+
+    timematrix = np.asarray(distribution.getphasetimematrix())
+
+    if np.max(np.abs(np.sum(timematrix, axis=1) - distribution.getmean())) > TOL:
+        sys.exit("Validation test failed at case 5: the rows of the phase-time matrix of %s general distribution do not all sum to its mean, although its exit rates are equal." % label)
+
+    if np.max(np.abs(np.asarray(distribution.getexitprobmatrix())
+                     - rate * timematrix)) > TOL:
+        sys.exit("Validation test failed at case 5: the exit-phase probabilities of %s general distribution are not its phase times scaled by the common exit rate." % label)
+
+# Properties every phase-type distribution must have, checked on every structure
+# this file defines
+PHASEINVARIANTS = (
+    [(False, initdist, phgen) for _, initdist, phgen in CPHSTRUCTURES]
+    + [(True, initdist, phgen) for _, initdist, phgen in DPHSTRUCTURES]
+    + [(discrete, initdist, phgen)
+       for _, discrete, initdist, phgen, _, _ in PHASECASES]
+)
+
+for discrete, initdist, phgen in PHASEINVARIANTS:
+
+    distribution = makedist(discrete, initdist, phgen)
+    timematrix = np.asarray(distribution.getphasetimematrix())
+    exitmatrix = np.asarray(distribution.getexitprobmatrix())
+    timevector = np.asarray(distribution.getphasetime()).ravel()
+    exitvector = np.asarray(distribution.getexitprob()).ravel()
+    nphases = np.asarray(phgen).shape[0]
+
+    if (timematrix.shape != (nphases, nphases)
+            or exitmatrix.shape != (nphases, nphases)
+            or timevector.size != nphases or exitvector.size != nphases):
+        sys.exit("Validation test failed at case 5: the phase statistics do not have one entry per phase.")
+
+    if np.min(timematrix) < 0.0 or np.min(exitmatrix) < 0.0:
+        sys.exit("Validation test failed at case 5: a phase statistic is negative.")
+
+    # each row of the exit matrix is a distribution over the phase the process
+    # exits from, since it has to exit from one of them
+    if np.max(np.abs(np.sum(exitmatrix, axis=1) - 1.0)) > TOL:
+        sys.exit("Validation test failed at case 5: the rows of the exit-phase matrix do not sum to one.")
+
+    if abs(np.sum(exitvector) - 1.0) > TOL:
+        sys.exit("Validation test failed at case 5: the probabilities of exiting from each phase do not sum to one.")
+
+    # the time spent in the phases adds up to the time until absorption
+    if abs(np.sum(timevector) - distribution.getmean()) > TOL:
+        sys.exit("Validation test failed at case 5: the expected times per phase do not sum to the mean of the distribution.")
+
+    # the process spends at least one holding time in the phase it starts in,
+    # which in the discrete case is one step
+    if discrete:
+        if np.min(np.diag(timematrix)) < 1.0 - TOL:
+            sys.exit("Validation test failed at case 5: the process spends less than one step in the phase it starts in.")
+    else:
+        holding = 1.0 / -np.diag(np.asarray(phgen, dtype=float))
+        if np.min(np.diag(timematrix) - holding) < -TOL:
+            sys.exit("Validation test failed at case 5: the process spends less than one mean holding time in the phase it starts in.")
+
+    # the vectors are the matrices weighted by the initial distribution
+    flat = np.asarray(initdist, dtype=float).ravel()
+
+    if np.max(np.abs(timevector - np.matmul(flat, timematrix))) > TOL:
+        sys.exit("Validation test failed at case 5: the expected time per phase is not the phase-time matrix weighted by the initial distribution.")
+
+    if np.max(np.abs(exitvector - np.matmul(flat, exitmatrix))) > TOL:
+        sys.exit("Validation test failed at case 5: the probability of exiting from each phase is not the exit-phase matrix weighted by the initial distribution.")
+
+# Finally the same quantities from a direct simulation of the underlying
+# process, which is the only check here that does not go through the matrix
+# algebra the class uses. The phase times are compared as a fraction of
+# themselves, since they differ in size from one structure to the next, and the
+# exit probabilities on their own scale. Over fifty seeds the largest deviation
+# seen on these six structures was 0.048 of a phase time and 0.009 of an exit
+# probability, so both tolerances leave a factor of about three.
+SIMULATED = (
+    ("the continuous general distribution", False, INITDIST, CPHGEN),
+    ("the discrete general distribution", True, INITDIST, DPHGEN),
+    ("continuous phases in series", False, np.array([1.0, 0.0, 0.0]),
+     CPHSERIESGEN),
+    ("discrete phases in series", True, np.array([1.0, 0.0, 0.0]),
+     DPHSERIESGEN),
+    ("continuous phases in parallel", False, INITDIST, CPHPARALLELGEN),
+    ("discrete phases in parallel", True, INITDIST, DPHPARALLELGEN),
+)
+
+for index, (label, discrete, initdist, phgen) in enumerate(SIMULATED):
+
+    distribution = makedist(discrete, initdist, phgen)
+    simtime, simexit = simulatephases(discrete, initdist, phgen, NSIMPHASES,
+                                      SEED * 10 + index)
+
+    phasetime = np.asarray(distribution.getphasetime()).ravel()
+
+    # a phase that is never entered would make the fraction below meaningless
+    if np.min(phasetime) <= 0.0:
+        sys.exit("Validation test failed at case 5: %s does not spend time in every phase, so the simulated phase times cannot be compared as a fraction of the expected ones." % label)
+
+    deviation = np.max(np.abs(phasetime - simtime) / phasetime)
+    if deviation > TOLSIMTIME:
+        sys.exit("Validation test failed at case 5: the expected time per phase of %s differs from the simulated one by %.4f of itself, more than the tolerance of %.4f." % (label, deviation, TOLSIMTIME))
+
+    deviation = np.max(np.abs(np.asarray(distribution.getexitprob()).ravel()
+                              - simexit))
+    if deviation > TOLSIMEXIT:
+        sys.exit("Validation test failed at case 5: the probability of exiting from each phase of %s differs from the simulated one by %.4f, more than the tolerance of %.4f." % (label, deviation, TOLSIMEXIT))
+
+
+# ------------------------------------------------------------------
+# CASE 6: The samples follow the distribution they are drawn from
 # ------------------------------------------------------------------
 
 # the size argument, as documented
 if np.ndim(CPH.getrandom(size=1)) != 0:
-    sys.exit("Validation test failed at case 5: a single continuous sample is not a scalar.")
+    sys.exit("Validation test failed at case 6: a single continuous sample is not a scalar.")
 
 if np.ndim(DPH.getrandom(size=1)) != 0:
-    sys.exit("Validation test failed at case 5: a single discrete sample is not a scalar.")
+    sys.exit("Validation test failed at case 6: a single discrete sample is not a scalar.")
 
 if not np.isnan(CPH.getrandom(size=0)):
-    sys.exit("Validation test failed at case 5: a sample of size zero is not a missing value.")
+    sys.exit("Validation test failed at case 6: a sample of size zero is not a missing value.")
 
 for size in (2, 7):
     if np.asarray(CPH.getrandom(size=size)).size != size:
-        sys.exit("Validation test failed at case 5: the number of continuous samples returned differs from the size requested.")
+        sys.exit("Validation test failed at case 6: the number of continuous samples returned differs from the size requested.")
     if np.asarray(DPH.getrandom(size=size)).size != size:
-        sys.exit("Validation test failed at case 5: the number of discrete samples returned differs from the size requested.")
+        sys.exit("Validation test failed at case 6: the number of discrete samples returned differs from the size requested.")
 
 # discrete samples must be whole numbers of at least one
 samples = np.asarray(DPH.getrandom(size=200), dtype=float)
 if np.any(samples < 1.0) or np.any(samples % 1.0 != 0.0):
-    sys.exit("Validation test failed at case 5: the discrete samples are not whole numbers of at least one.")
+    sys.exit("Validation test failed at case 6: the discrete samples are not whole numbers of at least one.")
 
 # the goodness-of-fit tests themselves. The seed of each test is derived from
 # SEED so that the whole case is reproducible.
@@ -486,20 +753,20 @@ for name, (statistic, degrees, minexpected) in CHISQUARETESTS:
     # a chi-square test is only valid when no bin is nearly empty, and it only
     # says something when there is more than one degree of freedom
     if minexpected < MINEXPECTED:
-        sys.exit("Validation test failed at case 5: the bins used for %s have an expected count below %.0f." % (name, MINEXPECTED))
+        sys.exit("Validation test failed at case 6: the bins used for %s have an expected count below %.0f." % (name, MINEXPECTED))
 
     if degrees < 2:
-        sys.exit("Validation test failed at case 5: the bins used for %s leave fewer than two degrees of freedom." % name)
+        sys.exit("Validation test failed at case 6: the bins used for %s leave fewer than two degrees of freedom." % name)
 
     if statistic > chi2.ppf(1.0 - ALPHA, degrees):
-        sys.exit("Validation test failed at case 5: the samples for %s do not follow the distribution they are drawn from (chi-square %.2f on %d degrees of freedom, above the %.0f%% critical value %.2f)." % (name, statistic, degrees, 100 * (1.0 - ALPHA), chi2.ppf(1.0 - ALPHA, degrees)))
+        sys.exit("Validation test failed at case 6: the samples for %s do not follow the distribution they are drawn from (chi-square %.2f on %d degrees of freedom, above the %.0f%% critical value %.2f)." % (name, statistic, degrees, 100 * (1.0 - ALPHA), chi2.ppf(1.0 - ALPHA, degrees)))
 
 if len(CHISQUARETESTS) != len(CPHSTRUCTURES) + len(DPHSTRUCTURES) + 1:
-    sys.exit("Validation test failed at case 5: not every structure was submitted to a chi-square test.")
+    sys.exit("Validation test failed at case 6: not every structure was submitted to a chi-square test.")
 
 
 # ------------------------------------------------------------------
-# CASE 6: The parameter count is the one worked out by hand
+# CASE 7: The parameter count is the one worked out by hand
 # ------------------------------------------------------------------
 
 # A phase contributes one parameter for every non-zero transition it can make,
@@ -518,11 +785,11 @@ PARAMETERCOUNTS = (
 
 for discrete, initdist, phgen, expected in PARAMETERCOUNTS:
     if makedist(discrete, initdist, phgen).countParameters() != expected:
-        sys.exit("Validation test failed at case 6: the number of parameters counted is not the number worked out by hand.")
+        sys.exit("Validation test failed at case 7: the number of parameters counted is not the number worked out by hand.")
 
 
 # ------------------------------------------------------------------
-# CASE 7: A plot is written for both plot types and both kinds
+# CASE 8: A plot is written for both plot types and both kinds
 # ------------------------------------------------------------------
 
 PLOTDIRECTORY = os.path.dirname(os.path.abspath(__file__))
@@ -535,7 +802,7 @@ for label, distribution in (("cph", CPH), ("dph", DPH)):
 
         # never overwrite something that is already there
         if os.path.exists(filename):
-            sys.exit("Validation test failed at case 7: the file %s already exists, so the test will not write to it." % filename)
+            sys.exit("Validation test failed at case 8: the file %s already exists, so the test will not write to it." % filename)
 
         try:
             # anything printed while plotting means a point was evaluated where
@@ -545,13 +812,13 @@ for label, distribution in (("cph", CPH), ("dph", DPH)):
                 distribution.plot(type=plottype, filename=filename)
 
             if printed.getvalue() != "":
-                sys.exit("Validation test failed at case 7: plotting the %s of the %s distribution printed %r." % (plottype, label, printed.getvalue().strip()))
+                sys.exit("Validation test failed at case 8: plotting the %s of the %s distribution printed %r." % (plottype, label, printed.getvalue().strip()))
 
             if not os.path.exists(filename):
-                sys.exit("Validation test failed at case 7: plotting the %s of the %s distribution did not write a file." % (plottype, label))
+                sys.exit("Validation test failed at case 8: plotting the %s of the %s distribution did not write a file." % (plottype, label))
 
             if os.path.getsize(filename) == 0:
-                sys.exit("Validation test failed at case 7: plotting the %s of the %s distribution wrote an empty file." % (plottype, label))
+                sys.exit("Validation test failed at case 8: plotting the %s of the %s distribution wrote an empty file." % (plottype, label))
 
             # the figure must actually hold values, not a curve of missing ones
             figure = plt.gcf()
@@ -561,13 +828,13 @@ for label, distribution in (("cph", CPH), ("dph", DPH)):
             plt.close(figure)
 
             if plotted.size == 0 or not np.all(np.isfinite(plotted)):
-                sys.exit("Validation test failed at case 7: the %s plotted for the %s distribution contains no finite values." % (plottype, label))
+                sys.exit("Validation test failed at case 8: the %s plotted for the %s distribution contains no finite values." % (plottype, label))
         finally:
             if os.path.exists(filename):
                 os.remove(filename)
 
         if os.path.exists(filename):
-            sys.exit("Validation test failed at case 7: the plot written for the %s of the %s distribution could not be removed again." % (plottype, label))
+            sys.exit("Validation test failed at case 8: the plot written for the %s of the %s distribution could not be removed again." % (plottype, label))
 
 
 # ------------------------------------------------------------------

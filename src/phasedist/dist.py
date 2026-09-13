@@ -130,6 +130,63 @@ class dist:
                 np.matmul(self.initdist, np.linalg.matrix_power(phinv, 2))
             ) - np.power(np.sum(np.matmul(self.initdist, phinv)), 2)
 
+    def getexitprob(self) -> np.array:
+        """
+        Returns the exit-phase probabilities. The i'th element is the probability
+        that the process exits (i.e. is absorbed) from phase i. The elements sum
+        to one.
+
+        Returns:
+            np.array: The exit-phase probabilities (row vector).
+        """
+
+        return np.matmul(self.initdist, self.getexitprobmatrix())
+
+    def getexitprobmatrix(self) -> np.array:
+        """
+        Returns the matrix of exit-phase probabilities conditional on the
+        starting phase. Element i,j is the probability that the process exits
+        (i.e. is absorbed) from phase j given that it starts in phase i. Each
+        row sums to one.
+
+        Returns:
+            np.array: The conditional exit-phase probabilities (matrix).
+        """
+
+        # the expected time spent in phase j, times the rate at which phase j
+        # exits, is the probability of exiting from phase j
+        return np.matmul(
+            self.__greenmatrix(), np.diag(np.asarray(self.exitrates).ravel())
+        )
+
+    def getphasetime(self) -> np.array:
+        """
+        Returns the expected time spent in each phase. The i'th element is the
+        expected time the process spends in phase i before it exits. In the
+        discrete case the time is measured in steps. The elements sum to the
+        mean of the distribution.
+
+        Returns:
+            np.array: The expected time spent in each phase (row vector).
+        """
+
+        return np.matmul(self.initdist, self.getphasetimematrix())
+
+    def getphasetimematrix(self) -> np.array:
+        """
+        Returns the matrix of expected phase times conditional on the starting
+        phase, also known as the Green matrix. Element i,j is the expected time
+        the process spends in phase j given that it starts in phase i. In the
+        discrete case the time is measured in steps, so element i,j is also the
+        expected number of visits to phase j. Each row sums to the expected time
+        until the process exits from the phase starting the row.
+
+        Returns:
+            np.array: The conditional expected phase times (matrix).
+        """
+
+        return self.__greenmatrix()
+
     def getdensity(self, x: float) -> float:
         """
         Returns the distribution's density, f(x).
@@ -353,6 +410,21 @@ class dist:
             print("Error: The seed can only be specified as an integer.")
             return False
         return True  # if all correct
+
+    def __greenmatrix(self) -> np.array:
+        """
+        Returns the Green matrix of the PH distribution, that is the inverse of
+        minus the sub-intensity matrix in the continuous case and the inverse of
+        the identity matrix minus the sub-transition matrix in the discrete case.
+
+        Returns:
+            np.array: The Green matrix.
+        """
+
+        if self.discrete:
+            return np.linalg.inv(np.subtract(np.eye(self.nphases), self.phgen))
+        else:
+            return np.linalg.inv(np.negative(self.phgen))
 
     def __computedensity(self, x: float) -> float:
         """
