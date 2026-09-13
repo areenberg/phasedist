@@ -248,8 +248,11 @@ class dist:
             None
         """
 
-        # compute densities for approximate and true distributions
-        x = np.linspace(0.0, self.getquantile(p=0.999), 500)
+        if self.discrete:
+            x = np.arange(1, int(self.getquantile(p=0.999)) + 1)
+        else:
+            x = np.linspace(0.0, self.getquantile(p=0.999), 500)
+
         val = np.zeros(len(x))
         for i in range(len(x)):
             if type == "pdf":
@@ -258,15 +261,21 @@ class dist:
                 val[i] = self.getcumprob(x[i])
 
         if type == "pdf":
-            ylbl = "Density"
-            tl = "Probability Density Function"
+            ylbl = "Probability" if self.discrete else "Density"
+            tl = ("Probability Mass Function" if self.discrete
+                  else "Probability Density Function")
         elif type == "cdf":
             ylbl = "Probability"
             tl = "Cumulative Distribution Function"
 
-        # make plot
         plt.figure(figsize=(10, 6))
-        plt.plot(x, val, label=ylbl, color="blue", linestyle="-")
+        if self.discrete and type == "pdf":
+            plt.vlines(x, 0.0, val, color="blue")
+            plt.plot(x, val, label=ylbl, color="blue", linestyle="none", marker="o")
+        elif self.discrete:
+            plt.step(x, val, label=ylbl, color="blue", where="post")
+        else:
+            plt.plot(x, val, label=ylbl, color="blue", linestyle="-")
         plt.xlabel("x")
         plt.ylabel(ylbl)
         plt.title(tl)
@@ -364,7 +373,7 @@ class dist:
                 return np.matmul(
                     self.initdist,
                     np.matmul(
-                        np.linalg.matrix_power(self.phgen, (x - 1)), self.exitrates
+                        np.linalg.matrix_power(self.phgen, int(x - 1)), self.exitrates
                     ),
                 ).item()
         else:
