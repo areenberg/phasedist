@@ -22,7 +22,13 @@ from the last one, and phases in parallel, where it exits from whichever phase
 it started in. The general generators give a third check, since equal exit
 rates make the remaining time memoryless and therefore the same from every
 phase. Those structures are also simulated directly, which is the only check
-here that shares no algebra with the class.
+here that shares no algebra with the class; the theoretical values are required
+to lie inside 99% confidence intervals for the simulated ones, from Student's t
+distribution for the phase times and the exact Clopper-Pearson interval for the
+exit probabilities. The 99% is the confidence that every one of those intervals
+covers its value at once, so each single interval is taken at the corrected level
+SIMLEVEL, and the rate at which this case fails on correct code is known rather
+than guessed.
 
 getrandom is tested with Pearson chi-square goodness-of-fit tests at the 1%
 level, on three structures per distribution kind and on both sampling methods
@@ -41,8 +47,8 @@ Sub-tests:
     Case 4: getquantile matches those formulas, including its edge cases.
     Case 5: getphasetime, getphasetimematrix, getexitprob and
             getexitprobmatrix match values worked out by hand, agree with each
-            other and with getmean, and agree with a direct simulation of the
-            underlying process.
+            other and with getmean, and fall inside confidence intervals for a
+            direct simulation of the underlying process.
     Case 6: getrandom passes chi-square goodness-of-fit tests, and its size
             argument behaves as documented.
     Case 7: countParameters reproduces counts worked out by hand.
@@ -68,7 +74,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 from scipy.linalg import expm
-from scipy.stats import chi2
+from scipy.stats import beta, chi2, t
 
 # Load phasedist from the src-folder so the test can be run without installing
 sys.path.insert(
@@ -89,7 +95,7 @@ SEED = 9
 RATE = 0.5  # exit rate of the continuous distribution, i.e. exponential(RATE)
 PROB = 0.3  # exit probability of the discrete distribution, i.e. geometric(PROB)
 
-ALPHA = 0.01            # significance level of the chi-square tests
+ALPHA = 0.01            # significance level of the statistical tests
 NSAMPLES = 10000        # samples drawn for a chi-square test
 NSAMPLESQUANTILE = 4000  # samples for the slower quantile-based sampler
 NBINS = 10              # bins used for a continuous chi-square test
@@ -97,8 +103,6 @@ MINBINPROB = 0.05       # smallest probability a discrete bin may carry
 MINEXPECTED = 5.0       # smallest expected count a chi-square bin may have
 
 NSIMPHASES = 20000      # runs simulated for the phase statistics of case 5
-TOLSIMTIME = 0.15       # tolerance for a simulated phase time, as a fraction of it
-TOLSIMEXIT = 0.03       # tolerance for a simulated exit probability
 
 # Every public method of dist. Checked against the class below, so that a new
 # public method cannot slip in without a case covering it.
@@ -351,12 +355,15 @@ def dphchisquare(initdist, phgen, seed, nsamples):
 
 def simulatephases(discrete, initdist, phgen, nsim, seed):
     '''
-    Simulates the underlying Markov process directly from the generator and
-    returns the average time spent in each phase, measured in steps when the
-    process is discrete, together with the fraction of the runs that exit from
-    each phase. The process is built here from the generator and driven by a
-    generator of random numbers of its own, so this shares neither algebra nor
-    random numbers with the class being tested.
+    Simulates the underlying Markov process directly from the generator. Returns
+    the time each run spends in each phase, as an array with one row per run and
+    one column per phase, measured in steps when the process is discrete,
+    together with the phase each run exits from. The process is built here from
+    the generator and driven by a generator of random numbers of its own, so
+    this shares neither algebra nor random numbers with the class being tested.
+
+    The outcome of every single run is returned rather than an average, so that
+    the confidence intervals below can be computed from the spread across runs.
     '''
     rng = np.random.default_rng(seed)
     phgen = np.asarray(phgen, dtype=float)
@@ -379,21 +386,65 @@ def simulatephases(discrete, initdist, phgen, nsim, seed):
     initcumulative = np.cumsum(initdist)
     stepcumulative = np.cumsum(step, axis=1)
 
-    time = np.zeros(nphases)
-    exits = np.zeros(nphases)
+    time = np.zeros((nsim, nphases))
+    exitphase = np.zeros(nsim, dtype=int)
 
-    for _ in range(nsim):
+    for run in range(nsim):
         s = min(int(np.searchsorted(initcumulative, rng.random())), nphases - 1)
         while True:
-            time[s] += 1.0 if discrete else rng.exponential(1.0 / rates[s])
+            time[run, s] += 1.0 if discrete else rng.exponential(1.0 / rates[s])
             nxt = min(int(np.searchsorted(stepcumulative[s], rng.random())),
                       nphases)
             if nxt == nphases:
-                exits[s] += 1.0
+                exitphase[run] = s
                 break
             s = nxt
 
-    return time / nsim, exits / nsim
+    return time, exitphase
+
+
+def meaninterval(sample, level):
+    '''
+    Returns the two ends of a confidence interval for the mean of each column of
+    sample, at the given confidence level, from Student's t distribution. The
+    time a run spends in a phase is far from normally distributed, being skewed
+    and with an atom at zero, but the interval is for its mean over many runs,
+    which the central limit theorem makes very nearly normal.
+
+    A column that never varies gives an interval of zero width.
+    '''
+    nsim = sample.shape[0]
+    mean = np.mean(sample, axis=0)
+    standarderror = np.std(sample, axis=0, ddof=1) / np.sqrt(nsim)
+    halfwidth = t.ppf(0.5 * (1.0 + level), nsim - 1) * standarderror
+    return mean - halfwidth, mean + halfwidth
+
+
+def clopperpearsoninterval(counts, nsim, level):
+    '''
+    Returns the two ends of the Clopper-Pearson confidence interval for each of
+    the given counts out of nsim runs, at the given confidence level. The
+    interval is the exact one for a binomial count, obtained from the quantiles
+    of the beta distribution, and is closed at zero when nothing was counted and
+    at one when every run was counted. Those two cases are taken separately,
+    since the beta distribution is not defined for the parameters they would
+    otherwise ask for.
+    '''
+    alpha = 1.0 - level
+    counts = np.asarray(counts)
+
+    lower = np.zeros(counts.size)
+    upper = np.ones(counts.size)
+
+    positive = counts > 0
+    lower[positive] = beta.ppf(0.5 * alpha, counts[positive],
+                               nsim - counts[positive] + 1)
+
+    incomplete = counts < nsim
+    upper[incomplete] = beta.ppf(1.0 - 0.5 * alpha, counts[incomplete] + 1,
+                                 nsim - counts[incomplete])
+
+    return lower, upper
 
 
 CPH = makedist(False, INITDIST, CPHGEN)
@@ -666,11 +717,16 @@ for discrete, initdist, phgen in PHASEINVARIANTS:
 
 # Finally the same quantities from a direct simulation of the underlying
 # process, which is the only check here that does not go through the matrix
-# algebra the class uses. The phase times are compared as a fraction of
-# themselves, since they differ in size from one structure to the next, and the
-# exit probabilities on their own scale. Over fifty seeds the largest deviation
-# seen on these six structures was 0.048 of a phase time and 0.009 of an exit
-# probability, so both tolerances leave a factor of about three.
+# algebra the class uses.
+#
+# A simulated mean never equals the value it estimates, so rather than allowing
+# a fixed difference, each theoretical value is required to lie inside a
+# confidence interval for the simulated one. The two quantities call for
+# different intervals: a phase time is a mean of times, so its interval comes
+# from Student's t distribution, while an exit probability is a count out of the
+# runs, so its interval is the exact Clopper-Pearson one for a binomial count.
+# The advantage over a fixed tolerance is that the rate at which this case fails
+# on correct code is then known rather than guessed, and it is set below.
 SIMULATED = (
     ("the continuous general distribution", False, INITDIST, CPHGEN),
     ("the discrete general distribution", True, INITDIST, DPHGEN),
@@ -682,26 +738,57 @@ SIMULATED = (
     ("discrete phases in parallel", True, INITDIST, DPHPARALLELGEN),
 )
 
+# One interval is checked per phase for each of the two quantities, and a single
+# interval missing its value would fail the case. The confidence level is
+# therefore applied to all of them together rather than to each one: every
+# interval is taken at a level corrected for how many there are, so that the case
+# passes correct code with probability 1-ALPHA in total. Taking each of the
+# thirty-six at 99% instead would fail correct code far too often, on 21.7% of
+# three hundred trial runs, against 0.0% of them for the corrected level used
+# here. Bonferroni's correction is used because it needs no assumption about how
+# the intervals depend on one another, and they do depend on one another, every
+# interval of a structure being read off the same runs.
+NINTERVALS = sum(2 * np.asarray(phgen).shape[0]
+                 for _, _, _, phgen in SIMULATED)
+
+SIMLEVEL = 1.0 - ALPHA / NINTERVALS
+
 for index, (label, discrete, initdist, phgen) in enumerate(SIMULATED):
 
     distribution = makedist(discrete, initdist, phgen)
-    simtime, simexit = simulatephases(discrete, initdist, phgen, NSIMPHASES,
-                                      SEED * 10 + index)
+    simtime, simexitphase = simulatephases(discrete, initdist, phgen,
+                                           NSIMPHASES, SEED * 10 + index)
 
     phasetime = np.asarray(distribution.getphasetime()).ravel()
+    exitprob = np.asarray(distribution.getexitprob()).ravel()
+    nphases = phasetime.size
 
-    # a phase that is never entered would make the fraction below meaningless
-    if np.min(phasetime) <= 0.0:
-        sys.exit("Validation test failed at case 5: %s does not spend time in every phase, so the simulated phase times cannot be compared as a fraction of the expected ones." % label)
+    # the expected time spent in each phase
+    lower, upper = meaninterval(simtime, SIMLEVEL)
 
-    deviation = np.max(np.abs(phasetime - simtime) / phasetime)
-    if deviation > TOLSIMTIME:
-        sys.exit("Validation test failed at case 5: the expected time per phase of %s differs from the simulated one by %.4f of itself, more than the tolerance of %.4f." % (label, deviation, TOLSIMTIME))
+    for i in range(nphases):
+        if upper[i] - lower[i] < TOL:
+            # a phase whose time never varies from run to run, which is to say
+            # one the process either always or never spends the same time in,
+            # leaves no room for simulation error
+            if abs(phasetime[i] - lower[i]) > TOL:
+                sys.exit("Validation test failed at case 5: the expected time in phase %d of %s is %.6f, but every simulated run spent %.6f there." % (i + 1, label, phasetime[i], lower[i]))
+        elif phasetime[i] < lower[i] or phasetime[i] > upper[i]:
+            sys.exit("Validation test failed at case 5: the expected time in phase %d of %s is %.6f, outside the %.4f%% confidence interval [%.6f, %.6f] for the mean of %d simulated runs." % (i + 1, label, phasetime[i], 100.0 * SIMLEVEL, lower[i], upper[i], NSIMPHASES))
 
-    deviation = np.max(np.abs(np.asarray(distribution.getexitprob()).ravel()
-                              - simexit))
-    if deviation > TOLSIMEXIT:
-        sys.exit("Validation test failed at case 5: the probability of exiting from each phase of %s differs from the simulated one by %.4f, more than the tolerance of %.4f." % (label, deviation, TOLSIMEXIT))
+    # the probability of exiting from each phase
+    counts = np.array([int(np.sum(simexitphase == i)) for i in range(nphases)])
+
+    # every run has to exit from exactly one phase, or the counts below are not
+    # binomial ones and the intervals do not apply
+    if np.sum(counts) != NSIMPHASES:
+        sys.exit("Validation test failed at case 5: the %d simulated runs of %s exit from a phase %d times in total." % (NSIMPHASES, label, np.sum(counts)))
+
+    lower, upper = clopperpearsoninterval(counts, NSIMPHASES, SIMLEVEL)
+
+    for i in range(nphases):
+        if exitprob[i] < lower[i] or exitprob[i] > upper[i]:
+            sys.exit("Validation test failed at case 5: the probability of exiting from phase %d of %s is %.6f, outside the %.4f%% Clopper-Pearson interval [%.6f, %.6f] for the %d of %d simulated runs that did so." % (i + 1, label, exitprob[i], 100.0 * SIMLEVEL, lower[i], upper[i], counts[i], NSIMPHASES))
 
 
 # ------------------------------------------------------------------
