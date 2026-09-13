@@ -187,6 +187,49 @@ class dist:
 
         return self.__greenmatrix()
 
+    def getembeddedchain(self) -> tuple:
+        """
+        Returns the parameters of the embedded Markov chain of a continuous
+        phase-type (CPH) distribution.
+
+        Returns None if the distribution is discrete (i.e. the DPH distribution).
+
+        Args:
+            None
+
+        Returns:
+            tuple: The initial distribution vector, the phase-type generator and
+                   the exit-rate vector of the embedded Markov chain.
+        """
+
+        if self.discrete:
+            print(
+                "Error: The embedded Markov chain is only defined for a continuous phase-type distribution."
+            )
+            return None
+
+        phgen = np.asarray(self.phgen, dtype=float)
+
+        # the total rate out of a phase, i.e. minus the diagonal of the
+        # generator, is the rate the jump probabilities are taken relative to
+        totalrates = -np.diag(phgen)
+
+        if np.any(totalrates <= 0.0):
+            print(
+                "Error: The embedded Markov chain is not defined when a phase has no rate out of it."
+            )
+            return None
+
+        embedded = np.divide(phgen, totalrates.reshape(-1, 1))
+
+        # a jump leaves the phase it starts from, so the chain cannot stay
+        np.fill_diagonal(embedded, 0.0)
+
+        exitrates = np.divide(np.asarray(self.exitrates).ravel(), totalrates)
+
+        return (self.initdist, np.matrix(embedded),
+                np.matrix(exitrates).reshape(-1, 1))
+
     def getdensity(self, x: float) -> float:
         """
         Returns the distribution's density, f(x).

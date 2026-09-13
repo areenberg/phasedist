@@ -30,6 +30,13 @@ covers its value at once, so each single interval is taken at the corrected leve
 SIMLEVEL, and the rate at which this case fails on correct code is known rather
 than guessed.
 
+getembeddedchain is tested against the chain worked out by hand for those same
+structures, against the two quantities that have to agree between a process and
+its jump chain (the phase it exits from, and the number of jumps implied by the
+time spent in each phase), and against the jumps of a simulated process, every
+jump probability having to lie inside a Clopper-Pearson interval for the
+proportion of simulated jumps that took it.
+
 getrandom is tested with Pearson chi-square goodness-of-fit tests at the 1%
 level, on three structures per distribution kind and on both sampling methods
 the class offers. The expected bin probabilities are computed here from the
@@ -49,10 +56,13 @@ Sub-tests:
             getexitprobmatrix match values worked out by hand, agree with each
             other and with getmean, and fall inside confidence intervals for a
             direct simulation of the underlying process.
-    Case 6: getrandom passes chi-square goodness-of-fit tests, and its size
+    Case 6: getembeddedchain returns the jump chain worked out by hand, is
+            consistent with the methods of case 5, and describes the number of
+            jumps the process makes.
+    Case 7: getrandom passes chi-square goodness-of-fit tests, and its size
             argument behaves as documented.
-    Case 7: countParameters reproduces counts worked out by hand.
-    Case 8: plot writes a file for both plot types and both kinds of
+    Case 8: countParameters reproduces counts worked out by hand.
+    Case 9: plot writes a file for both plot types and both kinds of
             distribution.
 
 References:
@@ -66,7 +76,7 @@ import os
 import sys
 import numpy as np
 
-# A non-interactive backend, so that the plots of case 8 can be written without
+# A non-interactive backend, so that the plots of case 9 can be written without
 # a display. This has to be selected before dist is imported, since importing
 # it loads pyplot.
 import matplotlib
@@ -103,15 +113,17 @@ MINBINPROB = 0.05       # smallest probability a discrete bin may carry
 MINEXPECTED = 5.0       # smallest expected count a chi-square bin may have
 
 NSIMPHASES = 20000      # runs simulated for the phase statistics of case 5
+MINJUMPS = 1000         # fewest simulated jumps a phase may be judged on
 
 # Every public method of dist. Checked against the class below, so that a new
 # public method cannot slip in without a case covering it.
-COVEREDMETHODS = ("countParameters", "getcumprob", "getdensity", "getexitprob",
-                  "getexitprobmatrix", "getexitrates", "getinitdist", "getmean",
-                  "getphasegen", "getphasetime", "getphasetimematrix",
-                  "getquantile", "getrandom", "getvar", "plot")
+COVEREDMETHODS = ("countParameters", "getcumprob", "getdensity",
+                  "getembeddedchain", "getexitprob", "getexitprobmatrix",
+                  "getexitrates", "getinitdist", "getmean", "getphasegen",
+                  "getphasetime", "getphasetimematrix", "getquantile",
+                  "getrandom", "getvar", "plot")
 
-# The two distributions used for cases 1 to 5 and 7. Both generators are fully
+# The two distributions used for cases 1 to 5 and 8. Both generators are fully
 # general, and their rows all sum to the same value, so every exit rate is
 # equal.
 INITDIST = np.array([0.5, 0.3, 0.2])
@@ -124,7 +136,7 @@ DPHGEN = np.array([[0.40, 0.20, 0.10],
                    [0.10, 0.50, 0.10],
                    [0.20, 0.20, 0.30]])    # rows sum to 1-PROB
 
-# Structures used for the chi-square tests of case 6, in the order their seeds
+# Structures used for the chi-square tests of case 7, in the order their seeds
 # are derived from SEED
 CPHSTRUCTURES = (
     ("general", INITDIST, CPHGEN),
@@ -362,6 +374,10 @@ def simulatephases(discrete, initdist, phgen, nsim, seed):
     the generator and driven by a generator of random numbers of its own, so
     this shares neither algebra nor random numbers with the class being tested.
 
+    Where every jump went is recorded as well, as a table with one row per
+    phase and one column per destination, absorption being the last column. That
+    is the embedded chain of case 6, counted rather than computed.
+
     The outcome of every single run is returned rather than an average, so that
     the confidence intervals below can be computed from the spread across runs.
     '''
@@ -388,6 +404,7 @@ def simulatephases(discrete, initdist, phgen, nsim, seed):
 
     time = np.zeros((nsim, nphases))
     exitphase = np.zeros(nsim, dtype=int)
+    transitions = np.zeros((nphases, nphases + 1))
 
     for run in range(nsim):
         s = min(int(np.searchsorted(initcumulative, rng.random())), nphases - 1)
@@ -395,12 +412,13 @@ def simulatephases(discrete, initdist, phgen, nsim, seed):
             time[run, s] += 1.0 if discrete else rng.exponential(1.0 / rates[s])
             nxt = min(int(np.searchsorted(stepcumulative[s], rng.random())),
                       nphases)
+            transitions[s, nxt] += 1.0
             if nxt == nphases:
                 exitphase[run] = s
                 break
             s = nxt
 
-    return time, exitphase
+    return time, exitphase, transitions
 
 
 def meaninterval(sample, level):
@@ -756,8 +774,8 @@ SIMLEVEL = 1.0 - ALPHA / NINTERVALS
 for index, (label, discrete, initdist, phgen) in enumerate(SIMULATED):
 
     distribution = makedist(discrete, initdist, phgen)
-    simtime, simexitphase = simulatephases(discrete, initdist, phgen,
-                                           NSIMPHASES, SEED * 10 + index)
+    simtime, simexitphase, _ = simulatephases(discrete, initdist, phgen,
+                                              NSIMPHASES, SEED * 10 + index)
 
     phasetime = np.asarray(distribution.getphasetime()).ravel()
     exitprob = np.asarray(distribution.getexitprob()).ravel()
@@ -792,29 +810,205 @@ for index, (label, discrete, initdist, phgen) in enumerate(SIMULATED):
 
 
 # ------------------------------------------------------------------
-# CASE 6: The samples follow the distribution they are drawn from
+# CASE 6: The embedded Markov chain is the jump chain worked out by hand
+# ------------------------------------------------------------------
+
+# Dividing a row of the generator by the total rate out of that phase turns
+# rates into the probabilities of the jumps they describe. Each entry below is a
+# label, a generator, and the chain that follows from it: walking through the
+# phases in order is a certainty once the holding times are disregarded, phases
+# in parallel exit on their first jump whichever one they start in, and the
+# general one divides each row by 1.2, 0.9 and 1.3 respectively.
+EMBEDDEDCASES = (
+    ("the general distribution", CPHGEN,
+     np.array([[0.0, 0.4 / 1.2, 0.3 / 1.2],
+               [0.2 / 0.9, 0.0, 0.2 / 0.9],
+               [0.5 / 1.3, 0.3 / 1.3, 0.0]]),
+     np.array([0.5 / 1.2, 0.5 / 0.9, 0.5 / 1.3])),
+
+    ("phases in series", CPHSERIESGEN,
+     np.array([[0.0, 1.0, 0.0],
+               [0.0, 0.0, 1.0],
+               [0.0, 0.0, 0.0]]),
+     np.array([0.0, 0.0, 1.0])),
+
+    ("phases in parallel", CPHPARALLELGEN,
+     np.zeros((3, 3)),
+     np.array([1.0, 1.0, 1.0])),
+)
+
+for label, phgen, expectedgen, expectedexit in EMBEDDEDCASES:
+
+    distribution = makedist(False, INITDIST, phgen)
+    embedded = distribution.getembeddedchain()
+
+    if embedded is None:
+        sys.exit("Validation test failed at case 6: no embedded chain was returned for %s." % label)
+
+    embeddedinit, embeddedgen, embeddedexit = embedded
+
+    if np.max(np.abs(np.asarray(embeddedgen) - expectedgen)) > TOL:
+        sys.exit("Validation test failed at case 6: the embedded generator of %s differs from the one worked out by hand." % label)
+
+    if np.max(np.abs(np.asarray(embeddedexit).ravel() - expectedexit)) > TOL:
+        sys.exit("Validation test failed at case 6: the embedded exit rates of %s differ from the ones worked out by hand." % label)
+
+    # the chain visits the phases the distribution starts in
+    if not np.array_equal(np.asarray(embeddedinit).ravel(), INITDIST):
+        sys.exit("Validation test failed at case 6: the embedded chain of %s does not start from the initial distribution of the distribution itself." % label)
+
+# Properties the chain must have whatever the generator, checked on every
+# continuous structure this file defines
+EMBEDDEDSTRUCTURES = ([(initdist, phgen) for _, initdist, phgen in CPHSTRUCTURES]
+                      + [(INITDIST, CPHSERIESGEN), (INITDIST, CPHPARALLELGEN)])
+
+for initdist, phgen in EMBEDDEDSTRUCTURES:
+
+    distribution = makedist(False, initdist, phgen)
+    embedded = distribution.getembeddedchain()
+
+    if embedded is None:
+        sys.exit("Validation test failed at case 6: no embedded chain was returned for a continuous distribution.")
+
+    embeddedinit, embeddedgen, embeddedexit = embedded
+    generator = np.asarray(embeddedgen)
+    exitrates = np.asarray(embeddedexit).ravel()
+
+    # the three come back in the same shape as the parameters of the
+    # distribution itself, so that the chain can be handed straight to dist
+    if (embeddedinit.shape != distribution.getinitdist().shape
+            or embeddedgen.shape != distribution.getphasegen().shape
+            or embeddedexit.shape != distribution.getexitrates().shape):
+        sys.exit("Validation test failed at case 6: the embedded chain does not come back in the same shape as the parameters of the distribution itself.")
+
+    # a jump leaves the phase it starts from
+    if np.max(np.abs(np.diag(generator))) > TOL:
+        sys.exit("Validation test failed at case 6: the embedded generator lets a phase jump to itself.")
+
+    # every entry is a probability, and the jump has to go somewhere
+    if np.min(generator) < 0.0 or np.max(generator) > 1.0 or np.min(exitrates) < 0.0 or np.max(exitrates) > 1.0:
+        sys.exit("Validation test failed at case 6: the embedded chain holds a value that is not a probability.")
+
+    if np.max(np.abs(np.sum(generator, axis=1) + exitrates - 1.0)) > TOL:
+        sys.exit("Validation test failed at case 6: the rows of the embedded chain do not sum to one.")
+
+    # handing it to dist as a discrete distribution has to reproduce the exit
+    # rates returned here, since dist derives them as one minus the row sums
+    jumps = dist(discrete=True,
+                 initdist=np.asarray(embeddedinit).ravel(),
+                 phgen=np.copy(generator),
+                 seed=SEED)
+
+    if np.max(np.abs(np.asarray(jumps.getexitrates()).ravel() - exitrates)) > TOL:
+        sys.exit("Validation test failed at case 6: the exit rates of the embedded chain differ from the ones dist derives from its generator.")
+
+    # Two quantities have to agree between the two chains. The phase the process
+    # exits from is the same event whether the time or the jumps are counted, so
+    # the exit-phase probabilities are identical. And jumps out of a phase occur
+    # at the total rate out of it, so the expected number of jumps is the
+    # expected time spent in each phase weighted by that rate.
+    if np.max(np.abs(np.asarray(jumps.getexitprob()).ravel()
+                     - np.asarray(distribution.getexitprob()).ravel())) > TOL:
+        sys.exit("Validation test failed at case 6: the phase the process exits from is not equally likely under the embedded chain as under the distribution itself.")
+
+    totalrates = -np.diag(np.asarray(phgen, dtype=float))
+    expectedjumps = np.sum(np.asarray(distribution.getphasetime()).ravel()
+                           * totalrates)
+
+    if abs(jumps.getmean() - expectedjumps) > TOL:
+        sys.exit("Validation test failed at case 6: the mean number of jumps of the embedded chain is not the expected time in each phase weighted by the rate out of it.")
+
+# A discrete distribution has no embedded chain to return, and says so
+printed = io.StringIO()
+with contextlib.redirect_stdout(printed):
+    refused = DPH.getembeddedchain()
+
+if refused is not None:
+    sys.exit("Validation test failed at case 6: a discrete distribution returned an embedded chain.")
+
+if printed.getvalue().strip() == "":
+    sys.exit("Validation test failed at case 6: a discrete distribution refused to return an embedded chain without saying why.")
+
+# Neither has a continuous one with a phase it never leaves. Such a generator
+# makes the distribution improper, so building it warns about dividing by zero,
+# which is silenced here rather than left to clutter the output.
+with np.errstate(invalid="ignore", divide="ignore"):
+    improper = makedist(False, np.array([1.0, 0.0]),
+                        np.array([[-1.0, 1.0], [0.0, 0.0]]))
+
+printed = io.StringIO()
+with contextlib.redirect_stdout(printed):
+    refused = improper.getembeddedchain()
+
+if refused is not None:
+    sys.exit("Validation test failed at case 6: an embedded chain was returned for a generator with a phase that is never left.")
+
+if printed.getvalue().strip() == "":
+    sys.exit("Validation test failed at case 6: an embedded chain was refused without saying why for a generator with a phase that is never left.")
+
+# Finally the chain counted rather than computed. The process is simulated and
+# every jump recorded, which estimates each jump probability directly, with no
+# algebra in common with the class. A jump probability is a proportion of the
+# jumps out of a phase, so the interval for it is the exact Clopper-Pearson one,
+# and the level is again shared out over all of them at once.
+#
+# This check is what a valid but wrong chain runs into: spreading the jumps
+# evenly over the other phases, which keeps every row summing to one and every
+# diagonal at zero, passes all the structural checks above and is caught here, at
+# 0.2917 against an interval of [0.3237, 0.3474]. Over two hundred trials the
+# check raised a false alarm once, against the one in a hundred it allows.
+_, _, simtransitions = simulatephases(False, INITDIST, CPHGEN, NSIMPHASES,
+                                      SEED * 10 + 6)
+
+embeddedgen = np.asarray(CPH.getembeddedchain()[1])
+embeddedexit = np.asarray(CPH.getembeddedchain()[2]).ravel()
+
+# the chain as one table, absorption being the last column, to match the counts
+embeddedchain = np.hstack([embeddedgen, embeddedexit.reshape(-1, 1)])
+
+jumpsfrom = np.sum(simtransitions, axis=1)
+
+if np.min(jumpsfrom) < MINJUMPS:
+    sys.exit("Validation test failed at case 6: only %.0f of the simulated jumps leave the least visited phase, too few to judge its jump probabilities." % np.min(jumpsfrom))
+
+JUMPLEVEL = 1.0 - ALPHA / embeddedchain.size
+
+for i in range(embeddedchain.shape[0]):
+
+    lower, upper = clopperpearsoninterval(simtransitions[i], int(jumpsfrom[i]),
+                                          JUMPLEVEL)
+
+    for j in range(embeddedchain.shape[1]):
+        destination = ("absorption" if j == embeddedchain.shape[1] - 1
+                       else "phase %d" % (j + 1))
+        if embeddedchain[i, j] < lower[j] or embeddedchain[i, j] > upper[j]:
+            sys.exit("Validation test failed at case 6: the embedded chain jumps from phase %d to %s with probability %.6f, outside the %.4f%% Clopper-Pearson interval [%.6f, %.6f] for the %.0f of %.0f simulated jumps that did so." % (i + 1, destination, embeddedchain[i, j], 100.0 * JUMPLEVEL, lower[j], upper[j], simtransitions[i, j], jumpsfrom[i]))
+
+
+# ------------------------------------------------------------------
+# CASE 7: The samples follow the distribution they are drawn from
 # ------------------------------------------------------------------
 
 # the size argument, as documented
 if np.ndim(CPH.getrandom(size=1)) != 0:
-    sys.exit("Validation test failed at case 6: a single continuous sample is not a scalar.")
+    sys.exit("Validation test failed at case 7: a single continuous sample is not a scalar.")
 
 if np.ndim(DPH.getrandom(size=1)) != 0:
-    sys.exit("Validation test failed at case 6: a single discrete sample is not a scalar.")
+    sys.exit("Validation test failed at case 7: a single discrete sample is not a scalar.")
 
 if not np.isnan(CPH.getrandom(size=0)):
-    sys.exit("Validation test failed at case 6: a sample of size zero is not a missing value.")
+    sys.exit("Validation test failed at case 7: a sample of size zero is not a missing value.")
 
 for size in (2, 7):
     if np.asarray(CPH.getrandom(size=size)).size != size:
-        sys.exit("Validation test failed at case 6: the number of continuous samples returned differs from the size requested.")
+        sys.exit("Validation test failed at case 7: the number of continuous samples returned differs from the size requested.")
     if np.asarray(DPH.getrandom(size=size)).size != size:
-        sys.exit("Validation test failed at case 6: the number of discrete samples returned differs from the size requested.")
+        sys.exit("Validation test failed at case 7: the number of discrete samples returned differs from the size requested.")
 
 # discrete samples must be whole numbers of at least one
 samples = np.asarray(DPH.getrandom(size=200), dtype=float)
 if np.any(samples < 1.0) or np.any(samples % 1.0 != 0.0):
-    sys.exit("Validation test failed at case 6: the discrete samples are not whole numbers of at least one.")
+    sys.exit("Validation test failed at case 7: the discrete samples are not whole numbers of at least one.")
 
 # the goodness-of-fit tests themselves. The seed of each test is derived from
 # SEED so that the whole case is reproducible.
@@ -840,20 +1034,20 @@ for name, (statistic, degrees, minexpected) in CHISQUARETESTS:
     # a chi-square test is only valid when no bin is nearly empty, and it only
     # says something when there is more than one degree of freedom
     if minexpected < MINEXPECTED:
-        sys.exit("Validation test failed at case 6: the bins used for %s have an expected count below %.0f." % (name, MINEXPECTED))
+        sys.exit("Validation test failed at case 7: the bins used for %s have an expected count below %.0f." % (name, MINEXPECTED))
 
     if degrees < 2:
-        sys.exit("Validation test failed at case 6: the bins used for %s leave fewer than two degrees of freedom." % name)
+        sys.exit("Validation test failed at case 7: the bins used for %s leave fewer than two degrees of freedom." % name)
 
     if statistic > chi2.ppf(1.0 - ALPHA, degrees):
-        sys.exit("Validation test failed at case 6: the samples for %s do not follow the distribution they are drawn from (chi-square %.2f on %d degrees of freedom, above the %.0f%% critical value %.2f)." % (name, statistic, degrees, 100 * (1.0 - ALPHA), chi2.ppf(1.0 - ALPHA, degrees)))
+        sys.exit("Validation test failed at case 7: the samples for %s do not follow the distribution they are drawn from (chi-square %.2f on %d degrees of freedom, above the %.0f%% critical value %.2f)." % (name, statistic, degrees, 100 * (1.0 - ALPHA), chi2.ppf(1.0 - ALPHA, degrees)))
 
 if len(CHISQUARETESTS) != len(CPHSTRUCTURES) + len(DPHSTRUCTURES) + 1:
-    sys.exit("Validation test failed at case 6: not every structure was submitted to a chi-square test.")
+    sys.exit("Validation test failed at case 7: not every structure was submitted to a chi-square test.")
 
 
 # ------------------------------------------------------------------
-# CASE 7: The parameter count is the one worked out by hand
+# CASE 8: The parameter count is the one worked out by hand
 # ------------------------------------------------------------------
 
 # A phase contributes one parameter for every non-zero transition it can make,
@@ -872,11 +1066,11 @@ PARAMETERCOUNTS = (
 
 for discrete, initdist, phgen, expected in PARAMETERCOUNTS:
     if makedist(discrete, initdist, phgen).countParameters() != expected:
-        sys.exit("Validation test failed at case 7: the number of parameters counted is not the number worked out by hand.")
+        sys.exit("Validation test failed at case 8: the number of parameters counted is not the number worked out by hand.")
 
 
 # ------------------------------------------------------------------
-# CASE 8: A plot is written for both plot types and both kinds
+# CASE 9: A plot is written for both plot types and both kinds
 # ------------------------------------------------------------------
 
 PLOTDIRECTORY = os.path.dirname(os.path.abspath(__file__))
@@ -889,7 +1083,7 @@ for label, distribution in (("cph", CPH), ("dph", DPH)):
 
         # never overwrite something that is already there
         if os.path.exists(filename):
-            sys.exit("Validation test failed at case 8: the file %s already exists, so the test will not write to it." % filename)
+            sys.exit("Validation test failed at case 9: the file %s already exists, so the test will not write to it." % filename)
 
         try:
             # anything printed while plotting means a point was evaluated where
@@ -899,13 +1093,13 @@ for label, distribution in (("cph", CPH), ("dph", DPH)):
                 distribution.plot(type=plottype, filename=filename)
 
             if printed.getvalue() != "":
-                sys.exit("Validation test failed at case 8: plotting the %s of the %s distribution printed %r." % (plottype, label, printed.getvalue().strip()))
+                sys.exit("Validation test failed at case 9: plotting the %s of the %s distribution printed %r." % (plottype, label, printed.getvalue().strip()))
 
             if not os.path.exists(filename):
-                sys.exit("Validation test failed at case 8: plotting the %s of the %s distribution did not write a file." % (plottype, label))
+                sys.exit("Validation test failed at case 9: plotting the %s of the %s distribution did not write a file." % (plottype, label))
 
             if os.path.getsize(filename) == 0:
-                sys.exit("Validation test failed at case 8: plotting the %s of the %s distribution wrote an empty file." % (plottype, label))
+                sys.exit("Validation test failed at case 9: plotting the %s of the %s distribution wrote an empty file." % (plottype, label))
 
             # the figure must actually hold values, not a curve of missing ones
             figure = plt.gcf()
@@ -915,13 +1109,13 @@ for label, distribution in (("cph", CPH), ("dph", DPH)):
             plt.close(figure)
 
             if plotted.size == 0 or not np.all(np.isfinite(plotted)):
-                sys.exit("Validation test failed at case 8: the %s plotted for the %s distribution contains no finite values." % (plottype, label))
+                sys.exit("Validation test failed at case 9: the %s plotted for the %s distribution contains no finite values." % (plottype, label))
         finally:
             if os.path.exists(filename):
                 os.remove(filename)
 
         if os.path.exists(filename):
-            sys.exit("Validation test failed at case 8: the plot written for the %s of the %s distribution could not be removed again." % (plottype, label))
+            sys.exit("Validation test failed at case 9: the plot written for the %s of the %s distribution could not be removed again." % (plottype, label))
 
 
 # ------------------------------------------------------------------
