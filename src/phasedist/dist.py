@@ -190,16 +190,16 @@ class dist:
     def getembeddedchain(self) -> tuple:
         """
         Returns the parameters of the embedded Markov chain of a continuous
-        phase-type (CPH) distribution.
-
-        Returns None if the distribution is discrete (i.e. the DPH distribution).
+        phase-type (CPH) distribution. Returns None if the distribution is
+        discrete, which has no embedded chain.
 
         Args:
             None
 
         Returns:
-            tuple: The initial distribution vector, the phase-type generator and
-                   the exit-rate vector of the embedded Markov chain.
+            tuple: The initial distribution vector (np.array),
+            the phase-type generator (np.array), and the exit-rate
+            vector (np.array) of the embedded Markov chain.
         """
 
         if self.discrete:
@@ -317,15 +317,21 @@ class dist:
                     obs[i] = self.__cphsample(method=method)
             return obs
 
-    def countParameters(self) -> None:
+    def countParameters(self) -> int:
         """
         Counts the number of independent model parameters.
+
+        A phase contributes one parameter for every transition it can make,
+        counting the transition to absorption, minus one because the transitions
+        of a phase are constrained to each other. The initial distribution
+        contributes one parameter for every phase the process can start in, minus
+        one for the same reason.
 
         Args:
             None
 
         Returns:
-            None
+            int: The number of independent model parameters.
         """
         phg = 0
         for i in range(self.nphases):
@@ -334,7 +340,8 @@ class dist:
                 + np.count_nonzero(self.exitrates[i])
                 - 1
             )
-        return (phg + (np.count_nonzero(self.initdist) - 1))
+            
+        return int(phg + (np.count_nonzero(self.initdist) - 1))
 
     def plot(self, type: str = "pdf", filename: str = "dist.png") -> None:
         """

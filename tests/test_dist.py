@@ -1065,8 +1065,16 @@ PARAMETERCOUNTS = (
 )
 
 for discrete, initdist, phgen, expected in PARAMETERCOUNTS:
-    if makedist(discrete, initdist, phgen).countParameters() != expected:
+
+    counted = makedist(discrete, initdist, phgen).countParameters()
+
+    if counted != expected:
         sys.exit("Validation test failed at case 8: the number of parameters counted is not the number worked out by hand.")
+
+    # a count is returned as the integer the method says it returns, and not as
+    # one of NumPy's own integers, which is not a Python int
+    if not isinstance(counted, int) or isinstance(counted, bool):
+        sys.exit("Validation test failed at case 8: the number of parameters is returned as %s rather than as an int." % type(counted).__name__)
 
 
 # ------------------------------------------------------------------
