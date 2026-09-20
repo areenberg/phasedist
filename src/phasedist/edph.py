@@ -4,10 +4,7 @@ import numpy as np
 class edph:
     """
     Performs the E-step of the EM algorithm for a Discrete-Time Phase Type (DPH) distribution
-    from p. 675 Bladt and Nielsen (2017), extended to censored observations by analogy with
-    the continuous case (Section 13.5, p. 685) -- the book itself does not derive the censored
-    DPH formulas (see Problem 13.8.7, p. 701, posed as an open exercise). Note: This class has
-    no input checks.
+    from p. 678 Bladt and Nielsen (2017). Note: This class has no input checks.
 
     References:
         Bladt, M., & Nielsen, B. F. (2017). Matrix-Exponential Distributions in Applied Probability.
@@ -33,226 +30,274 @@ class edph:
 
         return None
 
-    def __Jmatrix(self, y: int) -> None:
+    def __blockJ(self) -> np.array:
         """
-        Computes the J-matrix and T^(y-1), where
+        Returns the block matrix behind the J-matrix, where
         J(y;pi,T) = sum_{k=0}^{y-2} T^(y-2-k) t pi T^k,
         via the discrete analogue of Theorem A.2.1 (Van Loan) for matrix powers
-        (Theorem A.2.2, p. 714): for a block matrix [[T, t*pi],[0, T]], its
+        (Theorem A.2.2, p. 714): for the block matrix [[T, t*pi],[0, T]], its
         (y-1)-th power has top-left block T^(y-1) and top-right block J(y;pi,T).
         Used in the uncensored N_ij formula (13.14). Requires y >= 1 (for y=1
         this correctly reduces to the zero matrix, since J(1;pi,T) is an empty sum).
 
         Args:
-            y (int): Observation value (y >= 1).
+            None
 
         Returns:
-            None
+            np.array: The block matrix, of twice the number of phases.
         """
+
         t = self.exitrates[:, None]
         pi = self.initdist[None, :]
 
-        mat = np.linalg.matrix_power(
-            np.block([
-                [self.phgen, np.matmul(t, pi)],
-                [np.zeros((self.nphases, self.nphases)), self.phgen],
-            ]),
-            y - 1,
-        )
+        return np.block([
+            [self.phgen, np.matmul(t, pi)],
+            [np.zeros((self.nphases, self.nphases)), self.phgen],
+        ])
 
-        self.Tpow = mat[: self.nphases, : self.nphases]
-        self.Jmat = mat[: self.nphases, self.nphases : 2 * self.nphases]
-
-    def __Mmatrix(self, y: int) -> None:
+    def __blockM(self) -> np.array:
         """
-        Computes the M-matrix and T^y, where M(y) = sum_{k=0}^{y-1} T^k.
+        Returns the block matrix behind the M-matrix, where M(y) = sum_{k=0}^{y-1} T^k.
 
         Via Theorem A.2.2 with block matrix [[T, I],[0, I]]: its y-th power has
         top-left block T^y and top-right block M(y) (since the (2,2) block must
-        be the identity -- not the zero matrix as in the continuous __Mmatrix --
+        be the identity -- not the zero matrix as in the continuous case --
         so that its k-th power stays I for every k, giving a constant factor of
         I at each term of the sum, matching M(y) = sum T^k * I * I^k).
 
         Args:
-            y (int): Observation value (y >= 0).
+            None
 
         Returns:
-            None
+            np.array: The block matrix, of twice the number of phases.
         """
-        mat = np.linalg.matrix_power(
-            np.block([
-                [self.phgen, np.eye(self.nphases)],
-                [np.zeros((self.nphases, self.nphases)), np.eye(self.nphases)],
-            ]),
-            y,
-        )
 
-        self.Tpow = mat[: self.nphases, : self.nphases]
-        self.Mmat = mat[: self.nphases, self.nphases : 2 * self.nphases]
+        return np.block([
+            [self.phgen, np.eye(self.nphases)],
+            [np.zeros((self.nphases, self.nphases)), np.eye(self.nphases)],
+        ])
 
-    def __Kmatrix(self, y: int) -> None:
+    def __blockK(self) -> np.array:
         """
-        Computes the K-matrix and T^y, where
+        Returns the block matrix behind the K-matrix, where
         K(y) = sum_{k=0}^{y-1} T^(y-1-k) e pi T^k, with e the column vector of
-        ones (i.e. the same construction as __Jmatrix, but with e in place of
+        ones (i.e. the same construction as __blockJ, but with e in place of
         the exit-rate vector t, and summed over one more term -- k=0..y-1
         rather than k=0..y-2 -- since here every one of the y steps may be a
         transient-to-transient transition).
 
         Args:
-            y (int): Observation value (y >= 0).
+            None
 
         Returns:
-            None
+            np.array: The block matrix, of twice the number of phases.
         """
+
         e = np.ones((self.nphases, 1))
         pi = self.initdist[None, :]
 
-        mat = np.linalg.matrix_power(
-            np.block([
-                [self.phgen, np.matmul(e, pi)],
-                [np.zeros((self.nphases, self.nphases)), self.phgen],
-            ]),
-            y,
-        )
+        return np.block([
+            [self.phgen, np.matmul(e, pi)],
+            [np.zeros((self.nphases, self.nphases)), self.phgen],
+        ])
 
-        self.Tpow = mat[: self.nphases, : self.nphases]
-        self.Kmat = mat[: self.nphases, self.nphases : 2 * self.nphases]
-
-    def __uncensored(self, y: int) -> None:
+    def __powers(self, block: np.array, exponents: np.array):
         """
-        Updates b_i, n_i, n_ij with the contribution from a single fully
-        observed (uncensored) observation y, using (13.13), (13.14), (13.15).
+        Yields block raised to each of the given exponents, which must be sorted
+        in increasing order.
+
+        Each power is reached from the one before it, so a run of consecutive
+        exponents costs a single matrix multiplication each instead of a fresh
+        exponentiation. Where the exponents jump, the gap is crossed by binary
+        exponentiation, which is what computing the power directly would have
+        cost anyway, so this is never the slower way round.
 
         Args:
-            y (int): Observation value (y >= 1).
+            block (ndarray): The matrix to raise to the powers.
+            exponents (ndarray): Exponents, sorted in increasing order.
+
+        Yields:
+            ndarray: The block matrix raised to each exponent in turn.
+        """
+
+        current = np.eye(block.shape[0])
+        reached = 0
+
+        for exponent in exponents:
+            step = int(exponent) - reached
+            if step == 1:
+                current = np.matmul(current, block)
+            elif step > 1:
+                current = np.matmul(current, np.linalg.matrix_power(block, step))
+            reached = int(exponent)
+            yield current
+
+    def __uncensored(self, values: np.array, counts: np.array) -> None:
+        """
+        Updates b_i, n_i, n_ij and the log-likelihood with the contribution from
+        the fully observed (uncensored) observations, using (13.13), (13.14),
+        (13.15). Each distinct value is computed once and weighted by how often
+        it occurs.
+
+        Args:
+            values (ndarray): Distinct observation values (y >= 1), increasing.
+            counts (ndarray): How often each of those values occurs.
 
         Returns:
             None
         """
 
-        self.__Jmatrix(y)  # computes self.Tpow (= T^(y-1)) and self.Jmat
+        n = self.nphases
 
-        Ttprod = np.matmul(self.Tpow, self.exitrates)
-        piTpow = np.matmul(self.initdist, self.Tpow)
-        piTtprod = np.matmul(piTpow, self.exitrates)
-        self.piTyt = piTtprod  # P(Y=y); likelihood contribution for this observation
+        for count, mat in zip(counts, self.__powers(self.__blockJ(), values - 1)):
 
-        for i in range(self.nphases):
-            self.bi[i] += (self.initdist[i] * Ttprod[i]) / piTtprod
-            self.ni[i] += (piTpow[i] * self.exitrates[i]) / piTtprod
-            for j in range(self.nphases):
-                # unlike the continuous case, i==j (self-transition, "stay
-                # another discrete step") is a real, estimable DPH parameter
-                # (phgen[i,i]) and must be included here, not skipped.
-                self.nij[i, j] += (self.phgen[i, j] * self.Jmat[j, i]) / piTtprod
+            Tpow = mat[:n, :n]
+            Jmat = mat[:n, n:]
 
-    def __rightcensored(self, right: int) -> None:
+            Ttprod = np.matmul(Tpow, self.exitrates)
+            piTpow = np.matmul(self.initdist, Tpow)
+            den = np.matmul(piTpow, self.exitrates)  # P(Y=y)
+            self.piTyt = den
+
+            self.bi += count * (self.initdist * Ttprod) / den
+            self.ni += count * (piTpow * self.exitrates) / den
+            # element i,j of the update is phgen[i,j] * Jmat[j,i], i.e. the
+            # generator against the TRANSPOSE of the J-matrix. Unlike the
+            # continuous case, i==j (self-transition, "stay another discrete
+            # step") is a real, estimable DPH parameter and is included here.
+            self.nij += count * (self.phgen * Jmat.T) / den
+            self.loglikelihood += count * np.log(den)
+
+    def __rightcensored(self, limits: np.array, counts: np.array) -> None:
         """
-        Updates b_i, n_i, n_ij with the contribution from a single
-        right-censored observation known only to satisfy Y > right.
+        Updates b_i, n_i, n_ij and the log-likelihood with the contribution from
+        the right-censored observations, known only to satisfy Y > limit.
 
         Args:
-            right (int): It is known that Y > right.
+            limits (ndarray): Distinct censoring limits, increasing.
+            counts (ndarray): How often each of those limits occurs.
 
         Returns:
             None
         """
 
-        self.__Kmatrix(right)  # computes self.Tpow (= T^right) and self.Kmat (= K(right))
+        n = self.nphases
 
-        piTpow = np.matmul(self.initdist, self.Tpow)
-        den = np.sum(piTpow)  # pi T^right e = P(Y > right)
-        self.piTyt = den
+        for count, mat in zip(counts, self.__powers(self.__blockK(), limits)):
 
-        Tpow_rowsum = np.sum(self.Tpow, axis=1)  # e_i' T^right e for each i
+            Tpow = mat[:n, :n]
+            Kmat = mat[:n, n:]
 
-        for i in range(self.nphases):
-            self.bi[i] += (self.initdist[i] * Tpow_rowsum[i]) / den
-            for j in range(self.nphases):
-                # i==j (self-transition) included -- see note in __uncensored.
-                self.nij[i, j] += (self.phgen[i, j] * self.Kmat[j, i]) / den
-            # N_i(right) = 0 identically when Y > right, so ni is untouched
+            piTpow = np.matmul(self.initdist, Tpow)
+            den = np.sum(piTpow)  # pi T^limit e = P(Y > limit)
+            self.piTyt = den
 
-    def __leftcensored(self, left: int) -> None:
+            self.bi += count * (self.initdist * np.sum(Tpow, axis=1)) / den
+            self.nij += count * (self.phgen * Kmat.T) / den
+            # N_i(limit) = 0 identically when Y > limit, so ni is untouched
+            self.loglikelihood += count * np.log(den)
+
+    def __leftcensored(self, limits: np.array, counts: np.array) -> None:
         """
-        Updates b_i, n_i, n_ij with the contribution from a single
-        left-censored observation known only to satisfy Y <= left.
+        Updates b_i, n_i, n_ij and the log-likelihood with the contribution from
+        the left-censored observations, known only to satisfy Y <= limit.
 
-        Equivalent to __intervalcensored(0, left) (M(0)=0, K(0)=0, T^0=I in
-        closed form), written directly to avoid the wasted zero-argument calls.
+        Equivalent to __intervalcensored with lower limit zero (M(0)=0, K(0)=0,
+        T^0=I in closed form), written directly to avoid the wasted
+        zero-argument work.
 
         Args:
-            left (int): It is known that Y <= left.
+            limits (ndarray): Distinct censoring limits, increasing.
+            counts (ndarray): How often each of those limits occurs.
 
         Returns:
             None
         """
 
-        self.__Mmatrix(left)  # computes self.Tpow (= T^left) and self.Mmat (= M(left))
-        Tpow = self.Tpow
-        Mmat = self.Mmat
+        n = self.nphases
 
-        self.__Kmatrix(left)  # computes self.Tpow (= T^left, again) and self.Kmat (= K(left))
-        Kmat = self.Kmat
+        # both block matrices are wanted at the same exponents, so the two
+        # sequences of powers are walked side by side
+        walkM = self.__powers(self.__blockM(), limits)
+        walkK = self.__powers(self.__blockK(), limits)
 
-        piTpow = np.matmul(self.initdist, Tpow)
-        den = 1.0 - np.sum(piTpow)  # P(Y <= left)
-        self.piTyt = den
+        for count, matM, matK in zip(counts, walkM, walkK):
 
-        piM = np.matmul(self.initdist, Mmat)
-        Tpow_rowsum = np.sum(Tpow, axis=1)
+            Tpow = matM[:n, :n]
+            Mmat = matM[:n, n:]
+            Kmat = matK[:n, n:]
 
-        for i in range(self.nphases):
-            self.bi[i] += (self.initdist[i] * (1.0 - Tpow_rowsum[i])) / den
-            for j in range(self.nphases):
-                # i==j (self-transition) included -- see note in __uncensored.
-                self.nij[i, j] += (self.phgen[i, j] * (piM[i] - Kmat[j, i])) / den
-            self.ni[i] += (self.exitrates[i] * piM[i]) / den
+            piTpow = np.matmul(self.initdist, Tpow)
+            den = 1.0 - np.sum(piTpow)  # P(Y <= limit)
+            self.piTyt = den
 
-    def __intervalcensored(self, left: int, right: int) -> None:
+            piM = np.matmul(self.initdist, Mmat)
+
+            self.bi += count * (self.initdist * (1.0 - np.sum(Tpow, axis=1))) / den
+            self.nij += count * (self.phgen * (piM[:, None] - Kmat.T)) / den
+            self.ni += count * (self.exitrates * piM) / den
+            self.loglikelihood += count * np.log(den)
+
+    def __intervalcensored(
+            self,
+            lefts: np.array,
+            rights: np.array,
+            counts: np.array
+        ) -> None:
         """
-        Updates b_i, n_i, n_ij with the contribution from a single
-        interval-censored observation known only to lie in (left, right].
+        Updates b_i, n_i, n_ij and the log-likelihood with the contribution from
+        the interval-censored observations, known only to lie in (left, right].
+
+        Both ends of an interval are needed at once, so unlike the other three
+        kinds this one first collects the powers at every distinct endpoint and
+        then visits the distinct intervals.
 
         Args:
-            left (int): Lower/left limit of interval.
-            right (int): Upper/right limit of interval.
+            lefts (ndarray): Lower limits of the distinct intervals.
+            rights (ndarray): Upper limits of the distinct intervals.
+            counts (ndarray): How often each of those intervals occurs.
 
         Returns:
             None
         """
 
-        self.__Mmatrix(left)
-        TpowL = self.Tpow
-        MmatL = self.Mmat
+        n = self.nphases
 
-        self.__Kmatrix(left)
-        KmatL = self.Kmat
+        endpoints = np.unique(np.concatenate([lefts, rights]))
 
-        self.__Mmatrix(right)
-        TpowR = self.Tpow
-        MmatR = self.Mmat
+        walkM = self.__powers(self.__blockM(), endpoints)
+        walkK = self.__powers(self.__blockK(), endpoints)
 
-        self.__Kmatrix(right)
-        KmatR = self.Kmat
+        # the blocks are copied out rather than kept as views, so that only the
+        # three n by n blocks of each endpoint are held rather than the whole
+        # block matrix
+        atendpoint = {}
+        for endpoint, matM, matK in zip(endpoints, walkM, walkK):
+            atendpoint[int(endpoint)] = (
+                np.array(matM[:n, :n]),
+                np.array(matM[:n, n:]),
+                np.array(matK[:n, n:]),
+            )
 
-        piTpowL = np.matmul(self.initdist, TpowL)
-        piTpowR = np.matmul(self.initdist, TpowR)
-        den = np.sum(piTpowL) - np.sum(piTpowR)  # P(left < Y <= right)
-        self.piTyt = den
+        for count, left, right in zip(counts, lefts, rights):
 
-        piM = np.matmul(self.initdist, MmatR - MmatL)
-        KmatDiff = KmatR - KmatL
-        TpowL_rowsum = np.sum(TpowL, axis=1)
-        TpowR_rowsum = np.sum(TpowR, axis=1)
+            TpowL, MmatL, KmatL = atendpoint[int(left)]
+            TpowR, MmatR, KmatR = atendpoint[int(right)]
 
-        for i in range(self.nphases):
-            self.bi[i] += (self.initdist[i] * (TpowL_rowsum[i] - TpowR_rowsum[i])) / den
-            for j in range(self.nphases):
-                # i==j (self-transition) included -- see note in __uncensored.
-                self.nij[i, j] += (self.phgen[i, j] * (piM[i] - KmatDiff[j, i])) / den
-            self.ni[i] += (self.exitrates[i] * piM[i]) / den
+            piTpowL = np.matmul(self.initdist, TpowL)
+            piTpowR = np.matmul(self.initdist, TpowR)
+            den = np.sum(piTpowL) - np.sum(piTpowR)  # P(left < Y <= right)
+            self.piTyt = den
+
+            piM = np.matmul(self.initdist, MmatR - MmatL)
+            KmatDiff = KmatR - KmatL
+
+            self.bi += count * (self.initdist
+                                * (np.sum(TpowL, axis=1)
+                                   - np.sum(TpowR, axis=1))) / den
+            self.nij += count * (self.phgen * (piM[:, None] - KmatDiff.T)) / den
+            self.ni += count * (self.exitrates * piM) / den
+            self.loglikelihood += count * np.log(den)
 
     def __storefundamental(
                             self,
@@ -316,23 +361,46 @@ class edph:
 
         self.loglikelihood = 0.0
 
-        if censoring is not None:
-            for idx, y in enumerate(obs):
+        obs = np.asarray(obs)
 
-                if np.isnan(censoring[idx, 0]) and np.isnan(censoring[idx, 1]):
-                    self.__uncensored(int(y))  # uncensored observation
-                elif np.isnan(censoring[idx, 0]) and not np.isnan(censoring[idx, 1]):
-                    self.__rightcensored(int(censoring[idx, 1]))  # Right-censored observation
-                elif not np.isnan(censoring[idx, 0]) and np.isnan(censoring[idx, 1]):
-                    self.__leftcensored(int(censoring[idx, 0]))  # Left-censored observation
-                elif not np.isnan(censoring[idx, 0]) and not np.isnan(censoring[idx, 1]):
-                    self.__intervalcensored(int(censoring[idx, 0]), int(censoring[idx, 1]))  # Interval-censored observation
+        if censoring is None:
+            values, counts = np.unique(obs.astype(np.int64),
+                                       return_counts=True)
+            if values.size:
+                self.__uncensored(values, counts)
+            return self.bi, self.ni, self.nij
 
-                self.loglikelihood += np.log(self.piTyt)  # depends on censoring type
+        censoring = np.asarray(censoring)[:obs.size]
 
-        else:
-            for y in obs:
-                self.__uncensored(int(y))
-                self.loglikelihood += np.log(self.piTyt)
+        # the four kinds, read off the censoring array in one go rather than
+        # one observation at a time
+        lowermissing = np.isnan(censoring[:, 0])
+        uppermissing = np.isnan(censoring[:, 1])
+
+        isuncensored = lowermissing & uppermissing
+        isright = lowermissing & ~uppermissing
+        isleft = ~lowermissing & uppermissing
+        isinterval = ~lowermissing & ~uppermissing
+
+        if np.any(isuncensored):
+            values, counts = np.unique(obs[isuncensored].astype(np.int64),
+                                       return_counts=True)
+            self.__uncensored(values, counts)
+
+        if np.any(isright):
+            limits, counts = np.unique(censoring[isright, 1].astype(np.int64),
+                                       return_counts=True)
+            self.__rightcensored(limits, counts)
+
+        if np.any(isleft):
+            limits, counts = np.unique(censoring[isleft, 0].astype(np.int64),
+                                       return_counts=True)
+            self.__leftcensored(limits, counts)
+
+        if np.any(isinterval):
+            intervals, counts = np.unique(
+                censoring[isinterval, :].astype(np.int64), axis=0,
+                return_counts=True)
+            self.__intervalcensored(intervals[:, 0], intervals[:, 1], counts)
 
         return self.bi, self.ni, self.nij
