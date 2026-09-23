@@ -16,6 +16,7 @@ class fitdph:
     def __init__(
         self,
         obs: np.array = None,
+        censoring: np.array = None,
         initpi: np.array = None,
         initphgen: np.array = None,
         initexitrates: np.array = None,
@@ -28,8 +29,21 @@ class fitdph:
         """
         Initializes the discrete-time phase-type distribution fitter.
 
+        Censored observations are specified with the (n_obs x 2) censoring array,
+        in which each row corresponds to the observation in the same position of
+        obs and the two columns say how that observation is censored:
+        - [np.nan,np.nan] -> uncensored, the value in obs is used.
+        - [np.nan,float] -> right-censored, it is known only that Y > that value.
+        - [float,np.nan] -> left-censored, it is known only that Y <= that value.
+        - [float,float] -> interval-censored, from the first value to the second.
+
+        The value held in obs is ignored for a censored observation, since what
+        is known about it is held in the censoring array instead.
+
         Args:
             obs (np.array): Observed realizations of the phase-type distribution.
+            censoring (np.array): Specifies censored observations. If
+                None, every observation is treated as uncensored.
             initpi (np.array): Initial distribution vector.
             initphgen (np.array): Initial phase-type transition matrix.
             initexitrates (np.array): Initial exit probability vector.
@@ -43,6 +57,7 @@ class fitdph:
             None
         """
         self.obs = obs  # observed realizations of the PH distribution
+        self.censoring = censoring
         self.initpi = initpi
         self.initphgen = initphgen
         self.initexitrates = initexitrates
@@ -79,7 +94,8 @@ class fitdph:
             self.bi,self.ni,self.nij = self.estep.run(obs=self.obs,
                                                       initdist=self.pi,
                                                       phgen=self.phgen,
-                                                      exitrates=self.exitrates)
+                                                      exitrates=self.exitrates,
+                                                      censoring=self.censoring)
             self.loglikelihood = self.estep.loglikelihood
             
             #M-step
@@ -111,7 +127,8 @@ class fitdph:
         self.estep.run(obs=self.obs,
                        initdist=self.pi,
                        phgen=self.phgen,
-                       exitrates=self.exitrates)
+                       exitrates=self.exitrates,
+                       censoring=self.censoring)
         self.loglikelihood = self.estep.loglikelihood
 
     def getinitdist(self) -> np.array:
@@ -272,7 +289,22 @@ class fitdph:
             np.random.seed(self.seed)
 
         self.obs = self.obs.astype(int)
-        self.obs = np.sort(self.obs)
+
+        # The observations are sorted, so the censoring array has to be carried
+        # along with them.
+        order = np.argsort(self.obs, kind="stable")
+        self.obs = self.obs[order]
+
+        if self.censoring is not None:
+            self.censoring = np.asarray(self.censoring, dtype=float)
+            if self.censoring.shape != (self.obs.size, 2):
+                print(
+                    "Error: The censoring array must have one row per observation and two columns."
+                )
+                self.censoring = None
+            else:
+                self.censoring = self.censoring[order, :]
+
         self.initpi = self.initpi.astype(float)
         self.initphgen = self.initphgen.astype(float)
         self.initexitrates = self.initexitrates.astype(float)
