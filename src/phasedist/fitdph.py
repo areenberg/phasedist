@@ -1,3 +1,5 @@
+import warnings
+
 import numpy as np
 from phasedist.edph import edph
 from phasedist.mdph import mdph
@@ -6,11 +8,15 @@ from phasedist.rnddph import rnddph
 class fitdph:
     """
     Fits discrete-time phase-type distributions using the
-    EM algorithm from p. 675 Bladt and Nielsen (2017).
-    
+    EM algorithm from p. 675 Bladt and Nielsen (2017). Convergence is assessed
+    by Aitken acceleration, see McLachlan and Krishnan (2008), Section 4.9.
+
     References:
         Bladt, M., & Nielsen, B. F. (2017). Matrix-Exponential Distributions in Applied Probability.
-        Springer. https://doi.org/10.1007/978-1-4939-7049-0    
+        Springer. https://doi.org/10.1007/978-1-4939-7049-0
+
+        McLachlan, G. J., & Krishnan, T. (2008). The EM Algorithm and Extensions (2nd ed.).
+        Wiley. https://doi.org/10.1002/9780470191613
     """
 
     def __init__(
@@ -88,6 +94,7 @@ class fitdph:
         iter = 0
         eps = np.inf
         loglik0 = -np.inf
+        loglik1 = -np.inf  # the log-likelihood two iterations back
         while iter < self.itermax and eps > self.tolerance:
             
             #E-step
@@ -104,7 +111,30 @@ class fitdph:
                                                                nij=self.nij)            
             
             #self.__updatelikelihood()
-            eps = self.loglikelihood - loglik0
+            step = self.loglikelihood - loglik0
+
+            # Each EM iteration is guaranteed to increase the likelihood
+            # (Bladt and Nielsen (2017), p. 675), so a decrease cannot happen in
+            # exact arithmetic.
+            if step < 0.0:
+                warnings.warn(
+                    "The log-likelihood decreased by %.3e at iteration %d. The "
+                    "EM algorithm cannot decrease it, so this is either "
+                    "round-off at a converged fit or an error in the E- or "
+                    "M-step. The fit stopped here."
+                    % (abs(float(step)), iter + 1),
+                    RuntimeWarning,
+                    stacklevel=2)
+
+            # Aitken acceleration, McLachlan and Krishnan (2008), Section 4.9.
+            eps = step
+            denominator = loglik0 - loglik1
+            if np.isfinite(denominator) and denominator > 0.0:
+                rate = step / denominator
+                if 0.0 < rate < 1.0:
+                    eps = max(step, step * rate / (1.0 - rate))
+
+            loglik1 = loglik0
             loglik0 = self.loglikelihood
             iter += 1
             if self.verbose and iter % 25 == 0:
@@ -291,7 +321,9 @@ class fitdph:
         self.obs = self.obs.astype(int)
 
         # The observations are sorted, so the censoring array has to be carried
-        # along with them.
+        # along with them: Its rows are matched to the observations by position,
+        # and sorting one without the other would silently attach each censoring
+        # rule to the wrong observation.
         order = np.argsort(self.obs, kind="stable")
         self.obs = self.obs[order]
 

@@ -14,15 +14,22 @@ simulated with the dist class, whose sampler is tested against chi-square
 goodness-of-fit tests in test_dist.py, so it is not being taken on trust here.
 
 The EM algorithm is run to a tolerance of EMTOLERANCE rather than to the
-class's default. The default is an ABSOLUTE improvement in the log-likelihood,
-and for a continuous fit that is a demanding thing to ask: the likelihood
-surface of a phase-type representation has a long flat ridge, because many
-parameter sets describe the same distribution, so the fit creeps along it
-gaining very little. On five hundred observations the default took 8786
-iterations and 158 seconds, against 159 iterations and 3 seconds at 1e-4, and
-the two fitted distribution functions differ by at most 0.0044 -- an order of
-magnitude inside the intervals the cases below accept. What is being tested is
-therefore the same, at a fiftieth of the cost.
+class's default. The tolerance is the estimated distance from the current
+log-likelihood to the limit the algorithm is converging to, obtained by Aitken
+acceleration, so it is a statement about how much likelihood is left to gain
+rather than about the size of the last step. That distinction matters here: the
+likelihood surface of a phase-type representation has a long flat ridge, because
+many parameter sets describe the same distribution, so the fit creeps along it
+and the last step understates by a wide margin how far it still has to go.
+
+On the general structure of this file the class default of 1e-6 took 26.7
+seconds and EMTOLERANCE took 13.2 seconds, the two fitted distribution functions
+differ by at most 0.0003, and the log-likelihood given up by stopping at
+EMTOLERANCE is 1.2e-3, which is the tolerance doing what it says. That last
+figure is worth keeping an eye on: under a criterion on the size of the step
+alone, asking for 1e-4 left between 1e-2 and 1e-1 of log-likelihood on the
+table. What is being tested is therefore the same, at half the cost, and
+MAXIMPROVEMENT below has an order of magnitude of room above EMTOLERANCE.
 
 How the fits are judged. The fitted parameters themselves are not a valid
 target: a phase-type representation is heavily over-parametrized (Theorem
@@ -71,7 +78,8 @@ through no fault of the code being tested.
 Sub-tests:
     Case 1: uncensored data, fitted distribution within sampling error of the
             empirical one for all three structures.
-    Case 2: the same with randominit=False and the true parameters supplied as
+    Case 2: the same with randominit=False and an invented starting point
+    supplied as
             the starting point, which checks that user-specified start
             parameters are used.
     Case 3: as case 1, with a mix of uncensored and censored observations.
@@ -98,6 +106,7 @@ import contextlib
 import io
 import os
 import sys
+import warnings
 import numpy as np
 from scipy.stats import beta
 
@@ -106,6 +115,7 @@ sys.path.insert(
     0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "src")
 )
 
+import phasedist.fitcph as fitcphmodule
 from phasedist.dist import dist
 from phasedist.fitcph import fitcph
 
@@ -122,7 +132,7 @@ SEED = 15
 
 NPHASES = 3
 NSAMPLES = 300       # observations per fit
-EMTOLERANCE = 1e-4   # convergence tolerance, see the note at the top
+EMTOLERANCE = 1e-3   # convergence tolerance, see the note at the top
 CDFLEVEL = 0.99      # confidence that ALL the intervals cover their values
 
 
@@ -160,6 +170,49 @@ STRUCTURES = (
     ("general", GENERALPI, GENERALGEN),
     ("Coxian", COXIANPI, COXIANGEN),
     ("Erlang", ERLANGPI, ERLANGGEN),
+)
+
+
+# ------------------------------------------------------------------
+# Where the fits that do not randomize their starting point begin.
+#
+# These are invented values, not the parameters the data was drawn from.
+# Starting a fit at the truth is not what happens in practice, and it hides
+# work: the EM algorithm begins at its destination with nothing left to do, so
+# the case stops exercising the fitting it is there to test. Each start keeps
+# the ZERO PATTERN of its structure, since that is what fixes the shape being
+# fitted, and differs from the truth in every parameter that is free to move.
+#
+# The rates within each start are also kept clearly apart from one another. A
+# generator whose rates agree to within rounding has confluent eigenvalues, and
+# that is the worst case for the matrix exponential: the divided differences
+# behind exp(Ty) cancel and the log-likelihood the E-step reports loses several
+# digits. Starting the Erlang at its own true equal-rate generator did exactly
+# that -- the first M-step returned rates differing in the last two bits, the
+# reported log-likelihood fell by 0.33 while the true one rose by 0.004, and the
+# fit stopped on its second iteration. Only the starting point changes here; the
+# distribution the data comes from is untouched.
+# ------------------------------------------------------------------
+
+STARTGENERALPI = np.array([0.2, 0.5, 0.3])
+STARTGENERALGEN = np.array([[-2.00, 0.70, 0.50],
+                            [0.60, -1.60, 0.40],
+                            [0.30, 0.90, -2.20]])
+
+STARTCOXIANPI = np.array([1.0, 0.0, 0.0])
+STARTCOXIANGEN = np.array([[-2.40, 1.50, 0.00],
+                           [0.00, -1.80, 0.60],
+                           [0.00, 0.00, -1.10]])
+
+STARTERLANGPI = np.array([1.0, 0.0, 0.0])
+STARTERLANGGEN = np.array([[-3.50, 3.50, 0.00],
+                           [0.00, -2.80, 2.80],
+                           [0.00, 0.00, -2.00]])
+
+STARTS = (
+    ("general", STARTGENERALPI, STARTGENERALGEN),
+    ("Coxian", STARTCOXIANPI, STARTCOXIANGEN),
+    ("Erlang", STARTERLANGPI, STARTERLANGGEN),
 )
 
 # The censoring limits are quantiles of the TRUE distribution, so that they
@@ -391,6 +444,26 @@ def cdfwithinsamplingerror(case, label, model, truth, observations,
 
 
 STRUCTUREBYNAME = {name: (pi, phgen) for name, pi, phgen in STRUCTURES}
+STARTBYNAME = {name: (pi, phgen) for name, pi, phgen in STARTS}
+
+# A start that does not have its structure's zero pattern is fitting a different
+# shape, and one that is not a valid representation is not a starting point at
+# all. Both fail here rather than somewhere downstream.
+for startname, startpi, startgen in STARTS:
+    truepi, truegen = STRUCTUREBYNAME[startname]
+
+    if (not np.array_equal(startpi != 0.0, truepi != 0.0)
+            or not np.array_equal(startgen != 0.0, truegen != 0.0)):
+        sys.exit("Validation test failed at initialization: the starting parameters of the %s distribution do not share the zero pattern of the structure, so they describe a different shape." % startname)
+
+    if np.array_equal(startpi, truepi) and np.array_equal(startgen, truegen):
+        sys.exit("Validation test failed at initialization: the starting parameters of the %s distribution are the parameters the data was drawn from, which is what they are there to avoid." % startname)
+
+    if (np.any(np.diag(startgen) >= 0.0)
+            or np.any(startgen - np.diag(np.diag(startgen)) < 0.0)
+            or np.any(exitratesof(startgen) < -TOL)
+            or abs(float(np.sum(startpi)) - 1.0) > TOL):
+        sys.exit("Validation test failed at initialization: the starting parameters of the %s distribution are not a valid phase-type representation." % startname)
 
 FITS = {}
 
@@ -404,7 +477,11 @@ def getfit(name, censored, randominit):
     '''
     key = (name, censored, randominit)
     if key not in FITS:
-        pi, phgen = STRUCTUREBYNAME[name]
+        # With randominit the supplied parameters only fix the shape, so the
+        # structure serves; without it they ARE the starting point, and the
+        # invented start is used rather than the parameters behind the data.
+        pi, phgen = (STRUCTUREBYNAME[name] if randominit
+                     else STARTBYNAME[name])
         observations, censoring = DATA[name]
         FITS[key] = fitmodel(pi, phgen, observations,
                              censoring=censoring if censored else None,
@@ -461,23 +538,26 @@ for name, pi, phgen in STRUCTURES:
 
 
 # ------------------------------------------------------------------
-# CASE 2: Uncensored data, fitted from the true parameters as the start
+# CASE 2: Uncensored data, fitted from an invented starting point
 # ------------------------------------------------------------------
 
 # This is what checks that a supplied starting point is used rather than
-# discarded. The fit is judged by the same criterion as case 1.
+# discarded. The start is not the parameters the data came from -- see the note
+# beside STARTS above -- so the EM algorithm has real ground to cover before the
+# criterion of case 1 can be met, which is the point of judging it by the same
+# criterion.
 for name, pi, phgen in STRUCTURES:
     cdfwithinsamplingerror(2, name, getfit(name, False, False),
                            truedistribution(pi, phgen), DATA[name][0])
 
 # A starting point that is used must leave its mark: fitting the same data from
-# the true parameters and from a random start cannot give byte-identical
-# answers, or the supplied start was ignored.
+# the supplied start and from a random one cannot give byte-identical answers,
+# or the supplied start was ignored.
 fromtruth = fittedparameters(getfit("general", False, False))
 fromrandom = fittedparameters(getfit("general", False, True))
 
 if all(np.array_equal(a, b) for a, b in zip(fromtruth, fromrandom)):
-    sys.exit("Validation test failed at case 2: fitting from the true parameters and from a random start gives identical results, so the supplied starting parameters are being ignored.")
+    sys.exit("Validation test failed at case 2: fitting from the supplied start and from a random start gives identical results, so the supplied starting parameters are being ignored.")
 
 
 # ------------------------------------------------------------------
@@ -510,7 +590,7 @@ for supplied, plain in zip(asifnone, uncensored):
 
 
 # ------------------------------------------------------------------
-# CASE 4: Censored data, fitted from the true parameters as the start
+# CASE 4: Censored data, fitted from an invented starting point
 # ------------------------------------------------------------------
 
 for name, pi, phgen in STRUCTURES:
@@ -769,7 +849,7 @@ observations, censoring = DATA["general"]
 inorder = fittedparameters(getfit("general", True, False))
 
 shuffle = np.random.default_rng(SEED).permutation(observations.size)
-shuffled = fittedparameters(fitmodel(GENERALPI, GENERALGEN,
+shuffled = fittedparameters(fitmodel(STARTGENERALPI, STARTGENERALGEN,
                                      observations[shuffle],
                                      censoring=censoring[shuffle, :],
                                      randominit=False))
@@ -784,9 +864,9 @@ printed = io.StringIO()
 with contextlib.redirect_stdout(printed):
     malformed = fitcph(obs=np.copy(observations),
                        censoring=np.full((observations.size - 3, 2), np.nan),
-                       initpi=np.copy(GENERALPI),
-                       initphgen=np.copy(GENERALGEN),
-                       initexitrates=exitratesof(GENERALGEN),
+                       initpi=np.copy(STARTGENERALPI),
+                       initphgen=np.copy(STARTGENERALGEN),
+                       initexitrates=exitratesof(STARTGENERALGEN),
                        randominit=False,
                        seed=SEED,
                        tolerance=EMTOLERANCE,
@@ -805,6 +885,61 @@ plain = fittedparameters(getfit("general", False, False))
 for refused, uncensoredfit in zip(fittedparameters(malformed), plain):
     if np.max(np.abs(refused - uncensoredfit)) > TOL:
         sys.exit("Validation test failed at case 9: after refusing a censoring array of the wrong shape the fit is not the one the same data gives with no censoring at all.")
+
+
+# ------------------------------------------------------------------
+# CASE 10: the guard on the direction of the log-likelihood
+# ------------------------------------------------------------------
+
+# The EM algorithm cannot lower the log-likelihood (p. 678), and the loop stops
+# as soon as the improvement falls below the tolerance. A DECREASE is therefore
+# the one failure the stopping rule cannot distinguish from success: it looks
+# exactly like a converged fit. The class warns instead of passing it over, and
+# both halves of that need checking -- a healthy fit that warned would make the
+# warning noise, and a broken one that stayed silent would make it useless.
+
+observations, _ = DATA["general"]
+
+with warnings.catch_warnings(record=True) as raised:
+    warnings.simplefilter("always")
+    fitmodel(STARTGENERALPI, STARTGENERALGEN, observations, randominit=False)
+
+if [w for w in raised if issubclass(w.category, RuntimeWarning)]:
+    sys.exit("Validation test failed at case 10: a fit that converges normally raises a RuntimeWarning about the log-likelihood, so the guard fires when nothing is wrong.")
+
+
+TRUEESTEP = fitcphmodule.ecph
+
+
+class FallingEstep:
+    '''
+    Stands in for the E-step and reports a log-likelihood that falls at every
+    iteration, which the EM algorithm cannot do. The real E-step still runs, so
+    the fit proceeds normally in every other respect.
+    '''
+
+    def __init__(self, *args, **kwargs):
+        self.inner = TRUEESTEP(*args, **kwargs)
+        self.calls = 0
+        self.loglikelihood = 0.0
+
+    def run(self, **kwargs):
+        result = self.inner.run(**kwargs)
+        self.calls += 1
+        self.loglikelihood = -100.0 - self.calls
+        return result
+
+
+fitcphmodule.ecph = FallingEstep
+try:
+    with warnings.catch_warnings(record=True) as raised:
+        warnings.simplefilter("always")
+        fitmodel(STARTGENERALPI, STARTGENERALGEN, observations, randominit=False)
+finally:
+    fitcphmodule.ecph = TRUEESTEP
+
+if not [w for w in raised if issubclass(w.category, RuntimeWarning)]:
+    sys.exit("Validation test failed at case 10: the log-likelihood fell at every iteration and the fit finished without a word, so a decreasing likelihood is being read as convergence.")
 
 
 # ------------------------------------------------------------------

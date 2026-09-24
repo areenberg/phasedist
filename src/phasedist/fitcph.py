@@ -1,3 +1,5 @@
+import warnings
+
 import numpy as np
 from scipy.linalg import expm
 from phasedist.ecph import ecph
@@ -7,11 +9,15 @@ from phasedist.rndcph import rndcph
 class fitcph:
     """
     Fits continuous-time phase-type distributions using the
-    EM algorithm from p. 678 Bladt and Nielsen (2017).
+    EM algorithm from p. 678 Bladt and Nielsen (2017). Convergence is assessed
+    by Aitken acceleration, see McLachlan and Krishnan (2008), Section 4.9.
 
     References:
         Bladt, M., & Nielsen, B. F. (2017). Matrix-Exponential Distributions in Applied Probability.
         Springer. https://doi.org/10.1007/978-1-4939-7049-0
+
+        McLachlan, G. J., & Krishnan, T. (2008). The EM Algorithm and Extensions (2nd ed.).
+        Wiley. https://doi.org/10.1002/9780470191613
     """
 
     def __init__(
@@ -86,6 +92,7 @@ class fitcph:
         iter = 0
         eps = np.inf
         loglik0 = -np.inf
+        loglik1 = -np.inf  # the log-likelihood two iterations back
         while iter < self.itermax and eps > self.tolerance:
 
             #E-step
@@ -102,7 +109,26 @@ class fitcph:
                                                                ni=self.ni,
                                                                nij=self.nij)
 
-            eps = self.loglikelihood - loglik0  # loglik is evaluated within the E-step
+            step = self.loglikelihood - loglik0  # loglik is evaluated within the E-step
+
+            #Each EM iteration is guaranteed to increase the likelihood
+            #(Bladt and Nielsen (2017), p. 678).
+            if step < 0.0:
+                warnings.warn(
+                    "The log-likelihood decreased by %.3e at iteration %d"
+                    % (abs(float(step)), iter + 1),
+                    RuntimeWarning,
+                    stacklevel=2)
+
+            #Aitken acceleration, McLachlan and Krishnan (2008), Section 4.9.
+            eps = step
+            denominator = loglik0 - loglik1
+            if np.isfinite(denominator) and denominator > 0.0:
+                rate = step / denominator
+                if 0.0 < rate < 1.0:
+                    eps = max(step, step * rate / (1.0 - rate))
+
+            loglik1 = loglik0
             loglik0 = self.loglikelihood
             iter += 1
             if self.verbose and iter % 25 == 0:
