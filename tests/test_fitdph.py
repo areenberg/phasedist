@@ -715,9 +715,9 @@ for name, pi, phgen in STRUCTURES:
 for name, pi, phgen in STRUCTURES:
     observations, censoring = DATA[name]
 
-    for label, applied in (("uncensored", None), ("censored", censoring)):
-        first = fitmodel(pi, phgen, observations, censoring=applied,
-                         randominit=False)
+    for label, censored in (("uncensored", False), ("censored", True)):
+        applied = censoring if censored else None
+        first = getfit(name, censored, False)      # the fit case 2 or 4 made
         againpi, againgen, againexit = fittedparameters(first)
 
         continued = fitdph(obs=np.copy(observations),
@@ -744,8 +744,7 @@ for name, pi, phgen in STRUCTURES:
 # so anything that reorders one has to reorder the other. Presenting the same
 # data in a different order must give the same fit.
 observations, censoring = DATA["general"]
-inorder = fittedparameters(fitmodel(GENERALPI, GENERALGEN, observations,
-                                    censoring=censoring, randominit=False))
+inorder = fittedparameters(getfit("general", True, False))
 
 shuffle = np.random.default_rng(SEED).permutation(observations.size)
 shuffled = fittedparameters(fitmodel(GENERALPI, GENERALGEN,
@@ -778,8 +777,7 @@ with contextlib.redirect_stdout(printed):
     malformed.fit()
 
 # having refused it, the fit has to go on as though no censoring was given
-plain = fittedparameters(fitmodel(GENERALPI, GENERALGEN, observations,
-                                  randominit=False))
+plain = fittedparameters(getfit("general", False, False))
 
 for refused, uncensoredfit in zip(fittedparameters(malformed), plain):
     if np.max(np.abs(refused - uncensoredfit)) > TOL:
