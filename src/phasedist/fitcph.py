@@ -17,6 +17,7 @@ class fitcph:
     def __init__(
         self,
         obs: np.array = None,
+        censoring: np.array = None,
         initpi: np.array = None,
         initphgen: np.array = None,
         initexitrates: np.array = None,
@@ -29,8 +30,21 @@ class fitcph:
         """
         Initializes the continuous-time phase-type distribution fitter.
 
+        Censored observations are specified with the (n_obs x 2) censoring array,
+        in which each row corresponds to the observation in the same position of
+        obs and the two columns say how that observation is censored:
+        - [np.nan,np.nan] -> uncensored, the value in obs is used.
+        - [np.nan,float] -> right-censored, it is known only that Y > that value.
+        - [float,np.nan] -> left-censored, it is known only that Y <= that value.
+        - [float,float] -> interval-censored, from the first value to the second.
+
+        The value held in obs is ignored for a censored observation, since what
+        is known about it is held in the censoring array instead.
+
         Args:
             obs (array-like): Observed realizations of the phase-type distribution.
+            censoring (ndarray): Specifies censored observations. If
+                None, every observation is treated as uncensored.
             initpi (ndarray): Initial distribution vector.
             initphgen (ndarray): Initial phase-type generator matrix.
             initexitrates (ndarray): Initial exit rate vector.
@@ -41,6 +55,7 @@ class fitcph:
             verbose (bool, default=False): Whether to print intermediate fitting information.
         """
         self.obs = obs  # observed realizations of the PH distribution
+        self.censoring = censoring
         self.initpi = initpi
         self.initphgen = initphgen
         self.initexitrates = initexitrates
@@ -77,7 +92,8 @@ class fitcph:
             self.bi,self.zi,self.ni,self.nij = self.estep.run(obs=self.obs,
                                                               initdist=self.pi,
                                                               phgen=self.phgen,
-                                                              exitrates=self.exitrates)
+                                                              exitrates=self.exitrates,
+                                                              censoring=self.censoring)
             self.loglikelihood = self.estep.loglikelihood
 
             #M-step
@@ -110,7 +126,8 @@ class fitcph:
         self.estep.run(obs=self.obs,
                        initdist=self.pi,
                        phgen=self.phgen,
-                       exitrates=self.exitrates)
+                       exitrates=self.exitrates,
+                       censoring=self.censoring)
         self.loglikelihood = self.estep.loglikelihood
 
     def getinitdist(self) -> np.array:
@@ -252,6 +269,18 @@ class fitcph:
             np.random.seed(self.seed)
 
         self.obs = self.obs.astype(float)
+
+        # The rows of the censoring array are matched to the observations by
+        # position, so an array that does not have one row per observation
+        # cannot be read at all.
+        if self.censoring is not None:
+            self.censoring = np.asarray(self.censoring, dtype=float)
+            if self.censoring.shape != (self.obs.size, 2):
+                print(
+                    "Error: The censoring array must have one row per observation and two columns."
+                )
+                self.censoring = None
+
         self.initpi = self.initpi.astype(float)
         self.initphgen = self.initphgen.astype(float)
         self.initexitrates = self.initexitrates.astype(float)
