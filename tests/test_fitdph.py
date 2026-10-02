@@ -110,7 +110,11 @@ from phasedist.fitdph import fitdph
 TOL = 1e-12          # tolerance for comparisons that are exact in theory
 TOLFIT = 1e-9        # tolerance for quantities recomputed from fitted values
 TOLLOGLIK = 1e-6     # tolerance for the log-likelihood recomputed from them
-MAXIMPROVEMENT = 1e-3  # most a converged fit may gain from being continued
+# The most a converged fit may gain from being continued. Measured across the
+# six fits of case 9 the largest gain is 2.1e-8, so this is a genuine check with
+# margin to spare. The continuous file needs a looser value: its fits stop much
+# closer to their tolerance than these do.
+MAXIMPROVEMENT = 1e-5
 SEED = 4
 
 NPHASES = 3
@@ -903,6 +907,37 @@ finally:
 
 if not [w for w in raised if issubclass(w.category, RuntimeWarning)]:
     sys.exit("Validation test failed at case 10: the log-likelihood fell at every iteration and the fit finished without a word, so a decreasing likelihood is being read as convergence.")
+
+
+# The loop can also end by running out of iterations, which is not convergence
+# but looks identical from outside: parameters, a log-likelihood, no complaint.
+# A fit given too few iterations to converge has to say so.
+
+with warnings.catch_warnings(record=True) as raised:
+    warnings.simplefilter("always")
+    capped = fitdph(obs=np.copy(observations),
+                  initpi=np.copy(STARTGENERALPI),
+                  initphgen=np.copy(STARTGENERALGEN),
+                  initexitrates=exitratesof(STARTGENERALGEN),
+                  randominit=False,
+                  seed=SEED,
+                  itermax=3,
+                  verbose=False)
+    capped.fit()
+
+atcap = [w for w in raised if issubclass(w.category, RuntimeWarning)
+         and "itermax" in str(w.message)]
+if not atcap:
+    sys.exit("Validation test failed at case 10: a fit stopped by its iteration limit before converging reported nothing, so an unconverged fit is indistinguishable from a converged one.")
+
+# and a fit with room to converge must not claim it ran out
+with warnings.catch_warnings(record=True) as raised:
+    warnings.simplefilter("always")
+    fitmodel(STARTGENERALPI, STARTGENERALGEN, observations, randominit=False)
+
+if [w for w in raised if issubclass(w.category, RuntimeWarning)
+        and "itermax" in str(w.message)]:
+    sys.exit("Validation test failed at case 10: a fit that converged well inside its iteration limit reports that it ran out of iterations.")
 
 
 # ------------------------------------------------------------------

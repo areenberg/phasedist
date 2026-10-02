@@ -29,7 +29,7 @@ class fitdph:
         randominit: bool = True,
         seed: int = None,
         tolerance: float = 1e-6,
-        itermax: int = 1000000,
+        itermax: int = 100000,
         verbose: bool = False,
     ) -> None:
         """
@@ -48,7 +48,7 @@ class fitdph:
 
         Args:
             obs (np.array): Observed realizations of the phase-type distribution.
-            censoring (np.array): Specifies censored observations. If
+            censoring (np.array, optional): Specifies censored observations. If
                 None, every observation is treated as uncensored.
             initpi (np.array): Initial distribution vector.
             initphgen (np.array): Initial phase-type transition matrix.
@@ -56,7 +56,7 @@ class fitdph:
             randominit (bool, default=True): Whether to randomize initial parameters.
             seed (int): Random seed for reproducibility.
             tolerance (float, default=1e-6): Convergence tolerance for the EM algorithm.
-            itermax (int, default=1000000): Maximum number of EM iterations.
+            itermax (int, default=100000): Maximum number of EM iterations.
             verbose (bool, default=False): Whether to print intermediate fitting information.
 
         Returns:
@@ -114,8 +114,6 @@ class fitdph:
             step = self.loglikelihood - loglik0
 
             # Each EM iteration is guaranteed to increase the likelihood
-            # (Bladt and Nielsen (2017), p. 675), so a decrease cannot happen in
-            # exact arithmetic.
             if step < 0.0:
                 warnings.warn(
                     "The log-likelihood decreased by %.3e at iteration %d. The "
@@ -152,6 +150,17 @@ class fitdph:
                     "  var =",
                     self.getvar(),
                 )
+        
+        if iter >= self.itermax and eps > self.tolerance:
+            warnings.warn(
+                "Algorithm terminated with iter==itermax. Results might be "
+                "misleading. After %d iterations the estimated distance to the "
+                "limit of the log-likelihood was still %.3e, against a "
+                "tolerance of %.3e."
+                % (iter, float(eps), float(self.tolerance)),
+                RuntimeWarning,
+                stacklevel=2)
+
         self.__polish()
         # evaluate final loglik
         self.estep.run(obs=self.obs,
@@ -321,9 +330,7 @@ class fitdph:
         self.obs = self.obs.astype(int)
 
         # The observations are sorted, so the censoring array has to be carried
-        # along with them: Its rows are matched to the observations by position,
-        # and sorting one without the other would silently attach each censoring
-        # rule to the wrong observation.
+        # along with them.
         order = np.argsort(self.obs, kind="stable")
         self.obs = self.obs[order]
 

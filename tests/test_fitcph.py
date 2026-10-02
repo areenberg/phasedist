@@ -127,7 +127,14 @@ from phasedist.fitcph import fitcph
 TOL = 1e-12          # tolerance for comparisons that are exact in theory
 TOLFIT = 1e-9        # tolerance for quantities recomputed from fitted values
 TOLLOGLIK = 1e-6     # tolerance for the log-likelihood recomputed from them
-MAXIMPROVEMENT = 1e-2  # most a converged fit may gain from being continued
+# The most a converged fit may gain from being continued. Measured across the
+# six fits of case 9 the largest gain is 9.4e-5, so this leaves an order of
+# magnitude of margin for other seeds while still being a real check: the old
+# value of 1e-2 sat two orders of magnitude above anything that happens, which
+# let a weakened convergence criterion through unnoticed. The discrete file
+# carries a tighter value because its fits converge further inside their
+# tolerance -- see the note there.
+MAXIMPROVEMENT = 1e-3
 SEED = 15
 
 NPHASES = 3
@@ -940,6 +947,38 @@ finally:
 
 if not [w for w in raised if issubclass(w.category, RuntimeWarning)]:
     sys.exit("Validation test failed at case 10: the log-likelihood fell at every iteration and the fit finished without a word, so a decreasing likelihood is being read as convergence.")
+
+
+# The loop can also end by running out of iterations, which is not convergence
+# but looks identical from outside: parameters, a log-likelihood, no complaint.
+# A fit given too few iterations to converge has to say so.
+
+with warnings.catch_warnings(record=True) as raised:
+    warnings.simplefilter("always")
+    capped = fitcph(obs=np.copy(observations),
+                  initpi=np.copy(STARTGENERALPI),
+                  initphgen=np.copy(STARTGENERALGEN),
+                  initexitrates=exitratesof(STARTGENERALGEN),
+                  randominit=False,
+                  seed=SEED,
+                  tolerance=EMTOLERANCE,
+                  itermax=3,
+                  verbose=False)
+    capped.fit()
+
+atcap = [w for w in raised if issubclass(w.category, RuntimeWarning)
+         and "itermax" in str(w.message)]
+if not atcap:
+    sys.exit("Validation test failed at case 10: a fit stopped by its iteration limit before converging reported nothing, so an unconverged fit is indistinguishable from a converged one.")
+
+# and a fit with room to converge must not claim it ran out
+with warnings.catch_warnings(record=True) as raised:
+    warnings.simplefilter("always")
+    fitmodel(STARTGENERALPI, STARTGENERALGEN, observations, randominit=False)
+
+if [w for w in raised if issubclass(w.category, RuntimeWarning)
+        and "itermax" in str(w.message)]:
+    sys.exit("Validation test failed at case 10: a fit that converged well inside its iteration limit reports that it ran out of iterations.")
 
 
 # ------------------------------------------------------------------

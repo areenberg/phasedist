@@ -30,7 +30,7 @@ class fitcph:
         randominit: bool = True,
         seed: int = None,
         tolerance: float = 1e-6,
-        itermax: int = 1000000,
+        itermax: int = 100000,
         verbose: bool = False,
     ) -> None:
         """
@@ -49,7 +49,7 @@ class fitcph:
 
         Args:
             obs (array-like): Observed realizations of the phase-type distribution.
-            censoring (ndarray): Specifies censored observations. If
+            censoring (ndarray, optional): Specifies censored observations. If
                 None, every observation is treated as uncensored.
             initpi (ndarray): Initial distribution vector.
             initphgen (ndarray): Initial phase-type generator matrix.
@@ -57,7 +57,7 @@ class fitcph:
             randominit (bool, default=True): Whether to randomize initial parameters.
             seed (int): Random seed for reproducibility.
             tolerance (float, default=1e-6): Convergence tolerance for the EM algorithm.
-            itermax (int, default=1000000): Maximum number of EM iterations.
+            itermax (int, default=100000): Maximum number of EM iterations.
             verbose (bool, default=False): Whether to print intermediate fitting information.
         """
         self.obs = obs  # observed realizations of the PH distribution
@@ -111,16 +111,15 @@ class fitcph:
 
             step = self.loglikelihood - loglik0  # loglik is evaluated within the E-step
 
-            #Each EM iteration is guaranteed to increase the likelihood
-            #(Bladt and Nielsen (2017), p. 678).
+            # Each EM iteration is guaranteed to increase the likelihood
             if step < 0.0:
                 warnings.warn(
-                    "The log-likelihood decreased by %.3e at iteration %d"
+                    "The log-likelihood decreased by %.3e at iteration %d."
                     % (abs(float(step)), iter + 1),
                     RuntimeWarning,
                     stacklevel=2)
 
-            #Aitken acceleration, McLachlan and Krishnan (2008), Section 4.9.
+            # Aitken acceleration, McLachlan and Krishnan (2008), Section 4.9.
             eps = step
             denominator = loglik0 - loglik1
             if np.isfinite(denominator) and denominator > 0.0:
@@ -146,6 +145,17 @@ class fitcph:
                     "  var =",
                     self.getvar(),
                 )
+        
+        if iter >= self.itermax and eps > self.tolerance:
+            warnings.warn(
+                "Algorithm terminated with iter==itermax. Results might be "
+                "misleading. After %d iterations the estimated distance to the "
+                "limit of the log-likelihood was still %.3e, against a "
+                "tolerance of %.3e."
+                % (iter, float(eps), float(self.tolerance)),
+                RuntimeWarning,
+                stacklevel=2)
+
         self.__polish()
 
         #self.__updatelikelihood()  # evaluate final loglik

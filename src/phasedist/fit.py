@@ -34,7 +34,7 @@ class fit:
         randominit: bool = True,
         seed: int = None,
         tolerance: float = 1e-6,
-        itermax: int = 1000000,
+        itermax: int = 100000,
         fixediter: int = None,
         verbose: bool = False,
     ) -> None:
@@ -62,7 +62,7 @@ class fit:
                 Random seed.
             tolerance (float, default=1e-6):
                 Convergence tolerance for the EM algorithm.
-            itermax (int, default=1000000):
+            itermax (int, default=100000):
                 Maximum number of iterations.
             fixediter (int, optional):
                 Fixed number of iterations for the EM algorithm.    
