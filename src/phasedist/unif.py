@@ -1,8 +1,13 @@
 import warnings
 
 import numpy as np
-from scipy.special import gammaln
-from scipy.stats import poisson
+from scipy.special import gammainc, gammaln, pdtrik
+
+
+# Slack on the row sums below which P is taken to be sub-stochastic. A row sum
+# of 1+d inflates the norm of the k'th power by at most exp(k*d), which at this
+# size is far below any tolerance the class is asked for.
+SUBSTOCHASTIC = 1e-12
 
 
 class _unif:
@@ -125,18 +130,26 @@ class _unif:
         if required <= 0.0:
             return self.maxterms, np.inf
 
-        nterms = poisson.isf(required, mu)
+        # P(Poisson(mu) > K) is gammainc(K+1, mu). The starting guess comes from
+        # the Poisson quantile where 1-required is representable, and from the
+        # mean and standard deviation otherwise.
+        if 1.0 - required < 1.0:
+            nterms = int(pdtrik(1.0 - required, mu)) + 1
+        else:
+            nterms = int(mu + 6.0 * np.sqrt(mu) + 10.0)
 
-        # isf returns nan once the requested tail is below what it can resolve
-        if not np.isfinite(nterms):
+        nterms = max(nterms, 1)
+
+        while nterms < self.maxterms and gammainc(nterms + 1, mu) > required:
+            nterms += max(1, nterms // 8)
+
+        while nterms > 1 and gammainc(nterms, mu) <= required:
+            nterms -= 1
+
+        if nterms >= self.maxterms or gammainc(nterms + 1, mu) > required:
             return self.maxterms, np.inf
 
-        nterms = max(int(nterms) + 1, 1)
-
-        if nterms > self.maxterms:
-            return self.maxterms, np.inf
-
-        bound = float(normbound * poisson.sf(nterms, mu))
+        bound = float(normbound * gammainc(nterms + 1, mu))
 
         return nterms, bound
 
@@ -243,8 +256,15 @@ class _unif:
         # the number of terms depends on C and C on how many powers are looked
         # at, so a first pass assumes the powers do not grow at all and the
         # horizon it gives is then used to measure them
-        horizon, _ = self.__terms(mu, 1.0)
-        rho = self.__normbound(P, min(horizon, self.maxterms))
+        rowsums = np.sum(np.abs(P), axis=1)
+
+        if float(np.max(rowsums)) <= 1.0 + SUBSTOCHASTIC:
+            # the powers of a sub-stochastic P have norm 1, so there is nothing
+            # to measure and the horizon it would need is not computed either
+            rho = 1.0
+        else:
+            horizon, _ = self.__terms(mu, 1.0)
+            rho = self.__normbound(P, min(horizon, self.maxterms))
 
         nterms, bound = self.__terms(mu, rho)
 
