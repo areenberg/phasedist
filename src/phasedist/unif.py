@@ -3,13 +3,6 @@ import warnings
 import numpy as np
 from scipy.special import gammainc, gammaln, pdtrik
 
-
-# Slack on the row sums below which P is taken to be sub-stochastic. A row sum
-# of 1+d inflates the norm of the k'th power by at most exp(k*d), which at this
-# size is far below any tolerance the class is asked for.
-SUBSTOCHASTIC = 1e-12
-
-
 class _unif:
     """
     Evaluates the matrix exponential exp(Ty) over several values of y using
@@ -253,12 +246,9 @@ class _unif:
         mus = gamma * times
         mu = float(np.max(mus))
 
-        # the number of terms depends on C and C on how many powers are looked
-        # at, so a first pass assumes the powers do not grow at all and the
-        # horizon it gives is then used to measure them
         rowsums = np.sum(np.abs(P), axis=1)
 
-        if float(np.max(rowsums)) <= 1.0 + SUBSTOCHASTIC:
+        if float(np.max(rowsums)) <= 1.0 + 1e-12:
             # the powers of a sub-stochastic P have norm 1, so there is nothing
             # to measure and the horizon it would need is not computed either
             rho = 1.0
