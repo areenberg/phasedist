@@ -1,10 +1,9 @@
 import sys
 import numpy as np
-from scipy.linalg import expm
 from scipy.stats import lognorm, norm, gamma, weibull_min, chi2
 import matplotlib.pyplot as plt
 from phasedist.dist import dist
-
+from phasedist.unif import _unif
 
 class fitcph2dist:
     """
@@ -68,11 +67,29 @@ class fitcph2dist:
         self.dist = None
         self.steps = steps  # number of steps in the numerical integration
 
+        # matrix exponentials are evaluated by uniformization, which stays
+        # accurate when the rates of the generator are nearly equal
+        self.__unif = _unif(tolerance=1e-14)
+
         # checking and fitting
         if self.__checkinputs():
             self.__makedist()  # fit the parameters
         else:
             sys.exit(1)  # terminate the program
+
+    def __exponential(self, matrix: np.array, x: float) -> np.array:
+        """
+        Returns exp(matrix * x) by uniformization.
+
+        Args:
+            matrix (ndarray): The matrix to exponentiate.
+            x (float): The time to exponentiate over.
+
+        Returns:
+            ndarray: The matrix exponential.
+        """
+
+        return self.__unif.run(matrix, float(x))[0]
 
     # ----------------------------------------------------------------------
     #   PUBLIC METHODS
@@ -785,9 +802,22 @@ class fitcph2dist:
         self.eTyut = [[None] * (self.steps + 1) for _ in range(self.steps)]
         self.pieTu = [[None] * (self.steps + 1) for _ in range(self.steps)]
         self.pieTyt = np.zeros(self.steps)
+        eTyall = self.__unif.run(self.phgen, np.asarray(self.y, dtype=float))
         for k in range(self.steps):
-            self.eTy[k] = expm(self.phgen * self.y[k])
+            self.eTy[k] = eTyall[k]
             self.pieTyt[k] = np.matmul(self.pi, np.matmul(self.eTy[k], self.exitrates))
+
+        # The factors of the inner integral do not depend on the phase being
+        # updated, and the loops below read them once per phase and once per
+        # pair of phases.
+        for k in range(self.steps):
+            if self.y[k] > 0:
+                u = np.linspace(0, self.y[k], self.steps + 1)
+                eTu = self.__unif.run(self.phgen, u)
+                eTyu = self.__unif.run(self.phgen, np.maximum(self.y[k] - u, 0.0))
+                for l in range(u.size):
+                    self.pieTu[k][l] = np.matmul(self.pi, eTu[l])
+                    self.eTyut[k][l] = np.matmul(eTyu[l], self.exitrates)
 
         for i in range(self.nphases):
 
@@ -804,28 +834,9 @@ class fitcph2dist:
                 if self.y[k] > 0:
                     u = np.linspace(0, self.y[k], self.steps + 1)
                     for l in range(0, len(u) - 2, 2):
-                        # inner fa
-                        self.pieTu[k][l] = np.matmul(self.pi, expm(self.phgen * u[l]))
-                        self.eTyut[k][l] = np.matmul(
-                            expm(self.phgen * (self.y[k] - u[l])), self.exitrates
-                        )
                         inner_fa = self.pieTu[k][l][i] * self.eTyut[k][l][i]
-                        # inner fmid
-                        self.pieTu[k][l + 1] = np.matmul(
-                            self.pi, expm(self.phgen * u[l + 1])
-                        )
-                        self.eTyut[k][l + 1] = np.matmul(
-                            expm(self.phgen * (self.y[k] - u[l + 1])), self.exitrates
-                        )
                         inner_fmid = (
                             self.pieTu[k][l + 1][i] * self.eTyut[k][l + 1][i]
-                        )
-                        # inner fb
-                        self.pieTu[k][l + 2] = np.matmul(
-                            self.pi, expm(self.phgen * u[l + 2])
-                        )
-                        self.eTyut[k][l + 2] = np.matmul(
-                            expm(self.phgen * (self.y[k] - u[l + 2])), self.exitrates
                         )
                         inner_fb = (
                             self.pieTu[k][l + 2][i] * self.eTyut[k][l + 2][i]
@@ -1127,10 +1138,10 @@ class fitcph2dist:
             float: Cumulative probability.
         """
         if x0 == 0:
-            return 1 - np.sum(np.matmul(self.param1, expm(self.param2 * x1)))
+            return 1 - np.sum(np.matmul(self.param1, self.__exponential(self.param2, x1)))
         else:
-            return np.sum(np.matmul(self.param1, expm(self.param2 * x0))) - np.sum(
-                np.matmul(self.param1, expm(self.param2 * x1))
+            return np.sum(np.matmul(self.param1, self.__exponential(self.param2, x0))) - np.sum(
+                np.matmul(self.param1, self.__exponential(self.param2, x1))
             )
 
     def __per_dcdf(self, x0: float, x1: float) -> float:

@@ -70,50 +70,73 @@ class _unif:
 
         return gamma, matrix / gamma + np.eye(matrix.shape[0])
 
-    def __terms(self, mu: float, rho: float) -> tuple:
+    def __normbound(self, P: np.array, horizon: int) -> float:
+        """
+        Returns C = max_k ||P^k||_inf over k = 0,...,horizon.
+
+        The row sums of P^k are P^k e, so iterating r <- P r gives the norms
+        exactly at one matrix-vector product each.
+
+        Args:
+            P (ndarray): The uniformized matrix.
+            horizon (int): How many powers to examine.
+
+        Returns:
+            float: The largest norm found.
+        """
+
+        r = np.ones(P.shape[0])
+        largest = 1.0
+
+        for _ in range(horizon):
+            r = P @ r
+            value = float(np.max(r))
+            if not np.isfinite(value):
+                return np.inf
+            largest = max(largest, value)
+
+        return largest
+
+    def __terms(self, mu: float, normbound: float) -> tuple:
         """
         Returns the truncation point K and the resulting error bound.
 
         Truncating after K terms leaves sum_{k>K} w_k P^k, bounded in the
-        infinity norm by
-
-            sum_{k>K} w_k rho^k = exp(mu*(rho-1)) * P(Poisson(mu*rho) > K).
-
-        For a sub-stochastic P this is the Poisson tail of Stewart's Equation
-        (10.49); otherwise the tail has to be smaller by exp(mu*(rho-1)).
+        infinity norm by C * P(Poisson(mu) > K) with C = max_k ||P^k||_inf.
+        For a sub-stochastic P, C is 1 and this is Stewart's Equation (10.49).
 
         Args:
             mu (float): Poisson parameter, Gamma times the largest y.
-            rho (float): Row-sum norm of P.
+            normbound (float): C, the largest norm among the powers of P.
 
         Returns:
             tuple: K (int) and the error bound (float). The bound is infinite
-                when K would exceed maxterms.
+                when K would exceed maxterms or cannot be resolved.
         """
 
         if mu <= 0.0:
             return 0, 0.0
 
-        if rho <= 1.0:
-            required = self.tolerance
-            parameter = mu
-            inflation = 1.0
-        else:
-            inflation = float(np.exp(mu * (rho - 1.0)))
-            required = self.tolerance / inflation
-            parameter = mu * rho
-
-        if required <= 0.0:
-            # the tolerance has been divided away to zero
+        if not np.isfinite(normbound) or normbound <= 0.0:
             return self.maxterms, np.inf
 
-        nterms = int(poisson.isf(required, parameter)) + 1
-        nterms = max(nterms, 1)
+        required = self.tolerance / normbound
+
+        if required <= 0.0:
+            return self.maxterms, np.inf
+
+        nterms = poisson.isf(required, mu)
+
+        # isf returns nan once the requested tail is below what it can resolve
+        if not np.isfinite(nterms):
+            return self.maxterms, np.inf
+
+        nterms = max(int(nterms) + 1, 1)
 
         if nterms > self.maxterms:
             return self.maxterms, np.inf
 
-        bound = float(inflation * poisson.sf(nterms, parameter))
+        bound = float(normbound * poisson.sf(nterms, mu))
 
         return nterms, bound
 
@@ -214,10 +237,16 @@ class _unif:
             self.gamma, self.rho, self.nterms, self.errorbound = 0.0, 1.0, 0, 0.0
             return np.repeat(np.eye(n)[None, :nrows, :], times.size, axis=0)
 
-        rho = float(np.max(np.sum(np.abs(P), axis=1)))
         mus = gamma * times
+        mu = float(np.max(mus))
 
-        nterms, bound = self.__terms(float(np.max(mus)), rho)
+        # the number of terms depends on C and C on how many powers are looked
+        # at, so a first pass assumes the powers do not grow at all and the
+        # horizon it gives is then used to measure them
+        horizon, _ = self.__terms(mu, 1.0)
+        rho = self.__normbound(P, min(horizon, self.maxterms))
+
+        nterms, bound = self.__terms(mu, rho)
 
         if not np.isfinite(bound):
             # the result is still returned, but its accuracy is not bounded

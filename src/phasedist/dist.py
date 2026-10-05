@@ -1,10 +1,9 @@
 import sys
 import numpy as np
-from scipy.linalg import expm
 from scipy.stats import lognorm
 import matplotlib.pyplot as plt
 from typing import Union
-
+from phasedist.unif import _unif
 
 class dist:
     """
@@ -51,6 +50,10 @@ class dist:
         self.phgen = phgen
         self.nphases = self.phgen.shape[0]
         self.seed = seed
+
+        # matrix exponentials are evaluated by uniformization, which stays
+        # accurate when the rates of the generator are nearly equal
+        self.__unif = _unif(tolerance=1e-14)
 
         if self.__checkinputs():  # check inputs
             self.__initialize()
@@ -500,8 +503,21 @@ class dist:
                 ).item()
         else:
             return np.matmul(
-                self.initdist, np.matmul(expm(self.phgen * x), self.exitrates)
+                self.initdist, np.matmul(self.__exponential(x), self.exitrates)
             ).item()
+
+    def __exponential(self, x: float) -> np.array:
+        """
+        Returns exp(T x) by uniformization.
+
+        Args:
+            x (float): The time to exponentiate over.
+
+        Returns:
+            ndarray: The matrix exponential.
+        """
+
+        return self.__unif.run(self.phgen, float(x))[0]
 
     def __computecumprob(self, x: float) -> float:
         """
@@ -523,7 +539,7 @@ class dist:
                     np.matmul(self.initdist, np.linalg.matrix_power(self.phgen, int(x)))
                 )
         else:
-            return 1 - np.sum(np.matmul(self.initdist, expm(self.phgen * x)))
+            return 1 - np.sum(np.matmul(self.initdist, self.__exponential(x)))
 
     def __computequantile(self, p: float, tolerance: float = 1e-9) -> int | float:
         """
@@ -652,14 +668,16 @@ class dist:
         x = lognorm.ppf(prob, param2, scale=np.exp(param1))
 
         # improve x until convergence
-        trc = 1 - np.sum(np.matmul(self.initdist, expm(self.phgen * x)))
+        eTx = self.__exponential(x)
+        trc = 1 - np.sum(np.matmul(self.initdist, eTx))
         iter = 0
         while np.abs(trc - prob) > tol and iter < itermax:
             grad = np.matmul(
-                self.initdist, np.matmul(expm(self.phgen * x), self.exitrates)
+                self.initdist, np.matmul(eTx, self.exitrates)
             ).item()
             x = x - (trc - prob) / grad
-            trc = 1 - np.sum(np.matmul(self.initdist, expm(self.phgen * x)))
+            eTx = self.__exponential(x)
+            trc = 1 - np.sum(np.matmul(self.initdist, eTx))
             iter += 1
         if iter == itermax:
             print(

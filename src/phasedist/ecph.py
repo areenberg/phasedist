@@ -1,6 +1,5 @@
 import numpy as np
-from scipy.linalg import expm
-
+from phasedist.unif import _unif
 
 class ecph:
     """
@@ -29,6 +28,9 @@ class ecph:
         self.ni = np.zeros(self.nphases)
         self.nij = np.zeros((self.nphases, self.nphases))
         self.loglikelihood = 0.0
+
+        # the matrix exponentials below are evaluated by uniformization
+        self.unif = _unif(tolerance=1e-14)
 
         return None
 
@@ -112,11 +114,14 @@ class ecph:
         n = self.nphases
         block = self.__blockJ()
 
-        for value, count in zip(values, counts):
+        # every distinct value in one call: the powers of the uniformized matrix
+        # do not depend on the value, so they are built once and shared
+        mats = self.unif.run(block, values, nrows=n)
 
-            mat = expm(block * value)
-            eTy = mat[:n, :n]
-            Jmat = mat[:n, n:]
+        for index, count in enumerate(counts):
+
+            eTy = mats[index][:, :n]
+            Jmat = mats[index][:, n:]
 
             eTyt = np.matmul(eTy, self.exitrates)
             pieTy = np.matmul(self.initdist, eTy)
@@ -148,11 +153,12 @@ class ecph:
         n = self.nphases
         block = self.__blockK()
 
-        for limit, count in zip(limits, counts):
+        mats = self.unif.run(block, limits, nrows=n)
 
-            mat = expm(block * limit)
-            eTs = mat[:n, :n]
-            Ks = mat[:n, n:]
+        for index, count in enumerate(counts):
+
+            eTs = mats[index][:, :n]
+            Ks = mats[index][:, n:]
 
             pieTs = np.matmul(self.initdist, eTs)
             den = np.sum(pieTs)  # P(Y > limit)
@@ -183,13 +189,15 @@ class ecph:
         blockM = self.__blockM()
         blockK = self.__blockK()
 
-        for limit, count in zip(limits, counts):
+        matsM = self.unif.run(blockM, limits, nrows=n)
+        matsK = self.unif.run(blockK, limits, nrows=n)
 
-            matM = expm(blockM * limit)
-            eTt = matM[:n, :n]
-            Mt = matM[:n, n:]
+        for index, count in enumerate(counts):
 
-            Kt = expm(blockK * limit)[:n, n:]
+            eTt = matsM[index][:, :n]
+            Mt = matsM[index][:, n:]
+
+            Kt = matsK[index][:, n:]
 
             pieTt = np.matmul(self.initdist, eTt)
             den = 1.0 - np.sum(pieTt)  # P(Y <= limit)
@@ -241,11 +249,13 @@ class ecph:
         Mmat = np.empty((endpoints.size, n, n))
         Kmat = np.empty((endpoints.size, n, n))
 
-        for k, endpoint in enumerate(endpoints):
-            matM = expm(blockM * endpoint)
-            eTy[k] = matM[:n, :n]
-            Mmat[k] = matM[:n, n:]
-            Kmat[k] = expm(blockK * endpoint)[:n, n:]
+        matsM = self.unif.run(blockM, endpoints, nrows=n)
+        matsK = self.unif.run(blockK, endpoints, nrows=n)
+
+        for k in range(endpoints.size):
+            eTy[k] = matsM[k][:, :n]
+            Mmat[k] = matsM[k][:, n:]
+            Kmat[k] = matsK[k][:, n:]
 
         # where each interval's ends sit among the distinct endpoints
         leftindex = np.searchsorted(endpoints, lefts)
