@@ -19,6 +19,8 @@ Sub-tests:
     Case 3: Right censoring equals interval censoring with a large upper limit.
     Case 4: Interval censoring equals the uncensored case when the interval
             brackets exactly one integer, i.e. (y-1,y] = {Y=y}.
+    Case 5: The input checks refuse infeasible input, accept feasible input,
+            and are not fooled by the caching of the sample checks.
 
 References:
     Bladt, M., & Nielsen, B. F. (2017). Matrix-Exponential Distributions in
@@ -243,6 +245,135 @@ censinterval = np.column_stack([(OBSSMALL - 1).astype(float), OBSSMALL.astype(fl
 
 if maxdiff(runestep(OBSSMALL), runestep(OBSSMALL, censinterval)) > TOL:
     sys.exit("Validation test failed at case 4: interval censoring on (y-1,y] does not equal the uncensored observation y.")
+
+
+# ------------------------------------------------------------------
+# CASE 5: The input checks
+# ------------------------------------------------------------------
+
+def refuses(**overrides):
+    '''
+    Returns True if the E-step refuses the feasible arguments with the given
+    replacements applied.
+    '''
+    arguments = {"obs": OBSSMALL, "initdist": INITDIST, "phgen": PHGEN,
+                 "exitrates": EXITRATES, "censoring": None}
+    arguments.update(overrides)
+
+    try:
+        edph(nphases=NPHASES).run(**arguments)
+    except ValueError:
+        return True
+
+    return False
+
+
+def refusalmessage(**overrides):
+    '''
+    Returns the message the E-step refuses the arguments with, or None.
+    '''
+    arguments = {"obs": OBSSMALL, "initdist": INITDIST, "phgen": PHGEN,
+                 "exitrates": EXITRATES, "censoring": None}
+    arguments.update(overrides)
+
+    try:
+        edph(nphases=NPHASES).run(**arguments)
+    except ValueError as error:
+        return str(error)
+
+    return None
+
+
+# only the row sum is at fault here, the elements staying non-negative
+LARGEROWGEN = np.copy(PHGEN)
+LARGEROWGEN[0, 0] = 1.0
+
+NEGATIVEGEN = np.copy(PHGEN)
+NEGATIVEGEN[0, 1] = -PHGEN[0, 1]
+
+# feasible except for one fractional limit, which run() would truncate
+FRACTIONALLIMIT = np.full((NSMALL, 2), np.nan)
+FRACTIONALLIMIT[0, 1] = 2.5
+
+INFEASIBLE = (
+    ("no observations", {"obs": np.array([])}),
+    ("two-dimensional observations", {"obs": np.copy(OBSSMALL).reshape(-1, 1)}),
+    ("an observation at zero", {"obs": np.append(OBSSMALL, 0)}),
+    ("a negative observation", {"obs": np.append(OBSSMALL, -1)}),
+    ("a fractional observation", {"obs": np.append(OBSSMALL, 2.5).astype(float)}),
+    ("a missing observation", {"obs": np.append(OBSSMALL, np.nan).astype(float)}),
+    ("a negative initial probability", {"initdist": np.array([1.2, -0.2, 0.0])}),
+    ("an initial distribution summing above one", {"initdist": np.array([0.5, 0.3, 0.3])}),
+    ("a missing initial probability", {"initdist": np.array([0.5, 0.3, np.nan])}),
+    ("a generator with a negative element", {"phgen": NEGATIVEGEN}),
+    ("a generator with a row summing above one", {"phgen": LARGEROWGEN}),
+    ("a negative exit probability", {"exitrates": np.array([PROB, -PROB, PROB])}),
+    ("an exit probability above one", {"exitrates": np.array([PROB, 1.5, PROB])}),
+    ("censoring with one column", {"censoring": np.full((NSMALL, 1), np.nan)}),
+    ("censoring with too few rows", {"censoring": np.full((NSMALL - 1, 2), np.nan)}),
+    ("a fractional censoring limit", {"censoring": FRACTIONALLIMIT}),
+)
+
+for description, override in INFEASIBLE:
+    if not refuses(**override):
+        sys.exit("Validation test failed at case 5: the E-step accepted %s." % description)
+
+# A mismatched dimension is caught further down in any case, by NumPy, when
+# the arrays meet in a matrix product. The check earns its place by naming the
+# cause, so the message is what is asserted here.
+MISMATCHED = (
+    ("an initial distribution of the wrong length", {"initdist": INITDIST[:2]}),
+    ("a generator of the wrong shape", {"phgen": PHGEN[:2, :2]}),
+    ("exit probabilities of the wrong length", {"exitrates": EXITRATES[:2]}),
+)
+
+for description, override in MISMATCHED:
+    message = refusalmessage(**override)
+
+    if message is None or "dimension %d" % NPHASES not in message:
+        sys.exit("Validation test failed at case 5: given %s the E-step reported '%s', which does not name the dimension it expected." % (description, message))
+
+# the checks are only worth anything if feasible input still passes
+if refuses():
+    sys.exit("Validation test failed at case 5: the E-step refused feasible uncensored input.")
+
+if refuses(censoring=np.full((NSMALL, 2), np.nan)):
+    sys.exit("Validation test failed at case 5: the E-step refused feasible censored input.")
+
+# the fitting class passes integers, a caller by hand may pass floats
+if refuses(obs=OBSSMALL.astype(float)):
+    sys.exit("Validation test failed at case 5: the E-step refused whole-numbered observations held as floating point.")
+
+# The number of phases is checked when the class is built
+for badphases in (0, -1, 2.5, "3"):
+    try:
+        edph(nphases=badphases)
+        sys.exit("Validation test failed at case 5: the E-step was built with %s phases." % repr(badphases))
+    except ValueError:
+        pass
+
+# The sample checks are made once per array, so a later call carrying a
+# different and infeasible sample has to be checked afresh
+model = edph(nphases=NPHASES)
+model.run(obs=OBSSMALL, initdist=INITDIST, phgen=PHGEN, exitrates=EXITRATES)
+
+try:
+    model.run(obs=np.append(OBSSMALL, 2.5).astype(float), initdist=INITDIST,
+              phgen=PHGEN, exitrates=EXITRATES)
+    sys.exit("Validation test failed at case 5: a second call with a fractional observation was accepted, so the caching of the checks over the sample is not keyed on the array.")
+except ValueError:
+    pass
+
+# and the same sample offered again has to still be accepted
+model.run(obs=OBSSMALL, initdist=INITDIST, phgen=PHGEN, exitrates=EXITRATES)
+
+# a parameter, by contrast, is checked at every call
+try:
+    model.run(obs=OBSSMALL, initdist=np.array([0.5, 0.3, 0.3]), phgen=PHGEN,
+              exitrates=EXITRATES)
+    sys.exit("Validation test failed at case 5: an infeasible initial distribution was accepted on a later call, so the parameters are not checked at every call.")
+except ValueError:
+    pass
 
 
 # ------------------------------------------------------------------

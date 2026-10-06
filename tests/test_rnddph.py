@@ -19,6 +19,8 @@ Sub-tests:
     Case 3: The output is a feasible discrete phase-type distribution.
     Case 4: The output is floating point, whatever the structure is given as.
     Case 5: The structure arrays passed in by the caller are not modified.
+    Case 6: The input checks refuse a structure no DPH can be generated from,
+            and accept every structure of case 1.
 
 References:
     Bladt, M., & Nielsen, B. F. (2017). Matrix-Exponential Distributions in
@@ -328,6 +330,94 @@ for nphases in PHASECOUNTS:
 
         if not all(np.array_equal(a, b) for a, b in zip(given, structure)):
             sys.exit("Validation test failed at case 5: generating from the '%s' structure modified the arrays passed in by the caller." % name)
+
+
+# ------------------------------------------------------------------
+# CASE 6: The input checks
+# ------------------------------------------------------------------
+
+def refuses(nphases, initdist, phgen, exitrates):
+    '''
+    Returns True if the class refuses the given structure.
+    '''
+    try:
+        rnddph(nphases=nphases, initdist=initdist, phgen=phgen,
+               exitrates=exitrates)
+    except ValueError:
+        return True
+
+    return False
+
+
+def refusalmessage(nphases, initdist, phgen, exitrates):
+    '''
+    Returns the message the class refuses the structure with, or None.
+    '''
+    try:
+        rnddph(nphases=nphases, initdist=initdist, phgen=phgen,
+               exitrates=exitrates)
+    except ValueError as error:
+        return str(error)
+
+    return None
+
+
+# the checks must not have broken the class they were added to
+for nphases in PHASECOUNTS:
+    for name, structure in structures(nphases).items():
+        if refuses(nphases, *structure):
+            sys.exit("Validation test failed at case 6: the '%s' structure of %d phases was refused." % (name, nphases))
+
+# a feasible two-phase structure, varied one element at a time below
+BASEINIT = np.ones(2)
+BASEGEN = np.array([[1.0, 1.0],
+                    [1.0, 1.0]])
+BASEEXIT = np.ones(2)
+
+# normalizing over no non-zero element would divide by zero
+NOINIT = np.zeros(2)
+
+# a row is scaled to one minus the exit probability, so a phase with neither
+# is never left
+DEADPHASEGEN = np.array([[1.0, 1.0],
+                         [0.0, 0.0]])
+DEADPHASEEXIT = np.array([1.0, 0.0])
+
+INFEASIBLE = (
+    ("an initial distribution of the wrong length", 2, np.ones(3), BASEGEN, BASEEXIT),
+    ("a generator of the wrong shape", 2, BASEINIT, np.ones((3, 3)), BASEEXIT),
+    ("exit probabilities of the wrong length", 2, BASEINIT, BASEGEN, np.ones(3)),
+    ("a negative element in the initial distribution", 2, np.array([1.0, -1.0]), BASEGEN, BASEEXIT),
+    ("a negative element in the generator", 2, BASEINIT, np.array([[1.0, -1.0], [1.0, 1.0]]), BASEEXIT),
+    ("a negative exit probability", 2, BASEINIT, BASEGEN, np.array([1.0, -1.0])),
+    ("a missing element in the structure", 2, BASEINIT, BASEGEN, np.array([1.0, np.nan])),
+    ("an all-zero initial distribution", 2, NOINIT, BASEGEN, BASEEXIT),
+    ("a phase that is never left", 2, BASEINIT, DEADPHASEGEN, DEADPHASEEXIT),
+)
+
+for description, nphases, initdist, phgen, exitrates in INFEASIBLE:
+    if not refuses(nphases, initdist, phgen, exitrates):
+        sys.exit("Validation test failed at case 6: the class accepted %s." % description)
+
+# A bad number of phases is caught by the check on the dimensions in any
+# case, so the message is what is asserted here.
+for badphases in (0, -1, 2.5, "3"):
+    message = refusalmessage(badphases, BASEINIT, BASEGEN, BASEEXIT)
+
+    if message is None or "number of phases" not in message:
+        sys.exit("Validation test failed at case 6: given %s phases the class reported '%s', which does not name the number of phases as the cause." % (repr(badphases), message))
+
+# a self-loop is a transition in the discrete case, so this phase is left
+# through the loop and is not dead
+SELFLOOPGEN = np.array([[1.0, 1.0],
+                        [0.0, 1.0]])
+
+if refuses(2, BASEINIT, SELFLOOPGEN, np.array([1.0, 0.0])):
+    sys.exit("Validation test failed at case 6: a phase whose only transition is a self-loop was refused as a phase that is never left.")
+
+# a list has to be accepted, since the checks convert it
+if refuses(2, [1, 1], [[1, 1], [1, 1]], [1, 1]):
+    sys.exit("Validation test failed at case 6: a structure given as lists was refused.")
 
 
 # ------------------------------------------------------------------

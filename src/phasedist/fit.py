@@ -2,8 +2,8 @@ import sys
 import numpy as np
 import matplotlib.pyplot as plt
 from statsmodels.stats.proportion import proportion_confint
-from phasedist.fitcph import fitcph
-from phasedist.fitdph import fitdph
+from phasedist.fitcph import _fitcph
+from phasedist.fitdph import _fitdph
 from phasedist.dist import dist
 
 
@@ -472,7 +472,7 @@ class fit:
 
         # fit parameters
         if self.discrete:
-            self.d = fitdph(
+            self.d = _fitdph(
                 obs=obsnonzero,
                 initpi=self.initdist,
                 initphgen=self.initphgen,
@@ -485,7 +485,7 @@ class fit:
             )
         else:
 
-            self.d = fitcph(
+            self.d = _fitcph(
                 obs=obsnonzero,
                 initpi=self.initdist,
                 initphgen=self.initphgen,

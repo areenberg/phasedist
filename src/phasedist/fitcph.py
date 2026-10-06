@@ -6,11 +6,13 @@ from phasedist.ecph import ecph
 from phasedist.mcph import mcph
 from phasedist.rndcph import rndcph
 
-class fitcph:
+class _fitcph:
     """
     Fits continuous-time phase-type distributions using the
     EM algorithm from p. 678 Bladt and Nielsen (2017). Convergence is assessed
     by Aitken acceleration, see McLachlan and Krishnan (2008), Section 4.9.
+
+    Warning: This class does not contain any input checks.
 
     References:
         Bladt, M., & Nielsen, B. F. (2017). Matrix-Exponential Distributions in Applied Probability.

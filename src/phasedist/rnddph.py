@@ -5,7 +5,6 @@ class rnddph:
     """
     Generates a random Discrete-time Phase-type (DPH) Distribution with
     a specified structure.
-    Note: This class has no input checks.
     """
 
     def __init__(
@@ -33,12 +32,57 @@ class rnddph:
             nphases (int): Number of phases in the DPH distribution.
             initdist (ndarray): Specifies structure of the initial distribution vector.
             phgen (ndarray): Specifies structure of the phase-type generator.
-            exitrates (ndarray): Specifies structure of the exit-rate vector. 
+            exitrates (ndarray): Specifies structure of the exit-rate vector.
+
+        Raises:
+            ValueError: If no DPH can be generated from the structure.
         """
         self.nphases=nphases
         self.initdist = initdist
-        self.phgen = phgen 
+        self.phgen = phgen
         self.exitrates = exitrates
+
+        self.__checkinputs()
+
+        return None
+
+    def __checkinputs(self) -> None:
+        """
+        Checks the structure and converts it to floating-point arrays.
+
+        Args:
+            None
+
+        Raises:
+            ValueError: If no DPH can be generated from the structure.
+        """
+
+        if not isinstance(self.nphases, (int, np.integer)) or self.nphases < 1:
+            raise ValueError("The number of phases must be an integer larger than zero.")
+
+        self.initdist = np.asarray(self.initdist, dtype=float).reshape(-1)
+        self.phgen = np.asarray(self.phgen, dtype=float)
+        self.exitrates = np.asarray(self.exitrates, dtype=float).reshape(-1)
+
+        if (self.initdist.size != self.nphases
+                or self.exitrates.size != self.nphases
+                or self.phgen.shape != (self.nphases, self.nphases)):
+            raise ValueError("The structure must be specified at dimension %d throughout." % self.nphases)
+
+        if not (self.initdist.min() >= 0.0 and self.initdist.max() < np.inf
+                and self.phgen.min() >= 0.0 and self.phgen.max() < np.inf
+                and self.exitrates.min() >= 0.0 and self.exitrates.max() < np.inf):
+            raise ValueError("The structure must be non-negative and finite.")
+
+        # the generated vector is normalized over its non-zero elements
+        if not self.initdist.max() > 0.0:
+            raise ValueError("The initial distribution must have at least one non-zero element.")
+
+        # a row is scaled to one minus the exit probability, so a phase with
+        # neither is never left. The whole row counts, since a self-loop is a
+        # transition in the discrete case
+        if np.any((self.phgen.sum(axis=1) == 0.0) & (self.exitrates == 0.0)):
+            raise ValueError("Every phase must have either a transition or a non-zero exit probability.")
 
         return None
 

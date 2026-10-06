@@ -5,11 +5,13 @@ from phasedist.edph import edph
 from phasedist.mdph import mdph
 from phasedist.rnddph import rnddph
 
-class fitdph:
+class _fitdph:
     """
     Fits discrete-time phase-type distributions using the
     EM algorithm from p. 675 Bladt and Nielsen (2017). Convergence is assessed
     by Aitken acceleration, see McLachlan and Krishnan (2008), Section 4.9.
+
+    Warning: This class does not contain any input checks.
 
     References:
         Bladt, M., & Nielsen, B. F. (2017). Matrix-Exponential Distributions in Applied Probability.

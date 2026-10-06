@@ -1,5 +1,5 @@
 '''
-UNIT TEST FOR THE fitcph CLASS (fits a continuous phase-type distribution to
+UNIT TEST FOR THE _fitcph CLASS (fits a continuous phase-type distribution to
 data with the EM algorithm).
 
 Every public method of the class is covered by one of the cases below, and the
@@ -117,7 +117,7 @@ sys.path.insert(
 
 import phasedist.fitcph as fitcphmodule
 from phasedist.dist import dist
-from phasedist.fitcph import fitcph
+from phasedist.fitcph import _fitcph
 
 
 # ------------------------------------------------------------------
@@ -143,7 +143,7 @@ EMTOLERANCE = 1e-3   # convergence tolerance, see the note at the top
 CDFLEVEL = 0.99      # confidence that ALL the intervals cover their values
 
 
-# Every public method of fitcph. Checked against the class below, so that a new
+# Every public method of _fitcph. Checked against the class below, so that a new
 # public method cannot slip in without a case covering it.
 COVEREDMETHODS = ("fit", "getaic", "getbic", "getcumprob", "getdensity",
                   "getexitrates", "getinitdist", "getloglik", "getmean",
@@ -267,12 +267,12 @@ if (np.count_nonzero(GENERALGEN) == np.count_nonzero(COXIANGEN)
     sys.exit("Validation test failed at initialization: the three structures do not differ from one another as intended.")
 
 # Every public method must be covered by a case
-publicmethods = tuple(sorted(name for name in dir(fitcph)
+publicmethods = tuple(sorted(name for name in dir(_fitcph)
                              if not name.startswith("_")
-                             and callable(getattr(fitcph, name))))
+                             and callable(getattr(_fitcph, name))))
 
 if publicmethods != tuple(sorted(COVEREDMETHODS)):
-    sys.exit("Validation test failed at initialization: the public methods of fitcph are %s, but the test covers %s." % (publicmethods, tuple(sorted(COVEREDMETHODS))))
+    sys.exit("Validation test failed at initialization: the public methods of _fitcph are %s, but the test covers %s." % (publicmethods, tuple(sorted(COVEREDMETHODS))))
 
 
 # ------------------------------------------------------------------
@@ -359,7 +359,7 @@ def fitmodel(pi, phgen, obs, censoring=None, randominit=True, seed=SEED):
     starting values being sampled within it; with randominit False they are the
     starting values themselves.
     '''
-    model = fitcph(obs=np.copy(obs),
+    model = _fitcph(obs=np.copy(obs),
                    censoring=None if censoring is None else np.copy(censoring),
                    initpi=np.copy(pi),
                    initphgen=np.copy(phgen),
@@ -612,7 +612,7 @@ for name, pi, phgen in STRUCTURES:
 
 # The fitted model is rebuilt as a dist object outside fitdph, from the
 # parameters fitdph reports. dist is checked against closed-form results in
-# test_dist.py, so agreement here says that fitcph's own metrics are computed
+# test_dist.py, so agreement here says that _fitcph's own metrics are computed
 # from the parameters it ends up with, and not from the ones it started with.
 MODELS = {name: getfit(name, True, True) for name, _, _ in STRUCTURES}
 
@@ -622,10 +622,10 @@ for name, pi, phgen in STRUCTURES:
     outside = dist(discrete=False, initdist=fittedpi, phgen=fittedgen, seed=SEED)
 
     if abs(model.getmean() - outside.getmean()) > TOLFIT:
-        sys.exit("Validation test failed at case 5: for the %s distribution the mean reported by fitcph, %.10f, differs from the mean of the fitted parameters computed outside it, %.10f." % (name, model.getmean(), outside.getmean()))
+        sys.exit("Validation test failed at case 5: for the %s distribution the mean reported by _fitcph, %.10f, differs from the mean of the fitted parameters computed outside it, %.10f." % (name, model.getmean(), outside.getmean()))
 
     if abs(model.getvar() - outside.getvar()) > TOLFIT:
-        sys.exit("Validation test failed at case 5: for the %s distribution the variance reported by fitcph, %.10f, differs from the variance of the fitted parameters computed outside it, %.10f." % (name, model.getvar(), outside.getvar()))
+        sys.exit("Validation test failed at case 5: for the %s distribution the variance reported by _fitcph, %.10f, differs from the variance of the fitted parameters computed outside it, %.10f." % (name, model.getvar(), outside.getvar()))
 
     # a mean and a variance of a distribution on the positive integers
     if not np.isfinite(model.getmean()) or model.getmean() <= 0.0:
@@ -646,10 +646,10 @@ for name, pi, phgen in STRUCTURES:
 
     for x in (0.25, 0.5, 1.0, 2.5, 6.0):
         if abs(model.getdensity(x) - outside.getdensity(x)) > TOLFIT:
-            sys.exit("Validation test failed at case 6: for the %s distribution the density at %.2f reported by fitcph differs from the one computed outside it." % (name, x))
+            sys.exit("Validation test failed at case 6: for the %s distribution the density at %.2f reported by _fitcph differs from the one computed outside it." % (name, x))
 
         if abs(model.getcumprob(x) - outside.getcumprob(x)) > TOLFIT:
-            sys.exit("Validation test failed at case 6: for the %s distribution the probability of at most %.2f reported by fitcph differs from the one computed outside it." % (name, x))
+            sys.exit("Validation test failed at case 6: for the %s distribution the probability of at most %.2f reported by _fitcph differs from the one computed outside it." % (name, x))
 
     # The density is the derivative of the distribution function, which ties
     # the two methods to each other rather than each to its own formula. A
@@ -778,7 +778,7 @@ for name, pi, phgen in STRUCTURES:
     recomputed = censoredloglikelihood(outside, observations, censoring)
 
     if abs(loglik - recomputed) > TOLLOGLIK:
-        sys.exit("Validation test failed at case 8: for the %s distribution the log-likelihood reported by fitcph, %.6f, differs from the log-likelihood of the same data computed outside it, %.6f." % (name, loglik, recomputed))
+        sys.exit("Validation test failed at case 8: for the %s distribution the log-likelihood reported by _fitcph, %.6f, differs from the log-likelihood of the same data computed outside it, %.6f." % (name, loglik, recomputed))
 
     # AIC and BIC are fixed by the log-likelihood and the number of free
     # parameters, so both are checked exactly. The criterion further down, that
@@ -828,7 +828,7 @@ for name, pi, phgen in STRUCTURES:
         first = getfit(name, censored, False)      # the fit case 2 or 4 made
         againpi, againgen, againexit = fittedparameters(first)
 
-        continued = fitcph(obs=np.copy(observations),
+        continued = _fitcph(obs=np.copy(observations),
                            censoring=None if applied is None else np.copy(applied),
                            initpi=againpi,
                            initphgen=againgen,
@@ -869,7 +869,7 @@ for original, reordered in zip(inorder, shuffled):
 # all, and has to be refused rather than silently misread
 printed = io.StringIO()
 with contextlib.redirect_stdout(printed):
-    malformed = fitcph(obs=np.copy(observations),
+    malformed = _fitcph(obs=np.copy(observations),
                        censoring=np.full((observations.size - 3, 2), np.nan),
                        initpi=np.copy(STARTGENERALPI),
                        initphgen=np.copy(STARTGENERALGEN),
@@ -955,7 +955,7 @@ if not [w for w in raised if issubclass(w.category, RuntimeWarning)]:
 
 with warnings.catch_warnings(record=True) as raised:
     warnings.simplefilter("always")
-    capped = fitcph(obs=np.copy(observations),
+    capped = _fitcph(obs=np.copy(observations),
                   initpi=np.copy(STARTGENERALPI),
                   initphgen=np.copy(STARTGENERALGEN),
                   initexitrates=exitratesof(STARTGENERALGEN),

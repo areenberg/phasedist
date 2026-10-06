@@ -1,11 +1,10 @@
 import numpy as np
-from scipy.linalg import expm
 
 
 class mcph:
     """
-    Performs the M-step of the EM algorithm for a Continuous-Time Phase Type (CPH) distribution 
-    from p. 678 Bladt and Nielsen (2017). Note: This class has no input checks.
+    Performs the M-step of the EM algorithm for a Continuous-Time Phase Type (CPH) distribution
+    from p. 678 Bladt and Nielsen (2017).
 
     References:
         Bladt, M., & Nielsen, B. F. (2017). Matrix-Exponential Distributions in Applied Probability.
@@ -23,7 +22,17 @@ class mcph:
         Args:
             nphases (int): Number of phases in the CPH distribution.
             nobs (int): Number of observations.
-        """        
+
+        Raises:
+            ValueError: If either argument is not a positive integer.
+        """
+        if not isinstance(nphases, (int, np.integer)) or nphases < 1:
+            raise ValueError("The number of phases must be an integer larger than zero.")
+
+        # nobs divides the b_i, so it cannot be zero
+        if not isinstance(nobs, (int, np.integer)) or nobs < 1:
+            raise ValueError("The number of observations must be an integer larger than zero.")
+
         self.nphases = nphases
         self.nobs = nobs
 
@@ -48,12 +57,25 @@ class mcph:
             ndarray: Initial distribution vector.
             ndarray: Phase-type generator.
             ndarray: Exit-rate vector.
+
+        Raises:
+            ValueError: If a statistic is infeasible.
         """
 
         self.bi = bi
         self.zi = zi
         self.ni = ni
         self.nij = nij
+
+        # the arguments are sufficient statistics rather than parameters, so
+        # only the shapes and the divisor z_i are checked
+        if (np.shape(bi) != (self.nphases,) or np.shape(zi) != (self.nphases,)
+                or np.shape(ni) != (self.nphases,)
+                or np.shape(nij) != (self.nphases, self.nphases)):
+            raise ValueError("The sufficient statistics must be of dimension %d." % self.nphases)
+
+        if not np.min(zi) > 0.0:
+            raise ValueError("Every phase must hold a positive total time z_i.")
 
         self.initdist = self.bi / self.nobs
 

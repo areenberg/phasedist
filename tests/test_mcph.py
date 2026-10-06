@@ -28,6 +28,7 @@ Sub-tests:
     Case 3: The M-step reproduces values computed by hand from the sufficient
             statistics.
     Case 4: The fitted parameters are a feasible CPH representation.
+    Case 5: The input checks refuse infeasible input and accept feasible input.
 
 References:
     Bladt, M., & Nielsen, B. F. (2017). Matrix-Exponential Distributions in
@@ -359,6 +360,59 @@ for initdist, phgen, exitrates in fitteduncensored:
 for initdist, phgen, exitrates in fittedcensored:
     if not isfeasible(initdist, phgen, exitrates):
         sys.exit("Validation test failed at case 4: fitting censored data returned parameters that are not a feasible continuous phase-type distribution.")
+
+
+# ------------------------------------------------------------------
+# CASE 5: The input checks
+# ------------------------------------------------------------------
+
+# The M-step checks shapes and the divisor z_i only. The statistics are the
+# ones case 3 computes by hand from.
+def refuses(nphases=NPHASES, nobs=CHECKNOBS, **overrides):
+    '''
+    Returns True if the M-step refuses the feasible statistics of case 3 with
+    the given replacements applied.
+    '''
+    arguments = {"bi": CHECKBI, "zi": CHECKZI, "ni": CHECKNI, "nij": CHECKNIJ}
+    arguments.update(overrides)
+
+    try:
+        mcph(nphases=nphases, nobs=nobs).run(**arguments)
+    except ValueError:
+        return True
+
+    return False
+
+
+INFEASIBLE = (
+    ("no observations", {"nobs": 0}),
+    ("a negative number of observations", {"nobs": -1}),
+    ("a fractional number of observations", {"nobs": 2.5}),
+    ("initiation counts of the wrong length", {"bi": CHECKBI[:2]}),
+    ("occupation times of the wrong length", {"zi": CHECKZI[:2]}),
+    ("exit counts of the wrong length", {"ni": CHECKNI[:2]}),
+    ("jump counts of the wrong shape", {"nij": CHECKNIJ[:2, :2]}),
+    ("an occupation time of zero", {"zi": np.array([4.0, 0.0, 10.0])}),
+    ("a negative occupation time", {"zi": np.array([4.0, -8.0, 10.0])}),
+    ("a missing occupation time", {"zi": np.array([4.0, np.nan, 10.0])}),
+)
+
+for description, override in INFEASIBLE:
+    if not refuses(**override):
+        sys.exit("Validation test failed at case 5: the M-step accepted %s." % description)
+
+if refuses():
+    sys.exit("Validation test failed at case 5: the M-step refused the feasible statistics of case 3.")
+
+# A bad number of phases would be caught by the shape check in run() in any
+# case, so what is asserted is that it is refused at construction, before any
+# statistics are handed over
+for badphases in (0, -1, 2.5, "3"):
+    try:
+        mcph(nphases=badphases, nobs=CHECKNOBS)
+        sys.exit("Validation test failed at case 5: the M-step was built with %s phases." % repr(badphases))
+    except ValueError:
+        pass
 
 
 # ------------------------------------------------------------------

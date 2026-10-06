@@ -4,7 +4,7 @@ from phasedist.unif import _unif
 class ecph:
     """
     Performs the E-step of the EM algorithm for a Continuous-Time Phase Type (CPH) distribution
-    from p. 678 Bladt and Nielsen (2017). Note: This class has no input checks.
+    from p. 678 Bladt and Nielsen (2017).
 
     References:
         Bladt, M., & Nielsen, B. F. (2017). Matrix-Exponential Distributions in Applied Probability.
@@ -20,7 +20,13 @@ class ecph:
 
         Args:
             nphases (int): Number of phases in the CPH distribution.
+
+        Raises:
+            ValueError: If the number of phases is not a positive integer.
         """
+
+        if not isinstance(nphases, (int, np.integer)) or nphases < 1:
+            raise ValueError("The number of phases must be an integer larger than zero.")
 
         self.nphases=nphases
         self.bi = np.zeros(self.nphases)
@@ -28,6 +34,10 @@ class ecph:
         self.ni = np.zeros(self.nphases)
         self.nij = np.zeros((self.nphases, self.nphases))
         self.loglikelihood = 0.0
+
+        # the data last seen by the input checks
+        self.checkedobs = None
+        self.checkedcensoring = None
 
         # the matrix exponentials below are evaluated by uniformization
         self.unif = _unif(tolerance=1e-14)
@@ -310,6 +320,76 @@ class ecph:
         self.offdiagonal = np.array(self.phgen, dtype=float)
         np.fill_diagonal(self.offdiagonal, 0.0)
 
+    def __checkinputs(
+            self,
+            obs: np.array,
+            initdist: np.array,
+            phgen: np.array,
+            exitrates: np.array,
+            censoring: np.array
+        ) -> None:
+        """
+        Checks the inputs of run(). Every comparison is written so that a NaN
+        fails it. The checks over the whole sample are made once per array,
+        recognized by identity, since only the parameters change between
+        iterations.
+
+        Args:
+            obs (ndarray): Array of observations.
+            initdist (ndarray): Initial distribution vector.
+            phgen (ndarray): Phase-type generator.
+            exitrates (ndarray): Exit-rate vector.
+            censoring (ndarray): Specifies censored observations, or None.
+
+        Raises:
+            ValueError: If an input is infeasible.
+        """
+
+        if (initdist.size != self.nphases or exitrates.size != self.nphases
+                or phgen.shape != (self.nphases, self.nphases)):
+            raise ValueError("The initial distribution, the generator and the exit rates must all be of dimension %d." % self.nphases)
+
+        if not (initdist.min() >= 0.0 and initdist.sum() <= 1.0 + 1e-9):
+            raise ValueError("The initial distribution must be non-negative and sum to at most one.")
+
+        if not (exitrates.min() >= 0.0 and exitrates.max() < np.inf):
+            raise ValueError("The exit rates must be non-negative and finite.")
+
+        # the row sums are formed by cancellation, so they are judged
+        # against the largest rate
+        diagonal = np.diag(phgen)
+        offdiagonal = phgen - np.diag(diagonal)
+
+        if not (diagonal.max() < 0.0 and offdiagonal.min() >= 0.0
+                and phgen.sum(axis=1).max() <= 1e-9 * (1.0 - diagonal.min())):
+            raise ValueError("The phase-type generator is not a sub-intensity matrix.")
+
+        if obs is self.checkedobs and censoring is self.checkedcensoring:
+            return None
+
+        if obs.ndim != 1 or obs.size == 0:
+            raise ValueError("The observations must be a non-empty one-dimensional array.")
+
+        if not (obs.min() > 0.0 and obs.max() < np.inf):
+            raise ValueError("The observations must be positive and finite.")
+
+        if censoring is not None:
+            if (censoring.ndim != 2 or censoring.shape[1] != 2
+                    or censoring.shape[0] < obs.size):
+                raise ValueError("The censoring array must have two columns and at least one row per observation.")
+
+            # zero is admissible: it is the lower limit of a left-censored
+            # interval
+            known = censoring[np.isfinite(censoring)]
+
+            if known.size and not known.min() >= 0.0:
+                raise ValueError("The censoring limits must be non-negative.")
+
+        self.checkedobs = obs
+        self.checkedcensoring = censoring
+
+        return None
+
     def run(
             self,
             obs: np.array,
@@ -340,7 +420,20 @@ class ecph:
             ndarray: Total time spent in state i (z_i).
             ndarray: Number of processes that exited to the absorbing state from state i (n_i).
             ndarray: Number of processes that jumped from state i to state j (n_ij).
+
+        Raises:
+            ValueError: If an input is infeasible.
         """
+
+        obs = np.asarray(obs, dtype=float)
+        initdist = np.asarray(initdist, dtype=float).reshape(-1)
+        phgen = np.asarray(phgen, dtype=float)
+        exitrates = np.asarray(exitrates, dtype=float).reshape(-1)
+
+        if censoring is not None:
+            censoring = np.asarray(censoring, dtype=float)
+
+        self.__checkinputs(obs, initdist, phgen, exitrates, censoring)
 
         self.__storefundamental(initdist,phgen,exitrates)
 
@@ -351,15 +444,13 @@ class ecph:
 
         self.loglikelihood = 0.0
 
-        obs = np.asarray(obs, dtype=float)
-
         if censoring is None:
             values, counts = np.unique(obs, return_counts=True)
             if values.size:
                 self.__uncensored(values, counts)
             return self.bi, self.zi, self.ni, self.nij
 
-        censoring = np.asarray(censoring, dtype=float)[:obs.size]
+        censoring = censoring[:obs.size]
 
         # the four kinds, read off the censoring array in one go rather than
         # one observation at a time

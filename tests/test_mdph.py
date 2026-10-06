@@ -26,6 +26,7 @@ Sub-tests:
     Case 2: The same, for a mix of uncensored, interval-, right- and
             left-censored observations.
     Case 3: The fitted parameters are a feasible DPH representation.
+    Case 4: The input checks refuse infeasible input and accept feasible input.
 
 References:
     Bladt, M., & Nielsen, B. F. (2017). Matrix-Exponential Distributions in
@@ -298,6 +299,71 @@ for initdist, phgen, exitrates in fitteduncensored:
 for initdist, phgen, exitrates in fittedcensored:
     if not isfeasible(initdist, phgen, exitrates):
         sys.exit("Validation test failed at case 3: fitting censored data returned parameters that are not a feasible discrete phase-type distribution.")
+
+
+# ------------------------------------------------------------------
+# CASE 4: The input checks
+# ------------------------------------------------------------------
+
+# The M-step checks shapes and the divisor n_i + sum_k n_ik only
+CHECKNOBS = 10
+CHECKBI = np.array([3.0, 5.0, 2.0])
+CHECKNI = np.array([1.0, 2.0, 5.0])
+CHECKNIJ = np.array([[0.0, 2.0, 6.0],
+                     [4.0, 0.0, 4.0],
+                     [5.0, 5.0, 0.0]])
+
+
+def refuses(nphases=NPHASES, nobs=CHECKNOBS, **overrides):
+    '''
+    Returns True if the M-step refuses the feasible statistics above with the
+    given replacements applied.
+    '''
+    arguments = {"bi": CHECKBI, "ni": CHECKNI, "nij": CHECKNIJ}
+    arguments.update(overrides)
+
+    try:
+        mdph(nphases=nphases, nobs=nobs).run(**arguments)
+    except ValueError:
+        return True
+
+    return False
+
+
+# A phase neither left nor exited from, which zeroes the divisor of both the
+# exit probability and the transition probabilities
+UNVISITEDNI = np.array([1.0, 0.0, 5.0])
+UNVISITEDNIJ = np.array([[0.0, 2.0, 6.0],
+                         [0.0, 0.0, 0.0],
+                         [5.0, 5.0, 0.0]])
+
+INFEASIBLE = (
+    ("no observations", {"nobs": 0}),
+    ("a negative number of observations", {"nobs": -1}),
+    ("a fractional number of observations", {"nobs": 2.5}),
+    ("initiation counts of the wrong length", {"bi": CHECKBI[:2]}),
+    ("exit counts of the wrong length", {"ni": CHECKNI[:2]}),
+    ("jump counts of the wrong shape", {"nij": CHECKNIJ[:2, :2]}),
+    ("a phase that was never left", {"ni": UNVISITEDNI, "nij": UNVISITEDNIJ}),
+    ("a missing exit count", {"ni": np.array([1.0, np.nan, 5.0])}),
+)
+
+for description, override in INFEASIBLE:
+    if not refuses(**override):
+        sys.exit("Validation test failed at case 4: the M-step accepted %s." % description)
+
+if refuses():
+    sys.exit("Validation test failed at case 4: the M-step refused feasible statistics.")
+
+# A bad number of phases would be caught by the shape check in run() in any
+# case, so what is asserted is that it is refused at construction, before any
+# statistics are handed over
+for badphases in (0, -1, 2.5, "3"):
+    try:
+        mdph(nphases=badphases, nobs=CHECKNOBS)
+        sys.exit("Validation test failed at case 4: the M-step was built with %s phases." % repr(badphases))
+    except ValueError:
+        pass
 
 
 # ------------------------------------------------------------------
