@@ -148,7 +148,10 @@ class _fitcph:
                     self.getvar(),
                 )
         
-        if iter >= self.itermax and eps > self.tolerance:
+        # a tolerance that is not finite means the caller asked for a fixed
+        # number of iterations, so stopping at itermax is the intent
+        if (iter >= self.itermax and eps > self.tolerance
+                and np.isfinite(self.tolerance)):
             warnings.warn(
                 "Algorithm terminated with iter==itermax. Results might be "
                 "misleading. After %d iterations the estimated distance to the "

@@ -491,6 +491,32 @@ if abs(zeromodel.getcumprob(0.0) - (1.0 - expectedmass)) > TOL:
 if abs(np.sum(np.asarray(continuousmodel.getinitdist(), dtype=float)) - 1.0) > TOL:
     sys.exit("Validation test failed at case 7: with no zero observations the initial distribution does not sum to one.")
 
+# The atom makes the model a mixture, and the log-likelihood has to cover every
+# observation
+nonzero = withzeros[withzeros != 0.0]
+byhand = float(np.sum(np.log([zeromodel.getdensity(y) for y in nonzero])))
+byhand += NZEROS * np.log(zeromodel.getcumprob(0.0))
+
+if abs(zeromodel.getloglik() - byhand) > TOL:
+    sys.exit("Validation test failed at case 7: with %d of %d observations at zero the reported log-likelihood is %.10f against %.10f summed over every observation, so the zeros are left out of it." % (NZEROS, SMALLOBS, zeromodel.getloglik(), byhand))
+
+# the proportion at zero is estimated, so it is one more parameter
+if zeromodel.nparam != zeromodel.d.nparam + 1:
+    sys.exit("Validation test failed at case 7: with zero observations the parameter count is %d against the %d of the phase-type part, so the atom is not counted." % (zeromodel.nparam, zeromodel.d.nparam))
+
+if continuousmodel.nparam != continuousmodel.d.nparam:
+    sys.exit("Validation test failed at case 7: with no zero observations the parameter count is %d against the %d of the phase-type part." % (continuousmodel.nparam, continuousmodel.d.nparam))
+
+# and the criteria are built on the whole sample, not the kept part
+for label, model, total in (("the zero-inflated fit", zeromodel, SMALLOBS),
+                            ("the continuous fit", continuousmodel, NOBS)):
+    if abs(model.getaic() - (-2.0 * model.getloglik() + 2.0 * model.nparam)) > TOL:
+        sys.exit("Validation test failed at case 7: for %s the AIC is not -2L+2k." % label)
+
+    if abs(model.getbic() - (-2.0 * model.getloglik()
+                             + model.nparam * np.log(total))) > TOL:
+        sys.exit("Validation test failed at case 7: for %s the BIC is not -2L+k log n with n the whole sample of %d." % (label, total))
+
 
 # ------------------------------------------------------------------
 # CASE 8: The reported quantities against the fitted parameters
@@ -788,8 +814,10 @@ stripped = quietfit(obs=mixedobs[kept].copy(),
 mixed = quietfit(obs=np.copy(mixedobs), censoring=np.copy(mixedcensoring),
                  nphases=SMALLPHASES, seed=SEED, tolerance=STARTTOLERANCE)
 
-if abs(mixed.getloglik() - stripped.getloglik()) > TOL:
-    sys.exit("Validation test failed at case 13: removing the zero observations gives %.14f where removing them beforehand gives %.14f, so the censoring rows are no longer matched to the observations." % (mixed.getloglik(), stripped.getloglik()))
+# the phase-type part is what the matching affects; the two full
+# log-likelihoods differ by the atom, which only the first fit has
+if abs(mixed.d.getloglik() - stripped.d.getloglik()) > TOL:
+    sys.exit("Validation test failed at case 13: removing the zero observations gives %.14f where removing them beforehand gives %.14f, so the censoring rows are no longer matched to the observations." % (mixed.d.getloglik(), stripped.d.getloglik()))
 
 fraczero = np.count_nonzero(~kept) / float(SMALLOBS)
 mixedinitdist = np.asarray(mixed.getinitdist(), dtype=float).ravel()

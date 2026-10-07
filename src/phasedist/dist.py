@@ -230,8 +230,8 @@ class dist:
 
         exitrates = np.divide(np.asarray(self.exitrates).ravel(), totalrates)
 
-        return (self.initdist, np.matrix(embedded),
-                np.matrix(exitrates).reshape(-1, 1))
+        return (self.initdist, np.asarray(embedded, dtype=float),
+                np.asarray(exitrates, dtype=float).ravel())
 
     def getdensity(self, x: float) -> float:
         """
@@ -444,8 +444,8 @@ class dist:
         if self.initdist is not None and (
             isinstance(self.initdist, np.ndarray) or isinstance(self.initdist, list)
         ):
-            self.initdist = np.matrix(self.initdist)
-        elif self.initdist is not None and not isinstance(self.initdist, np.matrix):
+            self.initdist = np.asarray(self.initdist, dtype=float)
+        elif self.initdist is not None:
             print(
                 "Error: The initial distribution can only be specified as a list, NumPy array, or a NumPy matrix."
             )
@@ -453,8 +453,8 @@ class dist:
         if self.phgen is not None and (
             isinstance(self.phgen, np.ndarray) or isinstance(self.phgen, list)
         ):
-            self.phgen = np.matrix(self.phgen)
-        elif self.phgen is not None and not isinstance(self.phgen, np.matrix):
+            self.phgen = np.asarray(self.phgen, dtype=float)
+        elif self.phgen is not None:
             print(
                 "Error: The PH generator can only be specified as a list or a NumPy matrix."
             )
