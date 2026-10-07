@@ -463,8 +463,8 @@ class fitcph2dist:
         if self.initdist is not None and (
             isinstance(self.initdist, np.ndarray) or isinstance(self.initdist, list)
         ):
-            self.initdist = np.matrix(self.initdist)
-        elif self.initdist is not None and not isinstance(self.initdist, np.matrix):
+            self.initdist = np.asarray(self.initdist, dtype=float)
+        elif self.initdist is not None:
             print(
                 "Error: The initial distribution can only be specified as a list, NumPy array, or a NumPy matrix."
             )
@@ -472,8 +472,8 @@ class fitcph2dist:
         if self.initphgen is not None and (
             isinstance(self.initphgen, np.ndarray) or isinstance(self.initphgen, list)
         ):
-            self.initphgen = np.matrix(self.initphgen)
-        elif self.initphgen is not None and not isinstance(self.initphgen, np.matrix):
+            self.initphgen = np.asarray(self.initphgen, dtype=float)
+        elif self.initphgen is not None:
             print(
                 "Error: The PH generator can only be specified as a list or a NumPy matrix."
             )
@@ -482,10 +482,10 @@ class fitcph2dist:
             isinstance(self.initexitrates, np.ndarray)
             or isinstance(self.initexitrates, list)
         ):
-            self.initexitrates = np.transpose(np.matrix(self.initexitrates))
-        elif self.initexitrates is not None and not isinstance(
-            self.initexitrates, np.matrix
-        ):
+            self.initexitrates = np.asarray(
+                self.initexitrates, dtype=float
+            ).reshape(-1, 1)
+        elif self.initexitrates is not None:
             print(
                 "Error: The exit rate vector can only be specified as a list, NumPy array, or a NumPy matrix."
             )
@@ -512,7 +512,7 @@ class fitcph2dist:
         if not self.randominit:
             if not self.__correctphgen(
                 self.initphgen, self.initexitrates
-            ) or not self.__correctinitdist(self.d.getinitdist):
+            ) or not self.__correctinitdist(self.initdist):
                 return False
 
         return True
@@ -640,9 +640,9 @@ class fitcph2dist:
         Returns:
             None
         """
-        self.initdist = np.matrix(np.ones((1, self.nphases)))
-        self.initphgen = np.matrix(np.ones((self.nphases, self.nphases)))
-        self.initexitrates = np.matrix(np.ones((self.nphases, 1)))
+        self.initdist = np.ones((1, self.nphases))
+        self.initphgen = np.ones((self.nphases, self.nphases))
+        self.initexitrates = np.ones((self.nphases, 1))
 
     def __generlang(self) -> None:
         """
@@ -654,13 +654,13 @@ class fitcph2dist:
         Returns:
             None
         """
-        self.initdist = np.matrix(np.zeros((1, self.nphases)))
+        self.initdist = np.zeros((1, self.nphases))
         self.initdist[0, 0] = 1
 
-        self.initexitrates = np.matrix(np.zeros((self.nphases, 1)))
+        self.initexitrates = np.zeros((self.nphases, 1))
         self.initexitrates[self.nphases - 1, 0] = 1
 
-        self.initphgen = np.matrix(np.zeros((self.nphases, self.nphases)))
+        self.initphgen = np.zeros((self.nphases, self.nphases))
         for i in range(self.nphases):
             self.initphgen[i, i] = 1
             if i < (self.nphases - 1):
@@ -676,10 +676,10 @@ class fitcph2dist:
         Returns:
             None
         """
-        self.initdist = np.matrix(np.ones((1, self.nphases)))
+        self.initdist = np.ones((1, self.nphases))
 
-        self.initphgen = np.matrix(np.zeros((self.nphases, self.nphases)))
-        self.initexitrates = np.matrix(np.ones((self.nphases, 1)))
+        self.initphgen = np.zeros((self.nphases, self.nphases))
+        self.initexitrates = np.ones((self.nphases, 1))
         for i in range(self.nphases):
             self.initphgen[i, i] = 1
 
@@ -693,12 +693,12 @@ class fitcph2dist:
         Returns:
             None
         """
-        self.initdist = np.matrix(np.zeros((1, self.nphases)))
+        self.initdist = np.zeros((1, self.nphases))
         self.initdist[0, 0] = 1
 
-        self.initexitrates = np.matrix(np.ones((self.nphases, 1)))
+        self.initexitrates = np.ones((self.nphases, 1))
 
-        self.initphgen = np.matrix(np.zeros((self.nphases, self.nphases)))
+        self.initphgen = np.zeros((self.nphases, self.nphases))
         for i in range(self.nphases):
             self.initphgen[i, i] = 1
             if i < (self.nphases - 1):
@@ -714,10 +714,10 @@ class fitcph2dist:
         Returns:
             None
         """
-        self.initdist = np.matrix(np.ones((1, self.nphases)))
-        self.initexitrates = np.matrix(np.ones((self.nphases, 1)))
+        self.initdist = np.ones((1, self.nphases))
+        self.initexitrates = np.ones((self.nphases, 1))
 
-        self.initphgen = np.matrix(np.zeros((self.nphases, self.nphases)))
+        self.initphgen = np.zeros((self.nphases, self.nphases))
         for i in range(self.nphases):
             self.initphgen[i, i] = 1
             if i < (self.nphases - 1):
