@@ -379,11 +379,9 @@ class edph:
         if obs.ndim != 1 or obs.size == 0:
             raise ValueError("The observations must be a non-empty one-dimensional array.")
 
-        if not obs.min() >= 1 or (not np.issubdtype(obs.dtype, np.integer)
-                                  and np.any(obs != np.floor(obs))):
-            raise ValueError("The observations must be whole numbers of at least one.")
-
-        if censoring is not None:
+        if censoring is None:
+            uncensored = obs
+        else:
             if (censoring.ndim != 2 or censoring.shape[1] != 2
                     or censoring.shape[0] < obs.size):
                 raise ValueError("The censoring array must have two columns and at least one row per observation.")
@@ -395,6 +393,15 @@ class edph:
             if known.size and (not known.min() >= 0.0
                                or np.any(known != np.floor(known))):
                 raise ValueError("The censoring limits must be non-negative whole numbers.")
+
+            # the value in obs is ignored for a censored observation
+            uncensored = obs[np.all(np.isnan(censoring[:obs.size]), axis=1)]
+
+        if uncensored.size and (
+                not uncensored.min() >= 1
+                or (not np.issubdtype(uncensored.dtype, np.integer)
+                    and np.any(uncensored != np.floor(uncensored)))):
+            raise ValueError("Every uncensored observation must be a whole number of at least one.")
 
         self.checkedobs = obs
         self.checkedcensoring = censoring

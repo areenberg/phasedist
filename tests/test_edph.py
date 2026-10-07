@@ -344,6 +344,15 @@ if refuses(censoring=np.full((NSMALL, 2), np.nan)):
 if refuses(obs=OBSSMALL.astype(float)):
     sys.exit("Validation test failed at case 5: the E-step refused whole-numbered observations held as floating point.")
 
+# a censored row carries no usable observation, so its place in obs may hold a
+# placeholder that would be refused on an uncensored row
+PLACEHOLDEROBS = np.append(OBSSMALL, 0).astype(float)
+PLACEHOLDERCENSORING = np.full((NSMALL + 1, 2), np.nan)
+PLACEHOLDERCENSORING[NSMALL, 1] = 5.0
+
+if refuses(obs=PLACEHOLDEROBS, censoring=PLACEHOLDERCENSORING):
+    sys.exit("Validation test failed at case 5: a zero placeholder on a censored observation was refused, although the value in obs is ignored for a censored row.")
+
 # The number of phases is checked when the class is built
 for badphases in (0, -1, 2.5, "3"):
     try:

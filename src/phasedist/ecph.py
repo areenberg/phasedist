@@ -370,10 +370,9 @@ class ecph:
         if obs.ndim != 1 or obs.size == 0:
             raise ValueError("The observations must be a non-empty one-dimensional array.")
 
-        if not (obs.min() > 0.0 and obs.max() < np.inf):
-            raise ValueError("The observations must be positive and finite.")
-
-        if censoring is not None:
+        if censoring is None:
+            uncensored = obs
+        else:
             if (censoring.ndim != 2 or censoring.shape[1] != 2
                     or censoring.shape[0] < obs.size):
                 raise ValueError("The censoring array must have two columns and at least one row per observation.")
@@ -384,6 +383,13 @@ class ecph:
 
             if known.size and not known.min() >= 0.0:
                 raise ValueError("The censoring limits must be non-negative.")
+
+            # the value in obs is ignored for a censored observation
+            uncensored = obs[np.all(np.isnan(censoring[:obs.size]), axis=1)]
+
+        if uncensored.size and not (uncensored.min() > 0.0
+                                    and uncensored.max() < np.inf):
+            raise ValueError("Every uncensored observation must be positive and finite.")
 
         self.checkedobs = obs
         self.checkedcensoring = censoring
