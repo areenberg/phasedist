@@ -127,7 +127,10 @@ class _unif:
         # the Poisson quantile where 1-required is representable, and from the
         # mean and standard deviation otherwise.
         if 1.0 - required < 1.0:
-            nterms = int(pdtrik(1.0 - required, mu)) + 1
+            # the quantile is not a number for a mu large enough to overflow,
+            # which is past the point where any truncation would serve
+            guess = pdtrik(1.0 - required, mu)
+            nterms = int(guess) + 1 if np.isfinite(guess) else self.maxterms
         else:
             nterms = int(mu + 6.0 * np.sqrt(mu) + 10.0)
 

@@ -1,6 +1,7 @@
 import sys
 import numpy as np
 from scipy.stats import lognorm, norm, gamma, weibull_min, chi2
+from scipy.special import gammaincc, gamma as gammafunction
 import matplotlib.pyplot as plt
 from phasedist.dist import dist
 from phasedist.unif import _unif
@@ -785,106 +786,52 @@ class fitcph2dist:
     def __estep(self) -> None:
         """
         Performs the expectation step of the EM algorithm.
-        
+
+        The inner integral over the time of the jump is the Van Loan block
+        integral, so it is evaluated in closed form rather than by quadrature:
+        the upper right block of exp(By) for
+
+            B = [[T, t pi], [0, T]]
+
+        is the integral of exp(T(y-u)) t pi exp(Tu) over u in [0, y]. One
+        uniformization call therefore covers every cell and supplies exp(Ty)
+        in its upper left block.
+
         Args:
             None
-        
+
         Returns:
             None
         """
-        self.bi = np.zeros(self.nphases)
-        self.zi = np.zeros(self.nphases)
-        self.ni = np.zeros(self.nphases)
-        self.nij = np.zeros((self.nphases, self.nphases))
 
-        # pre-compute eTy and pieTyt
-        self.eTy = [None] * self.steps
-        self.eTyut = [[None] * (self.steps + 1) for _ in range(self.steps)]
-        self.pieTu = [[None] * (self.steps + 1) for _ in range(self.steps)]
-        self.pieTyt = np.zeros(self.steps)
-        eTyall = self.__unif.run(self.phgen, np.asarray(self.y, dtype=float))
-        for k in range(self.steps):
-            self.eTy[k] = eTyall[k]
-            self.pieTyt[k] = np.matmul(self.pi, np.matmul(self.eTy[k], self.exitrates))
+        nphases = self.nphases
 
-        # The factors of the inner integral do not depend on the phase being
-        # updated, and the loops below read them once per phase and once per
-        # pair of phases.
-        for k in range(self.steps):
-            if self.y[k] > 0:
-                u = np.linspace(0, self.y[k], self.steps + 1)
-                eTu = self.__unif.run(self.phgen, u)
-                eTyu = self.__unif.run(self.phgen, np.maximum(self.y[k] - u, 0.0))
-                for l in range(u.size):
-                    self.pieTu[k][l] = np.matmul(self.pi, eTu[l])
-                    self.eTyut[k][l] = np.matmul(eTyu[l], self.exitrates)
+        block = np.zeros((2 * nphases, 2 * nphases))
+        block[:nphases, :nphases] = self.phgen
+        block[nphases:, nphases:] = self.phgen
+        block[:nphases, nphases:] = np.outer(self.exitrates, self.pi)
 
-        for i in range(self.nphases):
+        expblock = self.__unif.run(block, np.asarray(self.y, dtype=float))
 
-            # bi
-            for k in range(self.steps):
-                eTyt = np.matmul(self.eTy[k], self.exitrates)
-                Gy = (self.pi[i] * eTyt[i]) / self.pieTyt[k]
-                self.bi[i] += Gy * self.hy[k]
+        eTy = expblock[:, :nphases, :nphases]
+        # the block integrates exp(T(y-u)) t pi exp(Tu), so transposing it puts
+        # the phase the process leaves on the first axis
+        integral = np.transpose(expblock[:, :nphases, nphases:], (0, 2, 1))
 
-            # zi (denominator used in calculation of PH generator and exit rates)
-            for k in range(self.steps):
-                # inner integral
-                innerint = 0.0
-                if self.y[k] > 0:
-                    u = np.linspace(0, self.y[k], self.steps + 1)
-                    for l in range(0, len(u) - 2, 2):
-                        inner_fa = self.pieTu[k][l][i] * self.eTyut[k][l][i]
-                        inner_fmid = (
-                            self.pieTu[k][l + 1][i] * self.eTyut[k][l + 1][i]
-                        )
-                        inner_fb = (
-                            self.pieTu[k][l + 2][i] * self.eTyut[k][l + 2][i]
-                        )
+        eTyt = np.matmul(eTy, self.exitrates)
+        pieTy = np.matmul(self.pi, eTy)
 
-                        innerint += self.__simpsonsrule(
-                            u[l], u[l + 2], inner_fa, inner_fmid, inner_fb
-                        )
-                # outer integral
-                Gy = innerint / self.pieTyt[k]
-                self.zi[i] += Gy * self.hy[k]
+        # the density of the target at each cell, which normalizes every term
+        weights = self.hy / np.sum(pieTy * self.exitrates, axis=1)
 
-            # ni (numerator used in calculation of exit rates)
-            for k in range(self.steps):
-                pieTy = np.matmul(self.pi, self.eTy[k])
-                Gy = (pieTy[i] / self.pieTyt[k]) * self.exitrates[i]
-                self.ni[i] += Gy * self.hy[k]
+        self.bi = self.pi * np.matmul(weights, eTyt)
+        self.ni = self.exitrates * np.matmul(weights, pieTy)
 
-            for j in range(self.nphases):
-                # nij (numerator used in calculation of PH generator)
-                if j != i and self.phgen[i, j] > 0.0:
-                    for k in range(self.steps):
-                        # inner integral
-                        innerint = 0.0
-                        if self.y[k] > 0:
-                            u = np.linspace(0, self.y[k], self.steps + 1)
-                            for l in range(0, len(u) - 2, 2):
-                                # inner fa
-                                inner_fa = (
-                                    self.pieTu[k][l][i] * self.eTyut[k][l][j]
-                                )
-                                # inner fmid
-                                inner_fmid = (
-                                    self.pieTu[k][l + 1][i]
-                                    * self.eTyut[k][l + 1][j]
-                                )
-                                # inner fb
-                                inner_fb = (
-                                    self.pieTu[k][l + 2][i]
-                                    * self.eTyut[k][l + 2][j]
-                                )
+        expected = np.einsum("k,kij->ij", weights, integral)
 
-                                innerint += self.__simpsonsrule(
-                                    u[l], u[l + 2], inner_fa, inner_fmid, inner_fb
-                                )
-                        # outer integral
-                        Gy = (self.phgen[i, j] / self.pieTyt[k]) * innerint
-                        self.nij[i, j] += Gy * self.hy[k]
+        self.zi = np.diag(expected).copy()
+        self.nij = self.phgen * expected
+        np.fill_diagonal(self.nij, 0.0)
 
     def __mstep(self) -> None:
         """
@@ -957,9 +904,12 @@ class fitcph2dist:
 
         # make evaluation points
         if self.disttype == "lognorm":
+            # param2 holds the variance of the underlying normal, while scipy
+            # takes its standard deviation as the shape
             self.y = np.linspace(
                 0,
-                lognorm.ppf(self.truncation, self.param2, scale=np.exp(self.param1)),
+                lognorm.ppf(self.truncation, np.sqrt(self.param2),
+                            scale=np.exp(self.param1)),
                 self.steps + 1,
             )
         elif self.disttype == "gamma":
@@ -1006,25 +956,73 @@ class fitcph2dist:
             elif self.disttype == "per":
                 self.hy[i] = self.__per_dcdf(self.y[i], self.y[i + 1])
 
-        # adjust y's for the E-step
-        self.y = self.y[1:]
+        # Each segment is represented by its midpoint rather than its upper
+        # end, which would place every one of them too high by half a step.
+        # The mass above the truncation point is then carried by one further
+        # point at its own mean, so that the discretisation has the mean of
+        # the target rather than that of the truncated target.
+        truncationpoint = self.y[-1]
+        self.y = 0.5 * (self.y[:-1] + self.y[1:])
 
-    def __simpsonsrule(self, a: float, b: float, fa: float, fmid: float, fb: float) -> float:
+        tailmean = self.__tailmean(truncationpoint)
+        tailmass = 1.0 - np.sum(self.hy)
+
+        if tailmean is not None and tailmass > 0.0:
+            self.y = np.append(self.y, tailmean)
+            self.hy = np.append(self.hy, tailmass)
+
+        # the segments plus the tail point, which is what the E-step runs over.
+        # It is not the same as steps, which also sets the resolution of the
+        # inner integral
+        self.ncells = self.y.size
+
+    def __tailmean(self, q: float) -> float:
         """
-        Computes Simpson’s 1/3 rule approximation.
-        
+        Returns the mean of the target above q, where the mass left by the
+        truncation is placed. None when the target says nothing above q, which
+        is the case for a distribution given as percentiles.
+
         Args:
-            a (float): Lower bound.
-            b (float): Upper bound.
-            fa (float): Function value at a.
-            fmid (float): Function value at midpoint.
-            fb (float): Function value at b.
-        
+            q (float): The truncation point.
+
         Returns:
-            float: Approximated integral value.
+            float: E[X | X > q], or None.
         """
-        # note: fmid = f((a+b)/2)
-        return ((b - a) / 6) * (fa + 4 * fmid + fb)
+
+        if self.disttype == "lognorm":
+            sigma = np.sqrt(self.param2)
+            upper = (np.log(q) - self.param1) / sigma
+            return float(np.exp(self.param1 + self.param2 / 2.0)
+                         * norm.sf(upper - sigma) / norm.sf(upper))
+
+        if self.disttype in ("gamma", "chisq"):
+            if self.disttype == "gamma":
+                shape, scale = self.param1, self.param2
+            else:
+                shape, scale = self.param1 / 2.0, 2.0
+            return float(shape * scale * gammaincc(shape + 1.0, q / scale)
+                         / gammaincc(shape, q / scale))
+
+        if self.disttype == "weibull":
+            scaled = np.power(q / self.param2, self.param1)
+            order = 1.0 + 1.0 / self.param1
+            return float(self.param2 * gammafunction(order)
+                         * gammaincc(order, scaled) / np.exp(-scaled))
+
+        if self.disttype == "norm":
+            upper = (q - self.param1) / self.param2
+            return float(self.param1
+                         + self.param2 * norm.pdf(upper) / norm.sf(upper))
+
+        if self.disttype == "ph":
+            # the life left beyond q is phase-type with the same generator,
+            # started from where the process is at q
+            alive = np.matmul(np.asarray(self.param1, dtype=float).ravel(),
+                              self.__exponential(self.param2, q))
+            green = np.linalg.inv(-np.asarray(self.param2, dtype=float))
+            return float(q + np.sum(np.matmul(alive, green)) / np.sum(alive))
+
+        return None
 
     def lognormdensity(self, x: float) -> float:
         """
