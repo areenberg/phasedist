@@ -299,8 +299,7 @@ if (abs(float(np.sum(PHASEPI)) - 1.0) > TOL
 COVEREDMETHODS = ("chisq", "fit", "gamma", "getcumprob", "getdensity",
                   "getdist", "getexitrates", "getinitdist", "getmean",
                   "getphasegen", "getquantile", "getvar", "lognorm",
-                  "lognormdensity", "norm", "percentiles", "phasedist",
-                  "plot", "weibull")
+                  "norm", "percentiles", "phasedist", "plot", "weibull")
 
 publicmethods = tuple(sorted(name for name in dir(fitcph2dist)
                              if not name.startswith("_")
@@ -617,10 +616,6 @@ try:
         return model
     if abs(bymoments.getmean() - quiet(bymu).getmean()) > TOL:
         sys.exit("Validation test failed at case 6: naming the lognormal by mu and sigma and by its mean and variance give different fits.")
-
-    if abs(bymoments.lognormdensity(1.5)
-           - lognorm.pdf(1.5, LOGNORMSIGMA, scale=np.exp(LOGNORMMU))) > TOLFIT:
-        sys.exit("Validation test failed at case 6: lognormdensity disagrees with the lognormal density.")
 
     # the gamma, by scale and by rate
     def bygamma(**keywords):

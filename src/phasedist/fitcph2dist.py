@@ -1349,20 +1349,6 @@ class fitcph2dist:
 
         return None
 
-    def lognormdensity(self, x: float) -> float:
-        """
-        Probability density function of the log-normal distribution.
-        
-        Args:
-            x (float): Compute the density at x.
-        
-        Returns:
-            float: Density.
-        """        
-        return (1 / (x * np.sqrt(self.param2) * np.sqrt(2 * np.pi))) * np.exp(
-            -(np.power(np.log(x) - self.param1, 2) / (2 * self.param2))
-        )
-
     def __lognorm_dcdf(self, x0: float, x1: float) -> float:
         """
         Computes cumulative probability between two points for a log-normal distribution.
