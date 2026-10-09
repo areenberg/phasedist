@@ -1,6 +1,4 @@
-# PhaseDist
-
-
+<img src="https://github.com/areenberg/phasedist/blob/development/images/phasedist_logo_dark.png" alt="A phase-type distribution being fitted to bimodal data" width="500">
 
 [![PyPI](https://img.shields.io/pypi/v/phasedist?logo=pypi&logoColor=white)](https://pypi.org/project/phasedist/)
 [![Python](https://img.shields.io/pypi/pyversions/phasedist?logo=python&logoColor=white)](https://pypi.org/project/phasedist/)
