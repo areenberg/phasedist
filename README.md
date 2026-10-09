@@ -1,6 +1,6 @@
-<img src="https://github.com/areenberg/phasedist/blob/development/images/phasedist_fit.gif" alt="A phase-type distribution being fitted to bimodal data" width="700">
+<img src="https://github.com/areenberg/phasedist/blob/development/images/phasedist_fit.gif" alt="A phase-type distribution being fitted to bimodal data" width="500">
 
-*A 12-phase continuous phase-type distribution fitted to 2000 bimodal observations using PhaseDist.*
+*A phase-type distribution fitted using PhaseDist.*
 
 [![PyPI](https://img.shields.io/pypi/v/phasedist?logo=pypi&logoColor=white)](https://pypi.org/project/phasedist/)
 [![Python](https://img.shields.io/pypi/pyversions/phasedist?logo=python&logoColor=white)](https://pypi.org/project/phasedist/)
