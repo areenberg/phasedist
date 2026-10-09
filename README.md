@@ -1,6 +1,6 @@
-<img src="https://github.com/areenberg/phasedist/blob/development/images/phasedist_fit.gif" alt="A phase-type distribution being fitted to bimodal data" width="500">
+# PhaseDist
 
-*A phase-type distribution fitted using PhaseDist.*
+
 
 [![PyPI](https://img.shields.io/pypi/v/phasedist?logo=pypi&logoColor=white)](https://pypi.org/project/phasedist/)
 [![Python](https://img.shields.io/pypi/pyversions/phasedist?logo=python&logoColor=white)](https://pypi.org/project/phasedist/)
@@ -17,6 +17,11 @@ PhaseDist is a Python package for fitting continuous and discrete phase-type dis
 * Compute metrics, such as the mean, density, and quantile function.
 * Simulate observations from a phase-type distribution.
 * Approximate another distribution, e.g. a log-normal distribution, using a phase-type distribution.
+
+
+<img src="https://github.com/areenberg/phasedist/blob/development/images/phasedist_fit.gif" alt="A phase-type distribution being fitted to bimodal data" width="500">
+
+*A phase-type distribution fitted using PhaseDist.*
 
 ## Installation
 
@@ -52,15 +57,7 @@ fit = ph.fit(obs=obs,
              dtype="generlang")
 ```
 
-(3) Compare the CDF of the fitted distribution to the empirical CDF.
-
-```python
-fit.plot()
-```
-
-<img src="https://github.com/areenberg/phasedist/blob/development/images/quickstart_example_CDF.png" alt="Empirical and fitted CDFs" width="500">
-
-(4) Store the fitted distribution in the object `phdist` and compute the mean, variance, and 95% quantile.
+(3) Store the fitted distribution in the object `phdist` and compute the mean, variance, and 95% quantile.
 
 ```python
 phdist = fit.getdist()
