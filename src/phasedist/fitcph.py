@@ -1,44 +1,69 @@
+import warnings
+
 import numpy as np
 from scipy.linalg import expm
+from phasedist.ecph import ecph
+from phasedist.mcph import mcph
+from phasedist.rndcph import rndcph
 
-
-class fitcph:
+class _fitcph:
     """
     Fits continuous-time phase-type distributions using the
-    EM algorithm from p. 678 Bladt and Nielsen (2017).
+    EM algorithm from p. 678 Bladt and Nielsen (2017). Convergence is assessed
+    by Aitken acceleration, see McLachlan and Krishnan (2008), Section 4.9.
+
+    Warning: This class does not contain any input checks.
 
     References:
         Bladt, M., & Nielsen, B. F. (2017). Matrix-Exponential Distributions in Applied Probability.
         Springer. https://doi.org/10.1007/978-1-4939-7049-0
+
+        McLachlan, G. J., & Krishnan, T. (2008). The EM Algorithm and Extensions (2nd ed.).
+        Wiley. https://doi.org/10.1002/9780470191613
     """
 
     def __init__(
         self,
         obs: np.array = None,
+        censoring: np.array = None,
         initpi: np.array = None,
         initphgen: np.array = None,
         initexitrates: np.array = None,
         randominit: bool = True,
         seed: int = None,
         tolerance: float = 1e-6,
-        itermax: int = 1000000,
+        itermax: int = 100000,
         verbose: bool = False,
     ) -> None:
         """
         Initializes the continuous-time phase-type distribution fitter.
 
+        Censored observations are specified with the (n_obs x 2) censoring array,
+        in which each row corresponds to the observation in the same position of
+        obs and the two columns say how that observation is censored:
+        - [np.nan,np.nan] -> uncensored, the value in obs is used.
+        - [np.nan,float] -> right-censored, it is known only that Y > that value.
+        - [float,np.nan] -> left-censored, it is known only that Y <= that value.
+        - [float,float] -> interval-censored, from the first value to the second.
+
+        The value held in obs is ignored for a censored observation, since what
+        is known about it is held in the censoring array instead.
+
         Args:
             obs (array-like): Observed realizations of the phase-type distribution.
+            censoring (ndarray, optional): Specifies censored observations. If
+                None, every observation is treated as uncensored.
             initpi (ndarray): Initial distribution vector.
             initphgen (ndarray): Initial phase-type generator matrix.
             initexitrates (ndarray): Initial exit rate vector.
             randominit (bool, default=True): Whether to randomize initial parameters.
             seed (int): Random seed for reproducibility.
             tolerance (float, default=1e-6): Convergence tolerance for the EM algorithm.
-            itermax (int, default=1000000): Maximum number of EM iterations.
+            itermax (int, default=100000): Maximum number of EM iterations.
             verbose (bool, default=False): Whether to print intermediate fitting information.
         """
         self.obs = obs  # observed realizations of the PH distribution
+        self.censoring = censoring
         self.initpi = initpi
         self.initphgen = initphgen
         self.initexitrates = initexitrates
@@ -61,13 +86,50 @@ class fitcph:
             None
         """
         # fit the CPH distribution
+
+        self.estep = ecph(nphases=self.nphases)
+        self.mstep = mcph(nphases=self.nphases,
+                          nobs=self.obs.size)
+
         iter = 0
         eps = np.inf
         loglik0 = -np.inf
+        loglik1 = -np.inf  # the log-likelihood two iterations back
         while iter < self.itermax and eps > self.tolerance:
-            self.__estep()
-            self.__mstep()
-            eps = self.loglikelihood - loglik0  # loglik is evaluated within the E-step
+
+            #E-step
+            self.bi,self.zi,self.ni,self.nij = self.estep.run(obs=self.obs,
+                                                              initdist=self.pi,
+                                                              phgen=self.phgen,
+                                                              exitrates=self.exitrates,
+                                                              censoring=self.censoring)
+            self.loglikelihood = self.estep.loglikelihood
+
+            #M-step
+            self.pi,self.phgen,self.exitrates = self.mstep.run(bi=self.bi,
+                                                               zi=self.zi,
+                                                               ni=self.ni,
+                                                               nij=self.nij)
+
+            step = self.loglikelihood - loglik0  # loglik is evaluated within the E-step
+
+            # Each EM iteration is guaranteed to increase the likelihood
+            if step < 0.0:
+                warnings.warn(
+                    "The log-likelihood decreased by %.3e at iteration %d."
+                    % (abs(float(step)), iter + 1),
+                    RuntimeWarning,
+                    stacklevel=2)
+
+            # Aitken acceleration, McLachlan and Krishnan (2008), Section 4.9.
+            eps = step
+            denominator = loglik0 - loglik1
+            if np.isfinite(denominator) and denominator > 0.0:
+                rate = step / denominator
+                if 0.0 < rate < 1.0:
+                    eps = max(step, step * rate / (1.0 - rate))
+
+            loglik1 = loglik0
             loglik0 = self.loglikelihood
             iter += 1
             if self.verbose and iter % 25 == 0:
@@ -85,8 +147,29 @@ class fitcph:
                     "  var =",
                     self.getvar(),
                 )
+        
+        # a tolerance that is not finite means the caller asked for a fixed
+        # number of iterations, so stopping at itermax is the intent
+        if (iter >= self.itermax and eps > self.tolerance
+                and np.isfinite(self.tolerance)):
+            warnings.warn(
+                "Algorithm terminated with iter==itermax. Results might be "
+                "misleading. After %d iterations the estimated distance to the "
+                "limit of the log-likelihood was still %.3e, against a "
+                "tolerance of %.3e."
+                % (iter, float(eps), float(self.tolerance)),
+                RuntimeWarning,
+                stacklevel=2)
+
         self.__polish()
-        self.__updatelikelihood()  # evaluate final loglik
+
+        #self.__updatelikelihood()  # evaluate final loglik
+        self.estep.run(obs=self.obs,
+                       initdist=self.pi,
+                       phgen=self.phgen,
+                       exitrates=self.exitrates,
+                       censoring=self.censoring)
+        self.loglikelihood = self.estep.loglikelihood
 
     def getinitdist(self) -> np.array:
         """
@@ -227,6 +310,18 @@ class fitcph:
             np.random.seed(self.seed)
 
         self.obs = self.obs.astype(float)
+
+        # The rows of the censoring array are matched to the observations by
+        # position, so an array that does not have one row per observation
+        # cannot be read at all.
+        if self.censoring is not None:
+            self.censoring = np.asarray(self.censoring, dtype=float)
+            if self.censoring.shape != (self.obs.size, 2):
+                print(
+                    "Error: The censoring array must have one row per observation and two columns."
+                )
+                self.censoring = None
+
         self.initpi = self.initpi.astype(float)
         self.initphgen = self.initphgen.astype(float)
         self.initexitrates = self.initexitrates.astype(float)
@@ -252,113 +347,14 @@ class fitcph:
             None
         """
 
-        nzidx = np.nonzero(self.pi)
-        u = np.random.uniform(low=0.0, high=1.0, size=len(nzidx))
-        u = u / np.sum(u)
-        self.pi[nzidx] = u
+        rnd = rndcph(nphases=self.nphases,
+                     initdist=self.pi,
+                     phgen=self.phgen,
+                     exitrates=self.exitrates)
 
-        nzidx = np.nonzero(self.exitrates)
-        u = np.random.uniform(low=0.0, high=1.0, size=len(nzidx))
-        self.exitrates[nzidx] = u
+        self.pi, self.phgen, self.exitrates = rnd.run()
 
-        for i in range(self.nphases):
-            nzidx = np.nonzero(np.ravel(self.phgen[i, :]))[0]
-            msk = nzidx != i
-            nzidx = nzidx[msk]
-            u = np.random.uniform(low=0.0, high=1.0, size=len(nzidx))
-            self.phgen[i, nzidx] = u
-            self.phgen[i, i] = -(np.sum(u) + self.exitrates[i])
-
-    def __estep(self) -> None:
-        """
-        Performs the expectation (E) step of the EM algorithm.
-
-        Args:
-            None
-
-        Returns:
-            None
-        """
-        self.bi = np.zeros(self.nphases)
-        self.zi = np.zeros(self.nphases)
-        self.ni = np.zeros(self.nphases)
-        self.nij = np.zeros((self.nphases, self.nphases))
-        self.loglikelihood = 0.0
-
-        for y in self.obs:
-            self.__Jmatrix(y)
-            eTyt = np.matmul(self.eTy, self.exitrates)
-            pieTy = np.matmul(self.pi, self.eTy)
-            pieTyt = np.matmul(pieTy, self.exitrates)
-            self.loglikelihood += np.log(pieTyt)
-            for i in range(self.nphases):
-                self.bi[i] += (self.pi[i] * eTyt[i]) / pieTyt
-                self.zi[i] += self.Jmat[i, i] / pieTyt
-                for j in range(self.nphases):
-                    if j != i:
-                        self.nij[i, j] += (self.phgen[i, j] * self.Jmat[j, i]) / pieTyt
-                self.ni[i] += (pieTy[i] * self.exitrates[i]) / pieTyt
-
-    def __mstep(self) -> None:
-        """
-        Performs the maximization (M) step of the EM algorithm.
-
-        Args:
-            None
-
-        Returns:
-            None
-        """
-        self.pi = self.bi / self.obs.size
-
-        self.exitrates = self.ni / self.zi
-
-        for i in range(self.nphases):
-            for j in range(self.nphases):
-                if j != i:
-                    self.phgen[i, j] = self.nij[i, j] / self.zi[i]
-            off_diag_sum = np.sum([self.phgen[i, j] for j in range(self.nphases) if j != i])
-            self.phgen[i, i] = -(off_diag_sum + self.exitrates[i])
-
-
-    def __updatelikelihood(self) -> None:
-        """
-        Updates the log-likelihood based on current model parameters.
-
-        Args:
-            None
-
-        Returns:
-            None
-        """
-        self.loglikelihood = 0.0
-        for y in self.obs:
-            self.loglikelihood += np.log(self.getdensity(y))
-
-    def __Jmatrix(self, y: float) -> None:
-        """
-        Computes the J matrix and matrix exponential exp(Ty).
-
-        Args:
-            y (float): Observation value.
-
-        Returns:
-            None
-        """
-
-        t = self.exitrates[:, None]
-        pi = self.pi[None, :]
-
-        mat = expm(
-            np.block([
-                [self.phgen, np.matmul(t,pi)],
-                [np.zeros((self.nphases, self.nphases)), self.phgen],
-            ]) * y
-        )
-
-        self.eTy = mat[: self.nphases, : self.nphases]
-        self.Jmat = mat[: self.nphases, self.nphases : 2 * self.nphases]
-
+        return None
 
     def __countParameters(self) -> None:
         """

@@ -1,10 +1,9 @@
 import sys
 import numpy as np
-from scipy.linalg import expm
 from scipy.stats import lognorm
 import matplotlib.pyplot as plt
 from typing import Union
-
+from phasedist.unif import _unif
 
 class dist:
     """
@@ -51,6 +50,10 @@ class dist:
         self.phgen = phgen
         self.nphases = self.phgen.shape[0]
         self.seed = seed
+
+        # matrix exponentials are evaluated by uniformization, which stays
+        # accurate when the rates of the generator are nearly equal
+        self.__unif = _unif(tolerance=1e-14)
 
         if self.__checkinputs():  # check inputs
             self.__initialize()
@@ -130,6 +133,106 @@ class dist:
                 np.matmul(self.initdist, np.linalg.matrix_power(phinv, 2))
             ) - np.power(np.sum(np.matmul(self.initdist, phinv)), 2)
 
+    def getexitprob(self) -> np.array:
+        """
+        Returns the exit-phase probabilities. The i'th element is the probability
+        that the process exits (i.e. is absorbed) from phase i. The elements sum
+        to one.
+
+        Returns:
+            np.array: The exit-phase probabilities (row vector).
+        """
+
+        return np.matmul(self.initdist, self.getexitprobmatrix())
+
+    def getexitprobmatrix(self) -> np.array:
+        """
+        Returns the matrix of exit-phase probabilities conditional on the
+        starting phase. Element i,j is the probability that the process exits
+        (i.e. is absorbed) from phase j given that it starts in phase i. Each
+        row sums to one.
+
+        Returns:
+            np.array: The conditional exit-phase probabilities (matrix).
+        """
+
+        # the expected time spent in phase j, times the rate at which phase j
+        # exits, is the probability of exiting from phase j
+        return np.matmul(
+            self.__greenmatrix(), np.diag(np.asarray(self.exitrates).ravel())
+        )
+
+    def getphasetime(self) -> np.array:
+        """
+        Returns the expected time spent in each phase. The i'th element is the
+        expected time the process spends in phase i before it exits. In the
+        discrete case the time is measured in steps. The elements sum to the
+        mean of the distribution.
+
+        Returns:
+            np.array: The expected time spent in each phase (row vector).
+        """
+
+        return np.matmul(self.initdist, self.getphasetimematrix())
+
+    def getphasetimematrix(self) -> np.array:
+        """
+        Returns the matrix of expected phase times conditional on the starting
+        phase, also known as the Green matrix. Element i,j is the expected time
+        the process spends in phase j given that it starts in phase i. In the
+        discrete case the time is measured in steps, so element i,j is also the
+        expected number of visits to phase j. Each row sums to the expected time
+        until the process exits from the phase starting the row.
+
+        Returns:
+            np.array: The conditional expected phase times (matrix).
+        """
+
+        return self.__greenmatrix()
+
+    def getembeddedchain(self) -> tuple:
+        """
+        Returns the parameters of the embedded Markov chain of a continuous
+        phase-type (CPH) distribution. Returns None if the distribution is
+        discrete, which has no embedded chain.
+
+        Args:
+            None
+
+        Returns:
+            tuple: The initial distribution vector (np.array),
+            the phase-type generator (np.array), and the exit-rate
+            vector (np.array) of the embedded Markov chain.
+        """
+
+        if self.discrete:
+            print(
+                "Error: The embedded Markov chain is only defined for a continuous phase-type distribution."
+            )
+            return None
+
+        phgen = np.asarray(self.phgen, dtype=float)
+
+        # the total rate out of a phase, i.e. minus the diagonal of the
+        # generator, is the rate the jump probabilities are taken relative to
+        totalrates = -np.diag(phgen)
+
+        if np.any(totalrates <= 0.0):
+            print(
+                "Error: The embedded Markov chain is not defined when a phase has no rate out of it."
+            )
+            return None
+
+        embedded = np.divide(phgen, totalrates.reshape(-1, 1))
+
+        # a jump leaves the phase it starts from, so the chain cannot stay
+        np.fill_diagonal(embedded, 0.0)
+
+        exitrates = np.divide(np.asarray(self.exitrates).ravel(), totalrates)
+
+        return (self.initdist, np.asarray(embedded, dtype=float),
+                np.asarray(exitrates, dtype=float).ravel())
+
     def getdensity(self, x: float) -> float:
         """
         Returns the distribution's density, f(x).
@@ -189,32 +292,59 @@ class dist:
         else:
             return self.__computequantile(p, tolerance)
 
-    def getrandom(self, size: int = 1) -> int | float:
+    def getrandom(self, size: int = 1, method: str = "direct") -> int | float:
         """
-        Samples a pseudo-random number from the distribution.
+        Generates pseudo-random samples from the PH distribution.
 
         Args:
-            size (int, default=1): The sample size.
+            size (int, default=1): The number of samples returned.
+            method (str, default="direct"): The sampling method.
 
         Returns:
-            int | float: The generated random number.
+            int | float: The generated samples.
         """
 
         if size == 1:
             if self.discrete:
-                return self.__dphsample()
+                return self.__dphsample(method=method)
             else:
-                return self.__cphsample()
+                return self.__cphsample(method=method)
         elif size < 1:
             return np.nan
         else:
             obs = np.zeros(size)
             for i in range(size):
                 if self.discrete:
-                    obs[i] = self.__dphsample()
+                    obs[i] = self.__dphsample(method=method)
                 else:
-                    obs[i] = self.__cphsample()
+                    obs[i] = self.__cphsample(method=method)
             return obs
+
+    def countParameters(self) -> int:
+        """
+        Counts the number of independent model parameters.
+
+        A phase contributes one parameter for every transition it can make,
+        counting the transition to absorption, minus one because the transitions
+        of a phase are constrained to each other. The initial distribution
+        contributes one parameter for every phase the process can start in, minus
+        one for the same reason.
+
+        Args:
+            None
+
+        Returns:
+            int: The number of independent model parameters.
+        """
+        phg = 0
+        for i in range(self.nphases):
+            phg += (
+                np.count_nonzero(self.phgen[i, :])
+                + np.count_nonzero(self.exitrates[i])
+                - 1
+            )
+            
+        return int(phg + (np.count_nonzero(self.initdist) - 1))
 
     def plot(self, type: str = "pdf", filename: str = "dist.png") -> None:
         """
@@ -228,8 +358,11 @@ class dist:
             None
         """
 
-        # compute densities for approximate and true distributions
-        x = np.linspace(0.0, self.getquantile(p=0.999), 500)
+        if self.discrete:
+            x = np.arange(1, int(self.getquantile(p=0.999)) + 1)
+        else:
+            x = np.linspace(0.0, self.getquantile(p=0.999), 500)
+
         val = np.zeros(len(x))
         for i in range(len(x)):
             if type == "pdf":
@@ -238,15 +371,21 @@ class dist:
                 val[i] = self.getcumprob(x[i])
 
         if type == "pdf":
-            ylbl = "Density"
-            tl = "Probability Density Function"
+            ylbl = "Probability" if self.discrete else "Density"
+            tl = ("Probability Mass Function" if self.discrete
+                  else "Probability Density Function")
         elif type == "cdf":
             ylbl = "Probability"
             tl = "Cumulative Distribution Function"
 
-        # make plot
         plt.figure(figsize=(10, 6))
-        plt.plot(x, val, label=ylbl, color="blue", linestyle="-")
+        if self.discrete and type == "pdf":
+            plt.vlines(x, 0.0, val, color="blue")
+            plt.plot(x, val, label=ylbl, color="blue", linestyle="none", marker="o")
+        elif self.discrete:
+            plt.step(x, val, label=ylbl, color="blue", where="post")
+        else:
+            plt.plot(x, val, label=ylbl, color="blue", linestyle="-")
         plt.xlabel("x")
         plt.ylabel(ylbl)
         plt.title(tl)
@@ -305,8 +444,8 @@ class dist:
         if self.initdist is not None and (
             isinstance(self.initdist, np.ndarray) or isinstance(self.initdist, list)
         ):
-            self.initdist = np.matrix(self.initdist)
-        elif self.initdist is not None and not isinstance(self.initdist, np.matrix):
+            self.initdist = np.asarray(self.initdist, dtype=float)
+        elif self.initdist is not None:
             print(
                 "Error: The initial distribution can only be specified as a list, NumPy array, or a NumPy matrix."
             )
@@ -314,8 +453,8 @@ class dist:
         if self.phgen is not None and (
             isinstance(self.phgen, np.ndarray) or isinstance(self.phgen, list)
         ):
-            self.phgen = np.matrix(self.phgen)
-        elif self.phgen is not None and not isinstance(self.phgen, np.matrix):
+            self.phgen = np.asarray(self.phgen, dtype=float)
+        elif self.phgen is not None:
             print(
                 "Error: The PH generator can only be specified as a list or a NumPy matrix."
             )
@@ -324,6 +463,21 @@ class dist:
             print("Error: The seed can only be specified as an integer.")
             return False
         return True  # if all correct
+
+    def __greenmatrix(self) -> np.array:
+        """
+        Returns the Green matrix of the PH distribution, that is the inverse of
+        minus the sub-intensity matrix in the continuous case and the inverse of
+        the identity matrix minus the sub-transition matrix in the discrete case.
+
+        Returns:
+            np.array: The Green matrix.
+        """
+
+        if self.discrete:
+            return np.linalg.inv(np.subtract(np.eye(self.nphases), self.phgen))
+        else:
+            return np.linalg.inv(np.negative(self.phgen))
 
     def __computedensity(self, x: float) -> float:
         """
@@ -344,13 +498,26 @@ class dist:
                 return np.matmul(
                     self.initdist,
                     np.matmul(
-                        np.linalg.matrix_power(self.phgen, (x - 1)), self.exitrates
+                        np.linalg.matrix_power(self.phgen, int(x - 1)), self.exitrates
                     ),
                 ).item()
         else:
             return np.matmul(
-                self.initdist, np.matmul(expm(self.phgen * x), self.exitrates)
+                self.initdist, np.matmul(self.__exponential(x), self.exitrates)
             ).item()
+
+    def __exponential(self, x: float) -> np.array:
+        """
+        Returns exp(T x) by uniformization.
+
+        Args:
+            x (float): The time to exponentiate over.
+
+        Returns:
+            ndarray: The matrix exponential.
+        """
+
+        return self.__unif.run(self.phgen, float(x))[0]
 
     def __computecumprob(self, x: float) -> float:
         """
@@ -372,7 +539,7 @@ class dist:
                     np.matmul(self.initdist, np.linalg.matrix_power(self.phgen, int(x)))
                 )
         else:
-            return 1 - np.sum(np.matmul(self.initdist, expm(self.phgen * x)))
+            return 1 - np.sum(np.matmul(self.initdist, self.__exponential(x)))
 
     def __computequantile(self, p: float, tolerance: float = 1e-9) -> int | float:
         """
@@ -397,14 +564,31 @@ class dist:
         else:
             return self.__cphquantfun(prob=p, tol=tolerance, itermax=1000000)
 
-    def __cphsample(self) -> float:
+    def __cphsample(self, method: str = "direct") -> float:
         """
-        Samples a pseudo-random value from a continuous phase-type (CPH) distribution.
-
+        Simulates a pseudo-random sample from a continuous phase-type (CPH) distribution
+        using the selected method.
+        
         Returns:
-            float: The sampled value.
+            float: The simulated sample.
         """
 
+        if method == "direct":
+            return self.__cphrnddirect()
+        elif method == "quantile":
+            return self.__cphrndquantile()
+        else:
+            print("Error: Simulation method not recognized. Available methods: 'direct', 'quantile'")
+            return None
+
+    def __cphrnddirect(self) -> float:
+        """
+        Simulates a pseudo-random sample from a continuous phase-type (CPH) distribution
+        by simulating each transition directly.
+        
+        Returns:
+            float: The simulated sample.
+        """
         t = 0.0
         s = np.random.choice(self.nphases, size=1, p=self.flatinitdist)[0]
         while True:
@@ -413,15 +597,40 @@ class dist:
             s = np.random.choice((self.nphases + 1), size=1, p=a)[0]
             if s == self.nphases:
                 return t
-
-    def __dphsample(self) -> int:
+        
+    def __cphrndquantile(self,tolerance: float = 1e-9) -> float:
         """
-        Samples a pseudo-random value from a discrete phase-type (DPH) distribution.
+        Simulates a pseudo-random sample from a continuous phase-type (CPH) distribution
+        using the quantile function.
+        
+        Returns:
+            float: The simulated sample.
+        """
+        return self.__cphquantfun(prob=np.random.rand(), tol=tolerance, itermax=1000000)
+
+    def __dphsample(self, method: str = "direct") -> int:
+        """
+        Samples a pseudo-random value from a discrete phase-type (DPH) distribution
+        using the selected method.
 
         Returns:
             int: The sampled value.
         """
 
+        if method == "direct":
+            return self.__dphrnddirect()
+        else:
+            print("Error: Simulation method not recognized. Available methods: 'direct'")
+            return None
+
+    def __dphrnddirect(self) -> int:
+        """
+        Simulates a pseudo-random sample from a discrete phase-type (DPH) distribution
+        by simulating each transition directly.
+        
+        Returns:
+            int: The simulated sample.
+        """
         t = 0  # Time in discrete steps
         s = np.random.choice(self.nphases, size=1, p=self.flatinitdist)[0]
         while True:
@@ -459,14 +668,16 @@ class dist:
         x = lognorm.ppf(prob, param2, scale=np.exp(param1))
 
         # improve x until convergence
-        trc = 1 - np.sum(np.matmul(self.initdist, expm(self.phgen * x)))
+        eTx = self.__exponential(x)
+        trc = 1 - np.sum(np.matmul(self.initdist, eTx))
         iter = 0
         while np.abs(trc - prob) > tol and iter < itermax:
             grad = np.matmul(
-                self.initdist, np.matmul(expm(self.phgen * x), self.exitrates)
+                self.initdist, np.matmul(eTx, self.exitrates)
             ).item()
             x = x - (trc - prob) / grad
-            trc = 1 - np.sum(np.matmul(self.initdist, expm(self.phgen * x)))
+            eTx = self.__exponential(x)
+            trc = 1 - np.sum(np.matmul(self.initdist, eTx))
             iter += 1
         if iter == itermax:
             print(

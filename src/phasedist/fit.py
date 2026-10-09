@@ -1,9 +1,11 @@
 import sys
+import warnings
+
 import numpy as np
 import matplotlib.pyplot as plt
-from statsmodels.stats.proportion import proportion_confint
-from phasedist.fitcph import fitcph
-from phasedist.fitdph import fitdph
+from scipy.stats import beta
+from phasedist.fitcph import _fitcph
+from phasedist.fitdph import _fitdph
 from phasedist.dist import dist
 
 
@@ -34,8 +36,10 @@ class fit:
         randominit: bool = True,
         seed: int = None,
         tolerance: float = 1e-6,
-        itermax: int = 1000000,
+        itermax: int = 100000,
+        fixediter: int = None,
         verbose: bool = False,
+        censoring: np.array = None,
     ) -> None:
         """
         Initialize the fitting procedure for a phase-type distribution.
@@ -61,11 +65,19 @@ class fit:
                 Random seed.
             tolerance (float, default=1e-6):
                 Convergence tolerance for the EM algorithm.
-            itermax (int, default=1000000):
+            itermax (int, default=100000):
                 Maximum number of iterations.
+            fixediter (int, optional):
+                Fixed number of iterations for the EM algorithm.    
             verbose (bool, default=False):
                 If True, prints progress output during fitting.
-                
+            censoring (np.array, optional):
+                An (n_obs x 2) array marking how each observation is censored,
+                read as in fitcph and fitdph:
+                [nan,nan] uncensored, [nan,t] right-censored, [s,nan]
+                left-censored, [s,t] interval-censored. The value in obs is
+                ignored for a censored observation.
+
         Notes
         -----        
         Input validation is performed automatically. If validation fails,
@@ -74,6 +86,7 @@ class fit:
 
         # set parameters
         self.obs = obs
+        self.censoring = censoring
         self.nphases = nphases
         self.dtype = dtype
         self.discrete = discrete
@@ -84,6 +97,7 @@ class fit:
         self.seed = seed
         self.tolerance = tolerance
         self.itermax = itermax
+        self.fixediter = fixediter
         self.verbose = verbose
 
         # checking and fitting
@@ -183,9 +197,10 @@ class fit:
         Return the log-likelihood for the fitted PH model.
 
         Returns:
-            float: Log-likelihood evaluated at the fitted parameters.
-        """        
-        return self.d.getloglik()
+            float: Log-likelihood evaluated at the fitted parameters, over
+                every observation including any at zero.
+        """
+        return self.d.getloglik() + self.atomloglik
 
     def getaic(self) -> float:
         """
@@ -194,7 +209,7 @@ class fit:
         Returns:
             float: The AIC value of the fitted model.
         """
-        return self.d.getaic()
+        return -2.0 * self.getloglik() + 2.0 * self.nparam
 
     def getbic(self) -> float:
         """
@@ -203,7 +218,7 @@ class fit:
         Returns:
             float: The BIC value of the fitted model.
         """
-        return self.d.getbic()
+        return -2.0 * self.getloglik() + self.nparam * np.log(self.obs.size)
 
     def getdist(self) -> dist:
         """
@@ -216,7 +231,7 @@ class fit:
 
     def plot(
         self,
-        confint: bool = True,
+        confint: bool = False,
         confidence: float = 0.95,
         xlabel: str = "x",
         ylabel: str = "CDF",
@@ -228,8 +243,13 @@ class fit:
         """
         Plot empirical and fitted cumulative distribution functions (CDFs).
 
+        The empirical CDF is left out when any observation is censored, the
+        values held in obs being placeholders rather than data. Only the fitted
+        CDF is then drawn, over the range spanned by the uncensored
+        observations and the censoring limits, and a warning says so.
+
         Args:
-            confint (bool, default=True): Whether to include confidence intervals for the empirical CDF.
+            confint (bool, default=False): Whether to add Clopper-Pearson confidence intervals to the empirical CDF.
             confidence (float, default=0.95): Confidence level for the intervals.
             xlabel (str, default="x"): Label for the x-axis.
             ylabel (str, default="CDF"): Label for the y-axis.
@@ -239,99 +259,104 @@ class fit:
             filename (str, default="CDFcheck.png"): Filename of the generated graph.
 
         Returns:
-            None: Displays the plot.
+            None: Writes the figure to filename.
         """
 
-        obssorted = np.sort(self.obs)
+        uncensored = (np.ones(self.obs.size, dtype=bool) if self.censoring is None
+                      else np.all(np.isnan(self.censoring), axis=1))
+        censored = not np.all(uncensored)
+
+        if censored:
+            warnings.warn(
+                "Some observations are censored, so the empirical CDF is left out "
+                "and only the fitted CDF is drawn.",
+                UserWarning,
+                stacklevel=2,
+            )
+
+            # the range over which something is known about the sample
+            known = np.concatenate(
+                [self.obs[uncensored], self.censoring[np.isfinite(self.censoring)]]
+            )
+            lower, upper = float(np.min(known)), float(np.max(known))
+        else:
+            obssorted = np.sort(self.obs)
+            lower, upper = float(obssorted[0]), float(obssorted[-1])
 
         if not self.discrete:
-            empcdf = np.arange(1, self.obs.size + 1)
-            empcdf_upper = np.zeros(empcdf.size)
-            empcdf_lower = np.zeros(empcdf.size)
-            for i in range(empcdf.size):
-                lims = proportion_confint(
-                    empcdf[i], self.obs.size, alpha=(1 - confidence), method="wilson"
-                )
-                empcdf_upper[i] = lims[1]
-                empcdf_lower[i] = lims[0]
-            empcdf = empcdf.astype(float)
-            empcdf /= float(self.obs.size)
-            res = 1000
-            theocdf = np.zeros(res)
-            x = np.linspace(np.min(obssorted), np.max(obssorted), res)
-            for i in range(res):
-                theocdf[i] = self.getcumprob(x[i])
+            x = np.linspace(lower, upper, 1000)
         else:
-            x = np.arange(np.min(obssorted), np.max(obssorted) + 1)
-            empcdf = np.zeros(x.size)
-            empcdf_upper = np.zeros(x.size)
-            empcdf_lower = np.zeros(x.size)
-            theocdf = np.zeros(x.size)
-            emp_old = 0
-            for i in range(x.size):
-                theocdf[i] = self.getcumprob(x[i])
-                a = obssorted[obssorted == (i + np.min(obssorted))]
-                empcdf[i] = a.size + emp_old
-                emp_old = empcdf[i]
-                lims = proportion_confint(
-                    empcdf[i],
-                    self.obs.size,
-                    alpha=(1 - confidence),
-                    method="binom_test",
+            x = np.arange(int(lower), int(upper) + 1)
+
+        theocdf = np.zeros(x.size)
+        for i in range(x.size):
+            theocdf[i] = self.getcumprob(x[i])
+
+        if not censored:
+            if self.discrete:
+                counts = np.cumsum(
+                    [np.count_nonzero(obssorted == value) for value in x]
                 )
-                empcdf_upper[i] = lims[1]
-                empcdf_lower[i] = lims[0]
-            empcdf = empcdf.astype(float)
-            empcdf /= float(self.obs.size)
+            else:
+                counts = np.arange(1, self.obs.size + 1)
+
+            empcdf = counts / float(self.obs.size)
+
+            if confint:
+                empcdf_lower, empcdf_upper = self.__clopperpearson(counts, confidence)
 
         plt.figure(figsize=(8, 6))
 
         if not self.discrete:
             plt.plot(x, theocdf, label=labelfitted, lw=1, linestyle="-", color="blue")
-            plt.plot(
-                obssorted,
-                empcdf,
-                label=labelempirical,
-                lw=1,
-                linestyle="-",
-                color="red",
-            )
-            if confint:
+            if not censored:
                 plt.plot(
                     obssorted,
-                    empcdf_upper,
-                    label="Upper conf. int.",
+                    empcdf,
+                    label=labelempirical,
                     lw=1,
-                    linestyle="--",
+                    linestyle="-",
                     color="red",
                 )
-                plt.plot(
-                    obssorted,
-                    empcdf_lower,
-                    label="Lower conf. int.",
-                    lw=1,
-                    linestyle="--",
-                    color="red",
-                )
+                if confint:
+                    plt.plot(
+                        obssorted,
+                        empcdf_upper,
+                        label="Upper conf. int.",
+                        lw=1,
+                        linestyle="--",
+                        color="red",
+                    )
+                    plt.plot(
+                        obssorted,
+                        empcdf_lower,
+                        label="Lower conf. int.",
+                        lw=1,
+                        linestyle="--",
+                        color="red",
+                    )
         else:
-            plt.scatter(x, empcdf, label=labelempirical, lw=1, marker="x", color="red")
-            if confint:
+            if not censored:
                 plt.scatter(
-                    x,
-                    empcdf_upper,
-                    label="Upper conf. int.",
-                    marker="_",
-                    s=100,
-                    color="red",
+                    x, empcdf, label=labelempirical, lw=1, marker="x", color="red"
                 )
-                plt.scatter(
-                    x,
-                    empcdf_lower,
-                    label="Lower conf. int.",
-                    marker="_",
-                    s=100,
-                    color="red",
-                )
+                if confint:
+                    plt.scatter(
+                        x,
+                        empcdf_upper,
+                        label="Upper conf. int.",
+                        marker="_",
+                        s=100,
+                        color="red",
+                    )
+                    plt.scatter(
+                        x,
+                        empcdf_lower,
+                        label="Lower conf. int.",
+                        marker="_",
+                        s=100,
+                        color="red",
+                    )
             plt.scatter(x, theocdf, label=labelfitted, lw=1, marker="x", color="blue")
 
         plt.xlabel(xlabel)
@@ -341,9 +366,38 @@ class fit:
         plt.grid()
         plt.savefig(filename)
 
+        # the figure is only written to file, so it is closed rather than left
+        # open for a later call to accumulate
+        plt.close()
+
     # ----------------------------------------------------------------------
     #   PRIVATE METHODS
     # ----------------------------------------------------------------------
+
+    def __clopperpearson(self, counts: np.array, confidence: float) -> tuple:
+        """
+        Returns the Clopper-Pearson interval for every count at once, the beta
+        quantiles being vectorized. The ends are set directly, the beta
+        distribution having no parameters for them.
+
+        Args:
+            counts (ndarray): Number of observations at or below each point.
+            confidence (float): Confidence level.
+
+        Returns:
+            tuple: The lower and the upper bound (ndarray).
+        """
+
+        alpha = 1.0 - confidence
+        total = self.obs.size
+
+        lower = beta.ppf(alpha / 2.0, counts, total - counts + 1)
+        upper = beta.ppf(1.0 - alpha / 2.0, counts + 1, total - counts)
+
+        lower[counts == 0] = 0.0
+        upper[counts == total] = 1.0
+
+        return lower, upper
 
     def __checkinputs(self) -> bool:
         """
@@ -361,6 +415,20 @@ class fit:
                 "Error: Observations can only be specified as a list or a NumPy array."
             )
             return False
+        if self.censoring is not None:
+            if isinstance(self.censoring, list):
+                self.censoring = np.array(self.censoring, dtype=float)
+            elif not isinstance(self.censoring, np.ndarray):
+                print(
+                    "Error: The censoring array can only be specified as a list or a NumPy array."
+                )
+                return False
+            self.censoring = np.asarray(self.censoring, dtype=float)
+            if self.censoring.shape != (self.obs.size, 2):
+                print(
+                    "Error: The censoring array must have one row per observation and two columns."
+                )
+                return False
         if not isinstance(self.nphases, int) or self.nphases < 1:
             print(
                 "Error: The number of phases can only be specified as an integer larger than 0."
@@ -373,8 +441,8 @@ class fit:
         if self.initdist is not None and (
             isinstance(self.initdist, np.ndarray) or isinstance(self.initdist, list)
         ):
-            self.initdist = np.matrix(self.initdist)
-        elif self.initdist is not None and not isinstance(self.initdist, np.matrix):
+            self.initdist = np.asarray(self.initdist, dtype=float)
+        elif self.initdist is not None:
             print(
                 "Error: The initial distribution can only be specified as a list, NumPy array, or a NumPy matrix."
             )
@@ -382,8 +450,8 @@ class fit:
         if self.initphgen is not None and (
             isinstance(self.initphgen, np.ndarray) or isinstance(self.initphgen, list)
         ):
-            self.initphgen = np.matrix(self.initphgen)
-        elif self.initphgen is not None and not isinstance(self.initphgen, np.matrix):
+            self.initphgen = np.asarray(self.initphgen, dtype=float)
+        elif self.initphgen is not None:
             print(
                 "Error: The PH generator can only be specified as a list or a NumPy matrix."
             )
@@ -392,10 +460,10 @@ class fit:
             isinstance(self.initexitrates, np.ndarray)
             or isinstance(self.initexitrates, list)
         ):
-            self.initexitrates = np.transpose(np.matrix(self.initexitrates))
-        elif self.initexitrates is not None and not isinstance(
-            self.initexitrates, np.matrix
-        ):
+            self.initexitrates = np.asarray(
+                self.initexitrates, dtype=float
+            ).reshape(-1, 1)
+        elif self.initexitrates is not None:
             print(
                 "Error: The exit rate vector can only be specified as a list, NumPy array, or a NumPy matrix."
             )
@@ -412,13 +480,11 @@ class fit:
         if not isinstance(self.itermax, float) and not isinstance(self.itermax, int):
             print("Error: The argument 'itermax' needs to be of type 'float' or 'int'.")
             return False
+        if self.fixediter is not None and not isinstance(self.fixediter, int):
+            print("Error: The argument 'fixediter' needs to be of type 'int'.")
+            return False        
         if not isinstance(self.verbose, bool):
             print("Error: The argument 'verbose' needs to be of type 'bool'.")
-            return False
-        if self.discrete and self.dtype == "general":
-            print(
-                "Error: The 'general' option is currently inactivated for discrete PH distributions."
-            )
             return False
 
         # check observations are equal to or greather than zero
@@ -445,28 +511,41 @@ class fit:
             int: 0 if successful, 1 otherwise.
         """
 
-        # set distribution type
-        if self.dtype == "general":
-            self.__general()
-        elif self.dtype == "generlang":
-            self.__generlang()
-        elif self.dtype == "hyperexp":
-            self.__hyperexp()
-        elif self.dtype == "coxian":
-            self.__coxian()
-        elif self.dtype == "gencoxian":
-            self.__gencoxian()
-        elif self.dtype != "custom":
+        # check the distribution type is one that is known
+        if self.dtype not in ("general", "generlang", "hyperexp", "coxian",
+                              "gencoxian", "custom"):
             print("Error: Unknown distribution type.")
             return 1
 
+        # The types below set the structure, that is which elements are to be
+        # non-zero, which is what the random initialization needs. They are not
+        # starting values, the generator they build having a positive diagonal,
+        # so they must not replace a start the user has supplied.
+        if self.randominit:
+            if self.dtype == "general":
+                self.__general()
+            elif self.dtype == "generlang":
+                self.__generlang()
+            elif self.dtype == "hyperexp":
+                self.__hyperexp()
+            elif self.dtype == "coxian":
+                self.__coxian()
+            elif self.dtype == "gencoxian":
+                self.__gencoxian()
+
+        # check if fixed iterations requested
+        if self.fixediter is not None and self.fixediter>0:
+            self.tolerance=-np.inf
+            self.itermax=self.fixediter
+
         # check for zeros in observations
-        obsnonzero, fraczero = self.__checkzeros()
+        obsnonzero, censoringnonzero, fraczero = self.__checkzeros()
 
         # fit parameters
         if self.discrete:
-            self.d = fitdph(
+            self.d = _fitdph(
                 obs=obsnonzero,
+                censoring=censoringnonzero,
                 initpi=self.initdist,
                 initphgen=self.initphgen,
                 initexitrates=self.initexitrates,
@@ -478,8 +557,9 @@ class fit:
             )
         else:
 
-            self.d = fitcph(
+            self.d = _fitcph(
                 obs=obsnonzero,
+                censoring=censoringnonzero,
                 initpi=self.initdist,
                 initphgen=self.initphgen,
                 initexitrates=self.initexitrates,
@@ -494,8 +574,25 @@ class fit:
         # check fitted parameters
         self.__checkfit()
 
-        # adjust for zeros in observations
-        self.d.initpi = self.d.initpi * (1 - fraczero)
+        # adjust for zeros in observations, leaving an atom of that size at
+        # zero. The fitted vector is pi; initpi is the start and is spent
+        self.d.pi = self.d.pi * (1 - fraczero)
+
+        # The atom makes the model a mixture: an observation is zero with
+        # probability p, and otherwise phase-type. Its log-likelihood is
+        # therefore the phase-type one over the kept observations, which
+        # carry a factor 1-p each, plus the zeros' own term. The estimate of
+        # p is the observed proportion, which is one more parameter.
+        self.nparam = self.d.nparam
+        self.atomloglik = 0.0
+
+        nkept = obsnonzero.size
+        nzero = self.obs.size - nkept
+
+        if nzero > 0:
+            self.atomloglik = (nzero * np.log(fraczero)
+                               + nkept * np.log(1.0 - fraczero))
+            self.nparam += 1
 
         # create object for output PH distribution
         self.dist = dist(
@@ -521,9 +618,9 @@ class fit:
             None: Initialized parameters.
         """
         
-        self.initdist = np.matrix(np.ones((1, self.nphases)))
-        self.initphgen = np.matrix(np.ones((self.nphases, self.nphases)))
-        self.initexitrates = np.matrix(np.ones((self.nphases, 1)))
+        self.initdist = np.ones((1, self.nphases))
+        self.initphgen = np.ones((self.nphases, self.nphases))
+        self.initexitrates = np.ones((self.nphases, 1))
 
     def __generlang(self) -> None:
         """
@@ -533,13 +630,13 @@ class fit:
             None: Initialized parameters.
         """
         
-        self.initdist = np.matrix(np.zeros((1, self.nphases)))
+        self.initdist = np.zeros((1, self.nphases))
         self.initdist[0, 0] = 1
 
-        self.initexitrates = np.matrix(np.zeros((self.nphases, 1)))
+        self.initexitrates = np.zeros((self.nphases, 1))
         self.initexitrates[self.nphases - 1, 0] = 1
 
-        self.initphgen = np.matrix(np.zeros((self.nphases, self.nphases)))
+        self.initphgen = np.zeros((self.nphases, self.nphases))
         for i in range(self.nphases):
             self.initphgen[i, i] = 1
             if i < (self.nphases - 1):
@@ -552,10 +649,10 @@ class fit:
         Returns:
             None: Initialized parameters.
         """
-        self.initdist = np.matrix(np.ones((1, self.nphases)))
+        self.initdist = np.ones((1, self.nphases))
 
-        self.initphgen = np.matrix(np.zeros((self.nphases, self.nphases)))
-        self.initexitrates = np.matrix(np.ones((self.nphases, 1)))
+        self.initphgen = np.zeros((self.nphases, self.nphases))
+        self.initexitrates = np.ones((self.nphases, 1))
         for i in range(self.nphases):
             self.initphgen[i, i] = 1
 
@@ -566,12 +663,12 @@ class fit:
         Returns:
             None: Initialized parameters.
         """
-        self.initdist = np.matrix(np.zeros((1, self.nphases)))
+        self.initdist = np.zeros((1, self.nphases))
         self.initdist[0, 0] = 1
 
-        self.initexitrates = np.matrix(np.ones((self.nphases, 1)))
+        self.initexitrates = np.ones((self.nphases, 1))
 
-        self.initphgen = np.matrix(np.zeros((self.nphases, self.nphases)))
+        self.initphgen = np.zeros((self.nphases, self.nphases))
         for i in range(self.nphases):
             self.initphgen[i, i] = 1
             if i < (self.nphases - 1):
@@ -584,10 +681,10 @@ class fit:
         Returns:
             None: Initialized parameters.
         """
-        self.initdist = np.matrix(np.ones((1, self.nphases)))
-        self.initexitrates = np.matrix(np.ones((self.nphases, 1)))
+        self.initdist = np.ones((1, self.nphases))
+        self.initexitrates = np.ones((self.nphases, 1))
 
-        self.initphgen = np.matrix(np.zeros((self.nphases, self.nphases)))
+        self.initphgen = np.zeros((self.nphases, self.nphases))
         for i in range(self.nphases):
             self.initphgen[i, i] = 1
             if i < (self.nphases - 1):
@@ -595,13 +692,22 @@ class fit:
 
     def __checkzeros(self):
         """
-        Detect zero observations and compute their empirical proportion.
+        Drop the observations at zero and compute their empirical proportion.
+        A censored row is kept whatever its value in obs, that value being
+        ignored, and the censoring array is filtered alongside so the rows stay
+        matched.
 
         Returns:
-            tuple: (nonzero observations, proportion of zeros)
+            tuple: (observations, censoring or None, proportion dropped)
         """
-        nz = np.nonzero(self.obs)[0]
-        return self.obs[nz], 1 - (nz.size / self.obs.size)
+        keep = self.obs != 0
+
+        if self.censoring is not None:
+            keep = keep | ~np.all(np.isnan(self.censoring), axis=1)
+            return (self.obs[keep], self.censoring[keep],
+                    1 - (np.count_nonzero(keep) / self.obs.size))
+
+        return self.obs[keep], None, 1 - (np.count_nonzero(keep) / self.obs.size)
 
     def __checkfit(self) -> None:
         """
