@@ -1,0 +1,47 @@
+[build-system]
+requires = ["setuptools>=59.6.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[project]
+name = "phasedist"
+version = "0.1.6"
+dependencies = [
+  "numpy>=1.24.0",
+  "scipy>=1.10.0",
+  "matplotlib>=3.7.0"
+]
+authors = [
+  { name="Anders Reenberg Andersen", email="andersra@live.dk" },
+]
+description = "Fit continuous and discrete phase-type distributions"
+readme = "README.md"
+requires-python = ">=3.10"
+keywords = ["phase-type", "statistics", "distribution fitting", "EM algorithm", "Markov chain", "survival analysis"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Topic :: Scientific/Engineering :: Mathematics"
+]
+
+[project.optional-dependencies]
+test = [
+  "statsmodels>=0.14.0"
+]
+
+[project.urls]
+Homepage = "https://github.com/areenberg/phasedist"
+Documentation = "https://github.com/areenberg/phasedist/wiki"
+Issues = "https://github.com/areenberg/phasedist/issues"

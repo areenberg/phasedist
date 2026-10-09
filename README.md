@@ -1,17 +1,25 @@
+<img src="https://raw.githubusercontent.com/areenberg/phasedist/main/images/phasedist_fit.gif" alt="A phase-type distribution being fitted to bimodal data" width="700">
 
-<img src="https://github.com/areenberg/phasedist/blob/main/images/PhaseDist_logo.png" alt="Example" width="300">
+*A 12-phase continuous phase-type distribution fitted to 2000 bimodal observations using PhaseDist.*
+
+[![PyPI](https://img.shields.io/pypi/v/phasedist?logo=pypi&logoColor=white)](https://pypi.org/project/phasedist/)
+[![Python](https://img.shields.io/pypi/pyversions/phasedist?logo=python&logoColor=white)](https://pypi.org/project/phasedist/)
+[![Tests](https://github.com/areenberg/phasedist/actions/workflows/tests.yml/badge.svg)](https://github.com/areenberg/phasedist/actions/workflows/tests.yml)
+[![License](https://img.shields.io/badge/license-MIT-blue)](https://github.com/areenberg/phasedist/blob/main/LICENSE)
 
 PhaseDist is a Python package for fitting continuous and discrete phase-type distributions.
 
 ## Features
 
 * Fit continuous and discrete phase-type distributions using EM algorithms.
+* Fit to uncensored or censored observations.
+* Impose a structure on the fitted distribution, such as *Coxian*, *generalized Erlang*, or *hyper-exponential*.
 * Use built-in methods to check the fitted distribution.
 * Compute metrics, such as the mean, density, and quantile function.
 * Simulate observations from a phase-type distribution.
 * Approximate another distribution, e.g. a log-normal distribution, using a phase-type distribution.
 
-# Installation
+## Installation
 
 Install directly from PyPI with:
 
@@ -19,7 +27,7 @@ Install directly from PyPI with:
 pip install phasedist
 ```
 
-# Quick start guide
+## Quick start guide
 
 The following shows how to use PhaseDist for fitting a continuous phase-type distribution from observed data. 
 
@@ -51,7 +59,7 @@ fit = ph.fit(obs=obs,
 fit.plot()
 ```
 
-<img src="https://github.com/areenberg/phasedist/blob/main/images/quickstart_example_CDF.png" alt="Example" width="500">
+<img src="https://raw.githubusercontent.com/areenberg/phasedist/main/images/quickstart_example_CDF.png" alt="Empirical and fitted CDFs" width="500">
 
 (4) Store the fitted distribution in the object `phdist` and compute the mean, variance, and 95% quantile.
 
@@ -62,14 +70,18 @@ print(phdist.getmean())
 #1.455814
 
 print(phdist.getvar())
-#0.706466
+#0.706465
 
 print(phdist.getquantile(p=0.95))
-#3.055169
+#3.055168
 ```
 
 Find the complete example in the file `quickstart_example.py`.
 
-# Documentation
+## Documentation
 
 The documentation can be found in the [wiki for PhaseDist](https://github.com/areenberg/phasedist/wiki).
+
+## License
+
+PhaseDist is released under the [MIT License](https://github.com/areenberg/phasedist/blob/main/LICENSE).
