@@ -1,4 +1,4 @@
-<img src="https://raw.githubusercontent.com/areenberg/phasedist/main/images/phasedist_fit.gif" alt="A phase-type distribution being fitted to bimodal data" width="700">
+<img src="https://github.com/areenberg/phasedist/blob/development/images/phasedist_fit.gif" alt="A phase-type distribution being fitted to bimodal data" width="700">
 
 *A 12-phase continuous phase-type distribution fitted to 2000 bimodal observations using PhaseDist.*
 
