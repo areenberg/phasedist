@@ -58,7 +58,7 @@ fit = ph.fit(obs=obs,
 fit.plot()
 ```
 
-<img src="https://raw.githubusercontent.com/areenberg/phasedist/main/images/quickstart_example_CDF.png" alt="Empirical and fitted CDFs" width="500">
+<img src="https://github.com/areenberg/phasedist/blob/development/images/quickstart_example_CDF.png" alt="Empirical and fitted CDFs" width="500">
 
 (4) Store the fitted distribution in the object `phdist` and compute the mean, variance, and 95% quantile.
 
