@@ -4,7 +4,6 @@
 
 [![PyPI](https://img.shields.io/pypi/v/phasedist?logo=pypi&logoColor=white)](https://pypi.org/project/phasedist/)
 [![Python](https://img.shields.io/pypi/pyversions/phasedist?logo=python&logoColor=white)](https://pypi.org/project/phasedist/)
-[![Tests](https://github.com/areenberg/phasedist/actions/workflows/tests.yml/badge.svg)](https://github.com/areenberg/phasedist/actions/workflows/tests.yml)
 [![License](https://img.shields.io/badge/license-MIT-blue)](https://github.com/areenberg/phasedist/blob/main/LICENSE)
 
 PhaseDist is a Python package for fitting continuous and discrete phase-type distributions.
@@ -13,7 +12,7 @@ PhaseDist is a Python package for fitting continuous and discrete phase-type dis
 
 * Fit continuous and discrete phase-type distributions using EM algorithms.
 * Fit to uncensored or censored observations.
-* Impose a structure on the fitted distribution, such as *Coxian*, *generalized Erlang*, or *hyper-exponential*.
+* Impose a special case on the fitted distribution, such as the *Coxian*, *generalized Erlang*, or *hyper-exponential* distribution.
 * Use built-in methods to check the fitted distribution.
 * Compute metrics, such as the mean, density, and quantile function.
 * Simulate observations from a phase-type distribution.
