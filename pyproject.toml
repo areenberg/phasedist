@@ -15,7 +15,7 @@ where = ["src"]
 
 [project]
 name = "phasedist"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
   "numpy>=1.24.0",
   "scipy>=1.10.0",
