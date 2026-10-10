@@ -70,7 +70,7 @@ print(phdist.getquantile(p=0.95))
 #3.055168
 ```
 
-Find the complete example in the file `quickstart_example.py`.
+Find the complete example in the file `examples/quickstart_example.py`.
 
 ## Documentation
 
