@@ -25,8 +25,8 @@ class _regformula:
     being the scale of the phase-type generator. Repeated terms are kept once.
     Every interaction must come with all its lower-order terms (x:z needs x
     and z), which keeps the coding of categorical variables unambiguous.
-    Transformations, random slopes and more than one random term are refused
-    with a message saying so.
+    Transformations, random slopes and more than one random intercept are
+    refused with a message saying so.
 
     The terms are returned as tuples of variable names, main effects first,
     then two-way interactions, and so on.
@@ -102,7 +102,8 @@ class _regformula:
             raise ValueError("The formula has unbalanced or nested parentheses.")
 
         if len(groups) > 1:
-            raise ValueError("Only one random-intercept term is supported, but the formula has %d." % len(groups))
+            raise ValueError("fitreg supports one random intercept, but the formula has %d: %s. Keep one of them."
+                             % (len(groups), ", ".join("(1|%s)" % group for group in groups)))
 
         # the fixed-effect terms, each a tuple of variable names
         order = []          # variables in order of first appearance

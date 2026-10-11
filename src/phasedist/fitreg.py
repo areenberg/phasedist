@@ -53,6 +53,7 @@ class fitreg:
         tolerance: float = 1e-5,
         itermax: int = 100000,
         accelerate: bool = True,
+        staged: bool = False,
         verbose: bool = False,
     ) -> None:
         """
@@ -90,6 +91,14 @@ class fitreg:
                 Maximum number of iterations of each run to convergence.
             accelerate (bool, default=True):
                 Whether to accelerate the iterations by SQUAREM.
+            staged (bool, default=False):
+                Whether to fit in stages: for every start, first the
+                phase-type generator with the coefficients held at their
+                quasi-likelihood start, then the coefficients with the
+                generator held, then everything together; with a random
+                intercept, first sigma and the coefficients with the generator
+                held, then everything. The estimates are the same maximum
+                likelihood estimates; only the path to them changes.
             verbose (bool, default=False):
                 If True, prints progress output during fitting.
 
@@ -110,6 +119,7 @@ class fitreg:
         self.tolerance = tolerance
         self.itermax = itermax
         self.accelerate = accelerate
+        self.staged = staged
         self.verbose = verbose
 
         # checking and fitting
@@ -524,6 +534,9 @@ class fitreg:
         if not isinstance(self.accelerate, bool):
             print("Error: The argument 'accelerate' needs to be of type 'bool'.")
             return False
+        if not isinstance(self.staged, bool):
+            print("Error: The argument 'staged' needs to be of type 'bool'.")
+            return False
         if not isinstance(self.verbose, bool):
             print("Error: The argument 'verbose' needs to be of type 'bool'.")
             return False
@@ -618,6 +631,7 @@ class fitreg:
             tolerance=self.tolerance,
             itermax=int(self.itermax),
             accelerate=self.accelerate,
+            staged=self.staged,
             verbose=self.verbose,
         )
         self.d.fit()

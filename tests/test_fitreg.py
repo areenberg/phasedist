@@ -69,6 +69,8 @@ Sub-tests:
              intervals, the p-values and the term tests are Wald tests (the
              latter checked against the exact covariance of case 1), and
              verbose decides whether anything is printed.
+    Case 12: The staged fit reaches the exact optima of cases 1 and 2, and
+             the optimum of the plain three-phase fit of case 4.
 
 References:
     Bladt, M. (2022). Phase-type distributions for claim severity regression
@@ -686,10 +688,23 @@ infeasible = {
     "one quadrature node": dict(formula="y ~ x + (1|group)", data=DATARANDOM, quadnodes=1),
     "an integer tolerance": dict(formula="y ~ x", data=DATA, tolerance=1),
     "zero phases": dict(formula="y ~ x", data=DATA, nphases=0),
+    "a non-boolean staged": dict(formula="y ~ x", data=DATA, staged=1),
 }
 for name, arguments in infeasible.items():
     if not terminates(**arguments):
         sys.exit("Validation test failed at case 10: %s did not terminate." % name)
+
+# two random intercepts: refused, with a message saying that one is supported
+buffer = io.StringIO()
+with contextlib.redirect_stdout(buffer):
+    try:
+        fitreg(formula="y ~ x + (1|group) + (1|g)", data=DATARANDOM.assign(g=categorical(np.arange(groups.size) % 7)))
+        sys.exit("Validation test failed at case 10: two random intercepts were accepted.")
+    except SystemExit as stop:
+        if stop.code != 1:
+            raise
+if "supports one random intercept" not in buffer.getvalue() or "(1|group), (1|g)" not in buffer.getvalue():
+    sys.exit("Validation test failed at case 10: the refusal of two random intercepts does not say that one is supported.")
 
 # arguments of earlier versions are gone, so passing one is an error
 removed = {"categorical": ["g"], "reference": {"g": "B"}, "inhomogeneity": "weibull"}
@@ -764,6 +779,29 @@ _, printed, _ = quietfit(formula="y ~ x + g", data=DATAEXACT, verbose=False, **E
 _, printedverbose, _ = quietfit(formula="y ~ x + g", data=DATAEXACT, verbose=True, **EXACT)
 if printed != "" or printedverbose == "":
     sys.exit("Validation test failed at case 11: verbose does not decide whether anything is printed while fitting.")
+
+
+# ------------------------------------------------------------------
+# CASE 12: The staged fit
+# ------------------------------------------------------------------
+
+# the staged fit changes the path, not the estimator: with one phase it
+# reaches the same exact optima as the plain fit (cases 1 and 2)
+staged, _, _ = quietfit(formula=FORMULAEXACT, data=DATAEXACT, staged=True, **EXACT)
+if np.max(np.abs(np.array([staged.getcoef()[name] for name in HANDNAMES]) + glm.params[1:])) > TOLEXACT:
+    sys.exit("Validation test failed at case 12: the staged fit does not reach the Gamma GLM coefficients.")
+staged, _, _ = quietfit(formula="y ~ x + (1|u)", data=DATARANDOMEXACT, quadnodes=15, staged=True, **EXACT)
+fitted = np.array([np.log(-staged.getphasegen()[0, 0]), staged.getcoef()["x"], np.log(staged.getsigma())])
+if np.max(np.abs(fitted - oracle.x)) > TOLOPT:
+    sys.exit("Validation test failed at case 12: the staged random-intercept fit differs from the quadrature maximum by %.3e." % np.max(np.abs(fitted - oracle.x)))
+# and with three phases it ends at the optimum of the plain fit of case 4
+staged, _, _ = quietfit(formula="y ~ x + g", data=DATA, staged=True, **COMMON)
+# (both stop within about TOLFIT of the maximum by different paths, so they
+# may differ by twice that in the log-likelihood and by a small fraction of a
+# standard error in the coefficients)
+if abs(staged.getloglik() - model.getloglik()) > 2.0 * TOLFIT or \
+        max(abs(staged.getcoef()[k] - coef[k]) / model.getstderr()[k] for k in coef) > 0.1:
+    sys.exit("Validation test failed at case 12: the staged fit ends at %.6f, the plain fit at %.6f." % (staged.getloglik(), model.getloglik()))
 
 
 print("fitreg: All tests passed.")
