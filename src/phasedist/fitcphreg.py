@@ -73,6 +73,11 @@ class _fitcphreg:
     # and the number of iterations a start may stay so before it is abandoned
     UNUSEDSHARE = 1e-6
     UNUSEDPATIENCE = 20
+    # a start is given up once, after at least HOPELESSITER iterations, even
+    # its projected limit lies more than HOPELESSGAP below the best start so
+    # far
+    HOPELESSITER = 1000
+    HOPELESSGAP = 1.0
 
     # the node schedule of the random intercept
     MINADAPT = 30
@@ -99,12 +104,11 @@ class _fitcphreg:
         initphgen: np.array = None,
         initexitrates: np.array = None,
         quadnodes: int = 7,
-        restarts: int = 5,
+        restarts: int = 10,
         seed: int = None,
         tolerance: float = 1e-5,
         itermax: int = 100000,
         accelerate: bool = True,
-        staged: bool = False,
         verbose: bool = False,
     ) -> None:
         """
@@ -122,19 +126,13 @@ class _fitcphreg:
             initphgen (ndarray): Structure of the phase-type generator.
             initexitrates (ndarray): Structure of the exit-rate vector.
             quadnodes (int, default=7): Quadrature nodes per group.
-            restarts (int, default=5): Number of random starts.
+            restarts (int, default=10): Number of random starts.
             seed (int): Random seed for reproducibility.
             tolerance (float, default=1e-5): Convergence tolerance.
             itermax (int, default=100000): Maximum number of iterations of each
                 run to convergence.
             accelerate (bool, default=True): Whether to accelerate the
                 iterations on a fixed objective by SQUAREM.
-            staged (bool, default=False): Whether to fit every start in
-                stages: the generator with the coefficients held at their
-                quasi-likelihood start, then the coefficients with the
-                generator held, then everything together; and the random
-                intercept first with the generator held. The estimator is the
-                same; only the path to it changes.
             verbose (bool, default=False): Whether to print intermediate
                 fitting information.
         """
@@ -152,7 +150,6 @@ class _fitcphreg:
         self.tolerance = tolerance
         self.itermax = itermax
         self.accelerate = accelerate
-        self.staged = staged
         self.verbose = verbose
 
         self.__initialize()
@@ -176,14 +173,7 @@ class _fitcphreg:
         self.__fitfixed()
 
         if self.groups is not None and not self.failed:
-            if self.staged:
-                # sigma and the coefficients with the generator held, then
-                # everything from there
-                self.__fitrandom(lock="generator")
-                if not (self.failed or self.boundary):
-                    self.__fitrandom(resume=True)
-            else:
-                self.__fitrandom()
+            self.__fitrandom()
 
         if not self.failed:
             self.__finalize()
@@ -228,10 +218,6 @@ class _fitcphreg:
         self.boundaryscore = None
         self.readapts = 0
         self.iterations = 0
-        # which block of parameters an iteration leaves unchanged: None,
-        # "beta" or "generator" (the staged fit)
-        self.__lock = None
-        self.__lastmodes = None
         self.loglikelihood = -np.inf
 
         return None
@@ -737,16 +723,14 @@ class _fitcphreg:
         e = self.__weigh(s, e, np.ones(self.n))
 
         new = dict(s)
-        if self.__lock != "generator":
-            new["pi"], new["T"], new["t"] = self.mstep.run(bi=e["bi"], zi=e["zi"],
-                                                           ni=e["ni"], nij=e["nij"])
+        new["pi"], new["T"], new["t"] = self.mstep.run(bi=e["bi"], zi=e["zi"],
+                                                       ni=e["ni"], nij=e["nij"])
 
         # the exposure is the expected occupation on the time axis of y,
         # weighted by the new rates: E(H_k) = E(Z_k) / exp(eta), Z being on
         # the time axis of u
-        if self.__lock != "beta":
-            exposure = (e["zrow"] @ (-np.diag(new["T"]))) / np.exp(eta)
-            new["beta"] = self.__betastep(self.X, e["jumps"], exposure, s["beta"], 0.0)
+        exposure = (e["zrow"] @ (-np.diag(new["T"]))) / np.exp(eta)
+        new["beta"] = self.__betastep(self.X, e["jumps"], exposure, s["beta"], 0.0)
 
         return loglik, new
 
@@ -932,7 +916,7 @@ class _fitcphreg:
         return None
 
     def __runfixed(self, s: dict, maxiter: int, final: bool, abandon: bool = False,
-                   lock: str = None) -> tuple:
+                   target: float = None) -> tuple:
         """
         Runs the fixed-effects ECM from s, for at most maxiter iterations or
         until the stopping rule is satisfied.
@@ -950,33 +934,19 @@ class _fitcphreg:
             final (bool): Whether this is a run to convergence, which reports
                 on reaching maxiter.
             abandon (bool, default=False): Whether to stop a degenerate run.
-            lock (str, optional): "beta" or "generator" to hold that block
-                at its value in s; None to update everything.
+            target (float, optional): The log-likelihood of the best start so
+                far. A run whose projected limit, the log-likelihood plus the
+                stopping rule's estimate of the remaining gain, lies more than
+                HOPELESSGAP below it after HOPELESSITER iterations is stopped
+                as inferior: it cannot become the best start. In one data set
+                a start crawled for more than 22,000 iterations two units below
+                the best, gaining 3e-9 per iteration.
 
         Returns:
             tuple: The parameters (dict), their log-likelihood (float), the
-                status ("converged", "itermax", "degenerate" or "failed") and
+                status ("converged", "itermax", "degenerate", "inferior" or
+                "failed") and
                 the number of iterations (int).
-        """
-
-        self.__lock = lock
-        try:
-            return self.__runfixedloop(s, maxiter, final, abandon)
-        finally:
-            self.__lock = None
-
-    def __runfixedloop(self, s: dict, maxiter: int, final: bool, abandon: bool) -> tuple:
-        """
-        The loop of __runfixed, with the lock already set.
-
-        Args:
-            s (dict): Starting parameters.
-            maxiter (int): Largest number of iterations.
-            final (bool): Whether this is a run to convergence.
-            abandon (bool): Whether to stop a degenerate run.
-
-        Returns:
-            tuple: As __runfixed.
         """
 
         rule = _stoprule(tolerance=self.tolerance)
@@ -1018,6 +988,11 @@ class _fitcphreg:
                 status = "converged"
                 break
 
+            if (target is not None and iteration >= self.HOPELESSITER
+                    and np.isfinite(rule.eps) and loglik + rule.eps < target - self.HOPELESSGAP):
+                status = "inferior"
+                break
+
         if final and status == "itermax":
             self.__itermaxwarning(rule, iteration)
 
@@ -1056,10 +1031,9 @@ class _fitcphreg:
         keeps the best fit without an unused phase. Every start is run to the
         end because the order of the starts after a short run need not be
         their order at convergence; a start that becomes degenerate is
-        abandoned. If every start does, the best of them is run to convergence
-        and kept with a warning. With staged, each start first fits the
-        generator with the coefficients held at their start, then the
-        coefficients with the generator held, before everything is freed.
+        abandoned, and so is one that can no longer become the best (see
+        __runfixed). If every start ends degenerate, the best of them is run to
+        convergence and kept with a warning.
 
         Args:
             None
@@ -1073,31 +1047,29 @@ class _fitcphreg:
         self.startlogliks = []
         self.startiterations = []
         self.startseconds = []
+        # per start: "converged", "itermax", "degenerate" (an unused phase),
+        # "inferior" (given up below the best start) or "failed"
+        self.startstatus = []
 
         for number, start in enumerate(self.__startvalues()):
             began = time.perf_counter()
-            s, status, iterations = start, None, 0
-            if self.staged:
-                # the generator for the quasi-likelihood coefficients, then
-                # the coefficients for that generator
-                for lock in ("beta", "generator"):
-                    s, loglik, status, more = self.__runfixed(s, self.itermax, final=False,
-                                                              abandon=True, lock=lock)
-                    iterations += more
-                    if status in ("failed", "degenerate"):
-                        break
-            if status not in ("failed", "degenerate"):
-                s, loglik, status, more = self.__runfixed(s, self.itermax, final=True,
-                                                          abandon=True)
-                iterations += more
+            s, loglik, status, iterations = self.__runfixed(
+                start, self.itermax, final=True, abandon=True,
+                target=None if best is None else best[1])
             self.startlogliks.append(loglik)
             self.startiterations.append(iterations)
             self.startseconds.append(time.perf_counter() - began)
-            if self.verbose:
-                print("start", number + 1, ": loglik =", loglik, " status =", status)
+            unused = status == "degenerate" or (status != "failed" and np.isfinite(loglik)
+                                                 and self.__unused(s))
             if status == "failed" or not np.isfinite(loglik):
+                self.startstatus.append("failed")
+            else:
+                self.startstatus.append("degenerate" if unused else status)
+            if self.verbose:
+                print("start", number + 1, ": loglik =", loglik, " status =", self.startstatus[-1])
+            if status in ("failed", "inferior") or not np.isfinite(loglik):
                 continue
-            if status == "degenerate" or self.__unused(s):
+            if unused:
                 if fallback is None or loglik > fallback[1]:
                     fallback = (s, loglik, status, iterations)
                 continue
@@ -1249,14 +1221,12 @@ class _fitcphreg:
         e = self.__weigh(s, e, w)
 
         new = dict(s)
-        if self.__lock != "generator":
-            new["pi"], new["T"], new["t"] = self.mstep.run(bi=e["bi"], zi=e["zi"],
-                                                           ni=e["ni"], nij=e["nij"])
+        new["pi"], new["T"], new["t"] = self.mstep.run(bi=e["bi"], zi=e["zi"],
+                                                       ni=e["ni"], nij=e["nij"])
 
-        if self.__lock != "beta":
-            exposure = w * (e["zrow"] @ (-np.diag(new["T"]))) / np.exp(eta.ravel())
-            new["beta"] = self.__betastep(self.X[self.rowindex], w * e["jumps"], exposure,
-                                          s["beta"], nodesofrows.ravel())
+        exposure = w * (e["zrow"] @ (-np.diag(new["T"]))) / np.exp(eta.ravel())
+        new["beta"] = self.__betastep(self.X[self.rowindex], w * e["jumps"], exposure,
+                                      s["beta"], nodesofrows.ravel())
 
         new["sigma"] = float(np.sqrt(np.sum(weights * nodes ** 2) / self.ngroups))
 
@@ -1331,7 +1301,7 @@ class _fitcphreg:
 
         return None
 
-    def __fitrandom(self, lock: str = None, resume: bool = False) -> None:
+    def __fitrandom(self) -> None:
         """
         Fits the random-intercept model from the fixed-effects fit. The nodes
         are adapted for at least MINADAPT iterations and until the parameters
@@ -1343,28 +1313,7 @@ class _fitcphreg:
         one, the run starting from a fit that has passed the full block.
 
         Args:
-            lock (str, optional): "generator" to hold the phase-type
-                representation at its value; None to update everything.
-            resume (bool, default=False): Whether to continue from the state
-                of an earlier run, its sigma and modes included, rather than
-                from the fixed-effects fit.
-
-        Returns:
             None
-        """
-
-        self.__lock = lock
-        try:
-            return self.__fitrandomloop(resume)
-        finally:
-            self.__lock = None
-
-    def __fitrandomloop(self, resume: bool) -> None:
-        """
-        The loop of __fitrandom, with the lock already set.
-
-        Args:
-            resume (bool): As __fitrandom.
 
         Returns:
             None
@@ -1372,18 +1321,16 @@ class _fitcphreg:
 
         s = dict(self.state)
 
-        if resume:
-            modes = np.array(self.__lastmodes)
-        else:
-            # sigma = 0 is the fixed-effects fit; where the likelihood does
-            # not increase away from it, that is the estimate, and the ECM
-            # below would only crawl towards it (design note, Section 6.6)
-            self.boundaryscore = self.__boundaryscore(s)
-            if not self.boundaryscore > 0.0:
-                self.__atboundary(s, self.converged)
-                return None
-            s["sigma"] = float(np.sqrt(0.1))
-            modes = np.zeros(self.ngroups)
+        # sigma = 0 is the fixed-effects fit; where the likelihood does not
+        # increase away from it, that is the estimate, and the ECM below would
+        # only crawl towards it (design note, Section 6.6)
+        self.boundaryscore = self.__boundaryscore(s)
+        if not self.boundaryscore > 0.0:
+            self.__atboundary(s, self.converged)
+            return None
+
+        s["sigma"] = float(np.sqrt(0.1))
+        modes = np.zeros(self.ngroups)
 
         rule = _stoprule(tolerance=self.tolerance)
         adapting = True
@@ -1472,8 +1419,7 @@ class _fitcphreg:
         self.state = s
         self.converged = status == "converged"
         self.iterations += iteration
-        self.readapts += readapts
-        self.__lastmodes = modes
+        self.readapts = readapts
 
         return None
 

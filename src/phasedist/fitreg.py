@@ -48,12 +48,11 @@ class fitreg:
         nphases: int = 2,
         dtype: str = "coxian",
         quadnodes: int = 7,
-        restarts: int = 5,
+        restarts: int = 10,
         seed: int = None,
         tolerance: float = 1e-5,
         itermax: int = 100000,
         accelerate: bool = True,
-        staged: bool = False,
         verbose: bool = False,
     ) -> None:
         """
@@ -78,10 +77,16 @@ class fitreg:
             quadnodes (int, default=7):
                 Adaptive Gauss-Hermite nodes per group for the random
                 intercept, at least 2.
-            restarts (int, default=5):
-                Number of random starts, each run to convergence; the Coxian,
-                generalized Coxian and generalized Erlang structures also get a
-                deterministic start.
+            restarts (int, default=10):
+                Number of random starts; the Coxian, generalized Coxian and
+                generalized Erlang structures also get a deterministic start.
+                Each start is run to convergence, unless it becomes degenerate
+                or can no longer catch up with the best start so far. The
+                likelihood often has several local maxima: on 44 simulated
+                data sets of 400 observations, the best of 16 starts was
+                reached with restarts=1 in 30 of them, restarts=5 in 41 and
+                restarts=10 in 42. More starts lower the risk of a local
+                maximum at a cost in time that grows with their number.
             seed (int, optional):
                 Random seed.
             tolerance (float, default=1e-5):
@@ -91,14 +96,6 @@ class fitreg:
                 Maximum number of iterations of each run to convergence.
             accelerate (bool, default=True):
                 Whether to accelerate the iterations by SQUAREM.
-            staged (bool, default=False):
-                Whether to fit in stages: for every start, first the
-                phase-type generator with the coefficients held at their
-                quasi-likelihood start, then the coefficients with the
-                generator held, then everything together; with a random
-                intercept, first sigma and the coefficients with the generator
-                held, then everything. The estimates are the same maximum
-                likelihood estimates; only the path to them changes.
             verbose (bool, default=False):
                 If True, prints progress output during fitting.
 
@@ -119,7 +116,6 @@ class fitreg:
         self.tolerance = tolerance
         self.itermax = itermax
         self.accelerate = accelerate
-        self.staged = staged
         self.verbose = verbose
 
         # checking and fitting
@@ -534,9 +530,6 @@ class fitreg:
         if not isinstance(self.accelerate, bool):
             print("Error: The argument 'accelerate' needs to be of type 'bool'.")
             return False
-        if not isinstance(self.staged, bool):
-            print("Error: The argument 'staged' needs to be of type 'bool'.")
-            return False
         if not isinstance(self.verbose, bool):
             print("Error: The argument 'verbose' needs to be of type 'bool'.")
             return False
@@ -631,7 +624,6 @@ class fitreg:
             tolerance=self.tolerance,
             itermax=int(self.itermax),
             accelerate=self.accelerate,
-            staged=self.staged,
             verbose=self.verbose,
         )
         self.d.fit()
