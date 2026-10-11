@@ -1,5 +1,6 @@
 from phasedist.dist import dist
 from phasedist.fit import fit
+from phasedist.fitreg import fitreg
 from phasedist.fitcph2dist import fitcph2dist
 from phasedist.ecph import ecph
 from phasedist.edph import edph

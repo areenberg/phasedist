@@ -19,7 +19,8 @@ version = "0.2.1"
 dependencies = [
   "numpy>=1.24.0",
   "scipy>=1.10.0",
-  "matplotlib>=3.7.0"
+  "matplotlib>=3.7.0",
+  "pandas>=1.5.0"
 ]
 authors = [
   { name="Anders Reenberg Andersen", email="andersra@live.dk" },
