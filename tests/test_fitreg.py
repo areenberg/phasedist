@@ -69,6 +69,11 @@ Sub-tests:
              intervals, the p-values and the term tests are Wald tests (the
              latter checked against the exact covariance of case 1), and
              verbose decides whether anything is printed.
+    Case 12: Observations at zero are a point mass, as in fit: its
+             probability is the share of zeros, the regression is the fit to
+             the positive observations, and the log-likelihood, parameter
+             count, BIC, initial distribution, CDF, density and summary
+             include the point mass; with and without a random intercept.
 
 References:
     Bladt, M. (2022). Phase-type distributions for claim severity regression
@@ -166,7 +171,7 @@ EXACTSIGMA = 0.8
 
 # Every public method of fitreg. Checked against the class below, so that a
 # method added later cannot go untested unnoticed.
-COVEREDMETHODS = {"getcoef", "getstderr", "getconfint", "getpvalue", "getwaldtest", "getsigma",
+COVEREDMETHODS = {"getcoef", "getstderr", "getconfint", "getpvalue", "getwaldtest", "getsigma", "getzeroprob",
                   "getranef", "getinitdist", "getphasegen", "getexitrates",
                   "getloglik", "getaic", "getbic", "getdist", "getdensity",
                   "getcumprob", "summary", "plot"}
@@ -678,7 +683,8 @@ infeasible = {
     "no data": dict(formula="y ~ x"),
     "a dictionary as data": dict(formula="y ~ x", data={"y": y, "x": x}),
     "an unknown variable": dict(formula="y ~ w", data=DATA),
-    "a non-positive response": dict(formula="y ~ x", data=DATA.assign(y=DATA["y"] - DATA["y"].max())),
+    "a negative response": dict(formula="y ~ x", data=DATA.assign(y=DATA["y"] - DATA["y"].median())),
+    "only one positive response": dict(formula="y ~ x", data=DATA.assign(y=np.where(np.arange(NOBS) == 3, 1.0, 0.0))),
     "a missing value": dict(formula="y ~ x", data=DATA.assign(x=np.where(np.arange(NOBS) == 3, np.nan, x))),
     "a missing level": dict(formula="y ~ g", data=DATA.assign(g=DATA["g"].where(np.arange(NOBS) != 3))),
     "an empty interaction cell": dict(formula="y ~ g*k", data=DATA.assign(k=categorical(np.where(g == "A", "r", "s")))),
@@ -776,6 +782,58 @@ _, printed, _ = quietfit(formula="y ~ x + g", data=DATAEXACT, verbose=False, **E
 _, printedverbose, _ = quietfit(formula="y ~ x + g", data=DATAEXACT, verbose=True, **EXACT)
 if printed != "" or printedverbose == "":
     sys.exit("Validation test failed at case 11: verbose does not decide whether anything is printed while fitting.")
+
+
+# ------------------------------------------------------------------
+# CASE 12: Observations at zero
+# ------------------------------------------------------------------
+
+# The model is the mixture p (zero) + (1 - p) (phase-type regression), whose
+# likelihood factorizes: p is the share of zeros, the rest is the fit to the
+# positive observations, and the zeros add n0 log p + n+ log(1 - p)
+iszero = np.arange(NEXACT) % 10 == 3
+withzeros = DATAEXACT.assign(y=np.where(iszero, 0.0, DATAEXACT["y"]))
+modelzeros, _, _ = quietfit(formula=FORMULAEXACT, data=withzeros, **EXACT)
+modelpositive, _, _ = quietfit(formula=FORMULAEXACT, data=withzeros[~iszero], **EXACT)
+p0 = iszero.mean()
+n0, npositive = int(iszero.sum()), int((~iszero).sum())
+
+if modelzeros.getzeroprob() != p0 or modelexact.getzeroprob() != 0.0:
+    sys.exit("Validation test failed at case 12: the probability of a zero is %s, not the share of zeros %s." % (modelzeros.getzeroprob(), p0))
+if max(abs(modelzeros.getcoef()[k] - modelpositive.getcoef()[k]) for k in HANDNAMES) > TOL or \
+        max(abs(modelzeros.getstderr()[k] - modelpositive.getstderr()[k]) for k in HANDNAMES) > TOL:
+    sys.exit("Validation test failed at case 12: the regression is not the fit to the positive observations.")
+loglik = modelpositive.getloglik() + n0 * np.log(p0) + npositive * np.log(1.0 - p0)
+if abs(modelzeros.getloglik() - loglik) > TOL * abs(loglik):
+    sys.exit("Validation test failed at case 12: the log-likelihood %.10f leaves out the point mass (%.10f)." % (modelzeros.getloglik(), loglik))
+k = modelpositive.nparam + 1
+if modelzeros.nparam != k or abs(modelzeros.getaic() - (-2.0 * loglik + 2.0 * k)) > TOL * abs(loglik) or \
+        abs(modelzeros.getbic() - (-2.0 * loglik + k * np.log(NEXACT))) > TOL * abs(loglik):
+    sys.exit("Validation test failed at case 12: the point mass is not counted as a parameter, or BIC does not use every observation.")
+if abs(np.sum(modelzeros.getinitdist()) - (1.0 - p0)) > TOL:
+    sys.exit("Validation test failed at case 12: the initial distribution does not leave the point mass at zero.")
+point = {"x": 0.5, "w": 0.2, "g": "b", "h": "q"}
+if modelzeros.getcumprob(-1.0, point) != 0.0 or abs(modelzeros.getcumprob(0.0, point) - p0) > TOL:
+    sys.exit("Validation test failed at case 12: the CDF is not 0 below zero and p at zero.")
+for v in (0.2, 1.0, 4.0):
+    if abs(modelzeros.getcumprob(v, point) - (p0 + (1.0 - p0) * modelpositive.getcumprob(v, point))) > TOL or \
+            abs(modelzeros.getdensity(v, point) - (1.0 - p0) * modelpositive.getdensity(v, point)) > TOL:
+        sys.exit("Validation test failed at case 12: the CDF or density is not the mixture with the point mass.")
+buffer = io.StringIO()
+with contextlib.redirect_stdout(buffer):
+    modelzeros.summary()
+if "Point mass at zero" not in buffer.getvalue() or "(%d at zero)" % n0 not in buffer.getvalue():
+    sys.exit("Validation test failed at case 12: summary does not report the point mass at zero.")
+
+# the same with a random intercept
+iszero = np.arange(groupsexact.size) % 9 == 4
+randomzeros = DATARANDOMEXACT.assign(y=np.where(iszero, 0.0, DATARANDOMEXACT["y"]))
+modelzeros, _, _ = quietfit(formula="y ~ x + (1|u)", data=randomzeros, **EXACT)
+modelpositive, _, _ = quietfit(formula="y ~ x + (1|u)", data=randomzeros[~iszero], **EXACT)
+p0 = iszero.mean()
+loglik = modelpositive.getloglik() + iszero.sum() * np.log(p0) + (~iszero).sum() * np.log(1.0 - p0)
+if abs(modelzeros.getloglik() - loglik) > TOL * abs(loglik) or abs(modelzeros.getsigma() - modelpositive.getsigma()) > TOL:
+    sys.exit("Validation test failed at case 12: with a random intercept the zeros are not a point mass beside the fit to the positive observations.")
 
 
 print("fitreg: All tests passed.")

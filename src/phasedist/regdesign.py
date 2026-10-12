@@ -443,8 +443,8 @@ class _regdesign:
 
         if self.n < 2:
             raise ValueError("At least two observations are needed.")
-        if not np.min(self.y) > 0.0:
-            raise ValueError("Every value of the response must be positive.")
+        if not np.min(self.y) >= 0.0:
+            raise ValueError("Every value of the response must be zero or positive.")
 
         # the columns of each variable, and their names
         self.info = {}

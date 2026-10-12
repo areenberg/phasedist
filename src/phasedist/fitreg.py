@@ -30,6 +30,13 @@ class fitreg:
     formula has none of its own. As in fit, only homogeneous phase-type
     distributions are fitted.
 
+    Observations at exactly zero are allowed, as in fit: they are fitted as a
+    point mass at zero whose probability p is the share of zeros, the same for
+    every observation, and the regression is fitted to the positive
+    observations. The model is then the mixture of the point mass and the
+    phase-type regression, and its log-likelihood, AIC, BIC, CDF and
+    distribution include the point mass, p being one more parameter.
+
     The data are a pandas DataFrame, whose dtypes give the type of each
     variable: a column with the 'category' dtype is categorical, coded by
     treatment dummies against its first category (reorder the categories to
@@ -248,11 +255,24 @@ class fitreg:
     def getinitdist(self) -> np.array:
         """
         Return the initial distribution of the baseline phase-type distribution.
+        With observations at zero it sums to 1 - p, the missing mass being the
+        point mass at zero, as in fit.
 
         Returns:
             np.array: The initial distribution.
         """
         return self.pi
+
+    def getzeroprob(self) -> float:
+        """
+        Return the estimated probability p that an observation is zero: the
+        share of zeros in the data, the maximum likelihood estimate of the
+        point mass at zero, the same for every observation.
+
+        Returns:
+            float: p, zero when the data have no zeros.
+        """
+        return self.zeroprob
 
     def getphasegen(self) -> np.array:
         """
@@ -300,7 +320,7 @@ class fitreg:
         Returns:
             float: The BIC value of the fitted model.
         """
-        return -2.0 * self.loglikelihood + self.nparam * np.log(self.design.n)
+        return -2.0 * self.loglikelihood + self.nparam * np.log(self.nobs)
 
     def getdist(self, covariates: dict = None, group=None) -> dist:
         """
@@ -362,8 +382,11 @@ class fitreg:
         eta = self.__eta(covariates, group)
         if eta is None:
             return None
-        if not x > 0.0:
+        if not x >= 0.0:
             return 0.0
+        if x == 0.0:
+            # the point mass at zero, if any
+            return float(self.zeroprob)
 
         u = np.array([np.exp(eta) * float(x)])
         return float(1.0 - np.sum(self.pi @ self.__unif.run(self.phgen, u)[0]))
@@ -381,7 +404,9 @@ class fitreg:
 
         print("Phase-type regression (%s, %d phases)" % (self.dtype, self.nphases))
         print("Formula: %s" % self.formula)
-        line = "Observations: %d" % self.design.n
+        line = "Observations: %d" % self.nobs
+        if self.nzero:
+            line += " (%d at zero)" % self.nzero
         if self.design.group is not None:
             line += "   Groups (%s): %d" % (self.design.group, len(self.design.grouplabels))
         print(line)
@@ -419,6 +444,9 @@ class fitreg:
         elif self.sigma is not None:
             print("Random intercept (1|%s): sigma = %.4f (std. err. %.4f)"
                   % (self.design.group, self.sigma, self.sigmastderr))
+        if self.nzero:
+            print("Point mass at zero: p = %.4f (std. err. %.4f), the share of zeros"
+                  % (self.zeroprob, np.sqrt(self.zeroprob * (1.0 - self.zeroprob) / self.nobs)))
         print("Log-likelihood: %.4f   AIC: %.4f   BIC: %.4f   Parameters: %d"
               % (self.loglikelihood, self.getaic(), self.getbic(), self.nparam))
         print("Iterations: %d   Converged: %s" % (self.iterations, "yes" if self.converged else "no"))
@@ -436,7 +464,9 @@ class fitreg:
         model they are uniform, so the points should follow the diagonal. With
         a random intercept, b_i is the predicted intercept of the
         observation's group. Within a group the transforms are dependent, so
-        the plot is a visual check rather than a test.
+        the plot is a visual check rather than a test. With observations at
+        zero, the plot shows the positive observations and the phase-type
+        part of the model, the point mass being fitted exactly.
 
         Args:
             confint (bool, default=False): Whether to add pointwise
@@ -541,6 +571,24 @@ class fitreg:
             print("Error: %s" % error)
             return False
 
+        # observations at zero are a point mass of their own; the regression
+        # is built and fitted on the positive observations
+        zeros = self.design.y == 0.0
+        self.nobs = self.design.n
+        self.nzero = int(np.count_nonzero(zeros))
+        self.zeroprob = self.nzero / self.nobs
+        if self.nzero:
+            if self.nobs - self.nzero < 2:
+                print("Error: At least two observations must be positive; the others are fitted as a point mass at zero.")
+                return False
+            try:
+                self.design = _regdesign(self.data[~zeros], self.parsed.response, self.parsed.terms,
+                                         self.parsed.group)
+            except ValueError as error:
+                print("Error: %s (This concerns the %d positive observations; the %d at zero are fitted as a point mass.)"
+                      % (str(error).rstrip("."), self.nobs - self.nzero, self.nzero))
+                return False
+
         # the variance of a random intercept is only identified through the
         # dependence within groups
         if self.design.group is not None:
@@ -638,11 +686,23 @@ class fitreg:
         self.loglikelihood = self.d.loglikelihood
         self.nparam = self.d.nparam
 
+        # the point mass at zero: the model is the mixture p (zero) + (1 - p)
+        # (phase-type regression), so the positive observations carry a factor
+        # 1 - p each and the zeros p each; p is the share of zeros, one more
+        # parameter
+        if self.nzero:
+            npositive = self.nobs - self.nzero
+            self.loglikelihood += (self.nzero * np.log(self.zeroprob)
+                                   + npositive * np.log(1.0 - self.zeroprob))
+            self.nparam += 1
+
         # back to the scale of the data: the centring moved
         # delta = sum_k beta~_k c_k / s_k into the scale of the generator
         self.beta, delta = design.backtransform(self.d.beta)
         factor = np.exp(-delta)
-        self.pi = np.asarray(self.d.pi, dtype=float)
+        # with zeros the initial distribution is scaled by 1 - p, as in fit,
+        # leaving the point mass at zero
+        self.pi = (1.0 - self.zeroprob) * np.asarray(self.d.pi, dtype=float)
         self.phgen = factor * self.d.phgen
         self.exitrates = factor * self.d.exitrates
         self.sigma = self.d.sigma
@@ -664,7 +724,10 @@ class fitreg:
 
         self.__unif = _unif(tolerance=1e-14)
 
-        # the probability integral transforms, in the order of the data
+        # the probability integral transforms of the positive observations, in
+        # the order of the data, from the phase-type part (the point mass left
+        # out)
+        basepi = np.asarray(self.d.pi, dtype=float)
         eta = design.X @ self.beta
         if self.ranef is not None:
             eta = eta + self.ranef[design.groupcodes]
@@ -672,7 +735,7 @@ class fitreg:
         self.pit = np.empty(design.n)
         for start in range(0, design.n, 2048):
             block = self.__unif.run(self.phgen, u[start:start + 2048])
-            self.pit[start:start + 2048] = 1.0 - np.sum(np.einsum("k,mkl->ml", self.pi, block), axis=1)
+            self.pit[start:start + 2048] = 1.0 - np.sum(np.einsum("k,mkl->ml", basepi, block), axis=1)
 
         if self.d.degenerate:
             print("Warning: The fitted distribution has a phase that holds a negligible share of the expected time.")
