@@ -22,8 +22,7 @@ class _fitcphreg:
     Verbeke and Molenberghs (2003). The starting coefficients are those of
     Gardner (2024), Chapter 4. Convergence is assessed by Aitken acceleration
     with a confirmation block (_stoprule), and the iterations are accelerated
-    by SQUAREM, see Varadhan and Roland (2008). The design is in the design
-    note phreg-fitting-algorithm.md.
+    by SQUAREM, see Varadhan and Roland (2008).
 
     Warning: This class does not contain any input checks.
 
