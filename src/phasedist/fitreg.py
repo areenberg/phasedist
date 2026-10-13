@@ -463,11 +463,7 @@ class fitreg:
 
     def summary(self, effecttest: str = "lrt", nsim: int = 0, seed: int = None) -> None:
         """
-        Print a summary of the model and its effects: the data, a test of each
-        fixed effect, the random effect with the likelihood-ratio test of
-        sigma = 0 against 0.5 chi2(0) + 0.5 chi2(1) (Self and Liang, 1987),
-        the point mass at zero and the fit. The individual coefficients are
-        reported by coeftest.
+        Print a summary of the model and its effects.
 
         Args:
             effecttest (str, default="lrt"): The test of the fixed effects: "lrt"
@@ -478,12 +474,6 @@ class fitreg:
 
         Returns:
             None: Prints to standard output.
-
-        References:
-            Self, S. G., & Liang, K.-Y. (1987). Asymptotic properties of maximum likelihood
-            estimators and likelihood ratio tests under nonstandard conditions. Journal of
-            the American Statistical Association, 82(398), 605-610.
-            https://doi.org/10.1080/01621459.1987.10478472
         """
 
         if effecttest not in ("lrt", "wald", None):
@@ -1054,7 +1044,7 @@ class fitreg:
         Simulate the likelihood-ratio statistic of an effect under the model
         fitted without it. The smaller model is started from the parameters
         that generated the data and the larger from the smaller fit, so the
-        statistic is not negative; data sets whose fits fail are left out.
+        statistic is not negative. Data sets whose fits fail are left out.
 
         Args:
             reduced (_fitcphreg): The model fitted without the effect.
