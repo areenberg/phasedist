@@ -15,7 +15,7 @@ remaining cases are smoke tests of each functionality on multi-phase data,
 using one phase wherever the functionality does not depend on the number of
 phases, to keep the run time down. Statistical validation (coverage of the
 confidence intervals, recovery of the parameters over many replicates) is too
-slow for this file and lives in tests/validation/, see the design note
+slow for this file and is kept outside the repository, see the design note
 phreg-fitting-algorithm.md, Section 11.
 
 Ground truth of the multi-phase cases. The data are simulated from the model
