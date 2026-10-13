@@ -7,8 +7,8 @@ class _stoprule:
     Decides when an EM-type iteration has converged from its log-likelihoods,
     by Aitken extrapolation, see McLachlan and Krishnan (2008), Section 4.9,
     with the rate averaged over a window of steps and a stop confirmed by a
-    block of further iterations (design note, Section 7). The rule assumes a
-    fixed objective; call reset() when it changes.
+    block of further iterations. The rule assumes a fixed objective, call
+    reset() when it changes.
 
     Warning: This class does not contain any input checks.
 

@@ -10,14 +10,14 @@ _NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_.]*$")
 
 class _regformula:
     """
-    Parses a regression formula in the notation of R's lm and lme4, restricted
+    Parses a regression formula in the target notation, restricted
     to what fitreg supports: 'y ~ x + z', 'y ~ x * z' (x + z + x:z),
     'y ~ x + z + (1|g)' and 'y ~ 1 + (1|g)'. Repeated effects are kept once,
     and an interaction needs all its lower-order effects. The effects are
     tuples of variable names, sorted by degree.
 
-    Warning: This class reports a malformed formula by raising ValueError with
-    a message meant for the user; the caller prints it.
+    Warning: This class returns a warning if the formula contains a syntax
+    error.
     """
 
     def __init__(self, formula: str) -> None:
