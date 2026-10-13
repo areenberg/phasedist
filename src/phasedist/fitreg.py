@@ -15,33 +15,23 @@ class fitreg:
     """
     Fit a continuous-time phase-type regression to data.
 
-    The model is specified by a formula in the notation of R's lm and lme4
-    packages. 'y ~ x + z' is a regression of the response y on the variables x
-    and z, 'y ~ x * z' adds their interaction (x + z + x:z), and
-    'y ~ x + z + (1|g)' adds a Gaussian random intercept for each level of g.
+    The model is specified by a formula as in R's lm and lme4, e.g.
+    'y ~ x + z', 'y ~ x * z' (x + z + x:z) or 'y ~ x + z + (1|g)' with a
+    Gaussian random effect (a random intercept) per level of g. It is the
+    proportional-intensities model of Bladt (2022): given the covariates x and
+    the random effect b, Y ~ PH(pi, exp(x'beta + b) T), so a positive
+    coefficient means shorter times. Only homogeneous phase-type distributions
+    are fitted, as in fit.
 
-    The regression is the proportional-intensities model of Bladt (2022):
-    given the covariates x and the random intercept b of its group, an
-    observation is the absorption time of a Markov jump process whose every
-    intensity is multiplied by exp(x'beta + b). A positive coefficient
-    therefore means shorter times. The conditional distribution is the
-    phase-type distribution PH(pi, exp(x'beta + b) T), so that
-    exp(x'beta + b) Y ~ PH(pi, T). The intercept is the scale of T, so the
-    formula has none of its own. As in fit, only homogeneous phase-type
-    distributions are fitted.
+    Observations at zero are fitted as a point mass whose probability is the
+    share of zeros, as in fit. The fixed effects of the formula are tested by
+    likelihood-ratio tests (getlrtest, summary), and the individual
+    coefficients by Wald tests (coeftest).
 
-    Observations at exactly zero are allowed, as in fit: they are fitted as a
-    point mass at zero whose probability p is the share of zeros, the same for
-    every observation, and the regression is fitted to the positive
-    observations. The model is then the mixture of the point mass and the
-    phase-type regression, and its log-likelihood, AIC, BIC, CDF and
-    distribution include the point mass, p being one more parameter.
-
-    The data are a pandas DataFrame, whose dtypes give the type of each
-    variable: a column with the 'category' dtype is categorical, coded by
-    treatment dummies against its first category (reorder the categories to
-    change the reference level), and a numeric column is continuous. The
-    grouping variable of a random intercept must be categorical.
+    The data are a pandas DataFrame: a column with the 'category' dtype is
+    categorical, coded by treatment dummies against its first category, and
+    a numeric column is continuous. Details are in the design note
+    phreg-fitting-algorithm.md.
 
     References:
         Bladt, M. (2022). Phase-type distributions for claim severity regression modeling.
@@ -67,40 +57,31 @@ class fitreg:
 
         Args:
             formula (str):
-                The model, e.g. 'y ~ x + z', 'y ~ x * z' or
-                'y ~ x + z + (1|g)'. Terms are variable names joined by '+',
-                with ':' for an interaction and '*' for an interaction with
-                its lower-order terms; at most one random intercept (1|g).
+                The model, e.g. 'y ~ x + z', 'y ~ x * z' or 'y ~ x + (1|g)';
+                ':' for an interaction, '*' for an interaction with its
+                lower-order effects, at most one random effect.
             data (DataFrame):
-                The data, one column per variable. The response must be
-                positive and numeric, a categorical variable (and the grouping
-                variable) must have the 'category' dtype, and a continuous
-                variable must be numeric.
+                The data. The response must be numeric and non-negative, a
+                categorical variable and the grouping variable must have the
+                'category' dtype.
             nphases (int, default=2):
                 Number of phases.
             dtype (str, default="coxian"):
-                Structure of the phase-type distribution: "coxian", "gencoxian",
-                "generlang", "hyperexp" or "general".
+                Structure: "coxian", "gencoxian", "generlang", "hyperexp" or
+                "general".
             quadnodes (int, default=7):
-                Adaptive Gauss-Hermite nodes per group for the random
-                intercept, at least 2.
+                Adaptive Gauss-Hermite nodes per group, at least 2.
             restarts (int, default=10):
-                Number of random starts; the Coxian, generalized Coxian and
-                generalized Erlang structures also get a deterministic start.
-                Each start is run to convergence, unless it becomes degenerate
-                or can no longer catch up with the best start so far. The
-                likelihood often has several local maxima: on 44 simulated
-                data sets of 400 observations, the best of 16 starts was
-                reached with restarts=1 in 30 of them, restarts=5 in 41 and
-                restarts=10 in 42. More starts lower the risk of a local
-                maximum at a cost in time that grows with their number.
+                Number of random starts, besides a deterministic start for
+                the chain structures. The likelihood often has several local
+                maxima.
             seed (int, optional):
                 Random seed.
             tolerance (float, default=1e-5):
                 Convergence tolerance on the remaining gain in the
                 log-likelihood.
             itermax (int, default=100000):
-                Maximum number of iterations of each run to convergence.
+                Maximum number of iterations of each start.
             accelerate (bool, default=True):
                 Whether to accelerate the iterations by SQUAREM.
             verbose (bool, default=False):
@@ -124,6 +105,8 @@ class fitreg:
         self.itermax = itermax
         self.accelerate = accelerate
         self.verbose = verbose
+        # random starts of each fit to a simulated data set in getlrtest
+        self.lrsimrestarts = 1
 
         # checking and fitting
         if self.__checkinputs():
@@ -141,64 +124,77 @@ class fitreg:
         Return the estimated regression coefficients.
 
         Returns:
-            dict: Coefficient of each column of the design matrix, named after
-                its variable, 'variable[level]' for a level of a categorical
-                variable, and the names joined by ':' for an interaction.
+            dict: Coefficient of each column of the design, named 'x',
+                'g[level]' and 'x:g[level]'.
         """
         return dict(zip(self.design.columns, self.beta.tolist()))
 
     def getstderr(self) -> dict:
         """
-        Return the standard errors of the regression coefficients.
-
-        Without a random intercept they are taken from the observed
-        information with the phase-type representation held at its estimate,
-        on the centred design; centring makes this conditional information
-        valid for the coefficients (the information they share with the scale
-        of the generator vanishes to first order). With a random intercept
-        they are taken from the full observed information, the phase-type
-        parameters profiled out, since sigma trades off against the shape of
-        the base distribution.
+        Return the standard errors of the regression coefficients, from the
+        observed information on the centred design; with a random effect
+        the phase-type parameters are profiled out (design note, Section 9).
 
         Returns:
             dict: Standard error of each coefficient.
         """
         return dict(zip(self.design.columns, self.stderr.tolist()))
 
-    def getpvalue(self) -> dict:
+    def coeftest(self, confidence: float = 0.95, show: bool = True) -> dict:
         """
-        Return the p-value of each regression coefficient: the two-sided Wald
-        test that the coefficient is zero, 2 P(Z > |estimate / std. err.|).
+        Wald tests of the individual coefficients. Prints and returns each
+        coefficient with its standard error, z value, two-sided p-value and
+        Wald confidence interval.
+
+        Args:
+            confidence (float, default=0.95): Confidence level of the intervals.
+            show (bool, default=True): Whether to print the table.
 
         Returns:
-            dict: p-value of each coefficient (NaN where the standard error is
-                unavailable).
+            dict: For each coefficient, a dictionary with 'estimate', 'stderr',
+                'zvalue', 'pvalue' and 'confint' (lower, upper). None if the
+                confidence level is invalid.
         """
+
+        if not isinstance(confidence, float) or not 0.0 < confidence < 1.0:
+            print("Error: The confidence level must be a float between 0 and 1.")
+            return None
+
+        intervals = self._getwaldconfint(confidence)
+        pvalues = self._getwaldcoeftest()
         out = {}
         for name, b, se in zip(self.design.columns, self.beta, self.stderr):
-            out[name] = float(2.0 * norm.sf(abs(b / se))) if np.isfinite(se) and se > 0 else np.nan
+            out[name] = dict(estimate=float(b), stderr=float(se),
+                             zvalue=float(b / se) if np.isfinite(se) and se > 0 else np.nan,
+                             pvalue=pvalues[name], confint=tuple(float(v) for v in intervals[name]))
+
+        if show:
+            if not out:
+                print("The model has no coefficients.")
+                return out
+            print("Wald tests of the coefficients (every intensity is multiplied by exp(x'beta); "
+                  "positive means shorter times):")
+            width = max(12, max(len(name) for name in out) + 2)
+            label = "%g%% conf. int." % (100.0 * confidence)
+            print("%-*s %10s %10s %9s %9s %21s" % (width, "", "Estimate", "Std.Err", "z value", "Pr(>|z|)", label))
+            for name, row in out.items():
+                print("%-*s %10.4f %10.4f %9.2f %9s %10.4f %10.4f"
+                      % (width, name, row["estimate"], row["stderr"], row["zvalue"], self.__ptext(row["pvalue"]),
+                         row["confint"][0], row["confint"][1]))
+
         return out
 
     def getwaldtest(self) -> dict:
         """
-        Return the Wald test of each term of the formula: that all its
-        coefficients are zero, e.g. every level of a categorical variable or
-        every column of an interaction. The statistic b' V^(-1) b, with V the
-        covariance of the term's coefficients, is referred to a chi-square
-        distribution with as many degrees of freedom as the term has
-        coefficients. For a term with one coefficient it is the square of the
-        z value, and the p-value that of getpvalue.
-
-        For a term that is part of a higher-order interaction in the model
-        (x in 'y ~ x*g'), the test concerns its effect where the other
-        variables of the interaction are zero or at their reference level, so
-        it changes with the reference level and the origin of x, as type III
-        tests do. The test of a highest-order term does not.
+        Return the Wald test of each fixed effect: b' V^(-1) b for its
+        coefficients b with covariance V, against a chi-square distribution
+        with one degree of freedom per coefficient. The likelihood-ratio test
+        (getlrtest) is the default test of an effect; for an effect within a
+        higher-order interaction both depend on the coding, as type III tests.
 
         Returns:
-            dict: For each term, named as in the formula ('x', 'g', 'x:g'),
-                the tuple (statistic, degrees of freedom, p-value); NaN where
-                the covariance is unavailable.
+            dict: For each effect ('x', 'g', 'x:g'), the tuple (statistic,
+                degrees of freedom, p-value); NaN without a covariance.
         """
         out = {}
         for term, index in self.design.termcolumns.items():
@@ -212,41 +208,118 @@ class fitreg:
             out[term] = (statistic, len(index), pvalue)
         return out
 
-    def getconfint(self, confidence: float = 0.95) -> dict:
+    def getlrtest(self, effects=None, nsim: int = 0, seed: int = None, confidence: float = 0.95) -> dict:
         """
-        Return Wald confidence intervals for the regression coefficients.
+        Return the likelihood-ratio test of each fixed effect: the
+        model is refitted without the effect's columns, and
+        D = 2 (loglik - loglik without the effect) is referred to a chi-square
+        distribution. With nsim > 0 the reference distribution is also
+        simulated by a parametric bootstrap from the model without the effect,
+        with a Clopper-Pearson interval for the Monte Carlo error; this takes
+        two fits per simulated data set. Zeros do not affect the test. The
+        validation is in the design note, Section 11.13.
 
         Args:
-            confidence (float, default=0.95): Confidence level.
+            effects (str or list, optional): The fixed effects to test, named as in
+                the formula ('x', 'g', 'x:g'); all effects when omitted.
+            nsim (int, default=0): Simulated data sets per effect; 0 for none.
+            seed (int, optional): Random seed of the simulation.
+            confidence (float, default=0.95): Confidence level of the Monte
+                Carlo interval.
 
         Returns:
-            dict: The interval (lower, upper) of each coefficient.
+            dict: For each effect, a dictionary with 'statistic', 'df' and
+                'pvalue', and with nsim > 0 'simpvalue', 'siminterval' and
+                'nsim' (the data sets fitted). None if the arguments are invalid.
         """
-        z = norm.ppf(0.5 + confidence / 2.0)
-        return {name: (b - z * se, b + z * se)
-                for name, b, se in zip(self.design.columns, self.beta, self.stderr)}
+
+        available = list(self.design.termcolumns)
+        if effects is None:
+            effects = available
+        elif isinstance(effects, str):
+            effects = [effects]
+        if not isinstance(effects, (list, tuple)) or not all(isinstance(t, str) for t in effects):
+            print("Error: The fixed effects must be given as a name or a list of names, e.g. 'x' or ['x', 'x:g'].")
+            return None
+        unknown = [t for t in effects if t not in self.design.termcolumns]
+        if unknown:
+            print("Error: '%s' is not a fixed effect of the formula. The fixed effects are: %s."
+                  % (unknown[0], ", ".join(available) if available else "none"))
+            return None
+        if not isinstance(nsim, int) or isinstance(nsim, bool) or nsim < 0:
+            print("Error: The number of simulations must be an integer of at least 0.")
+            return None
+        if seed is not None and (not isinstance(seed, int) or isinstance(seed, bool)):
+            print("Error: The seed can only be specified as an integer.")
+            return None
+        if not isinstance(confidence, float) or not 0.0 < confidence < 1.0:
+            print("Error: The confidence level must be a float between 0 and 1.")
+            return None
+
+        rng = np.random.default_rng(seed)
+        out = {}
+        for term in effects:
+            index = list(self.design.termcolumns[term])
+            keep = [k for k in range(self.design.d) if k not in index]
+            df = len(index)
+
+            if term not in self.__lrcache:
+                # the model without the effect, also started from the fit
+                X = self.design.Xtilde[self.order]
+                fullstart = self.__startfrom(self.d)
+                reduced = self.__engine(self.__lrobs, X[:, keep], self.restarts, self.seed,
+                                        [dict(fullstart, beta=fullstart["beta"][keep])])
+                if reduced is None:
+                    print("Error: The model without '%s' could not be fitted." % term)
+                    out[term] = dict(statistic=np.nan, df=df, pvalue=np.nan)
+                    continue
+                full = self.d.loglikelihood
+                if reduced.loglikelihood > full + 1e-6:
+                    # the fit is at a local maximum: refit it from the smaller model
+                    start = self.__startfrom(reduced)
+                    start["beta"] = self.__insert(start["beta"], keep, self.design.d)
+                    refit = self.__engine(self.__lrobs, X, self.restarts, self.seed, [start])
+                    if refit is not None and refit.loglikelihood > full:
+                        full = refit.loglikelihood
+                    print("Warning: The model without '%s' reached a higher likelihood than the fit, which "
+                          "is therefore not at the maximum likelihood; refit with more restarts. The test "
+                          "uses the better fit of the full model." % term)
+                statistic = max(2.0 * (full - reduced.loglikelihood), 0.0)
+                self.__lrcache[term] = (statistic, reduced)
+
+            statistic, reduced = self.__lrcache[term]
+            result = dict(statistic=float(statistic), df=df, pvalue=float(chi2.sf(statistic, df)))
+
+            if nsim:
+                simulated = self.__simulatelr(reduced, keep, nsim, rng, term)
+                k = int(np.count_nonzero(simulated >= statistic))
+                m = simulated.size
+                result.update(simpvalue=(k + 1.0) / (m + 1.0) if m else np.nan,
+                              siminterval=self.__clopperpearson(k, m, confidence) if m else (np.nan, np.nan),
+                              nsim=m)
+
+            out[term] = result
+
+        return out
 
     def getsigma(self) -> float:
         """
-        Return the estimated standard deviation of the random intercept.
+        Return the estimated standard deviation of the random effect.
 
         Returns:
-            float: sigma, or None for a model without random intercept. It is
-                zero when the likelihood does not increase away from zero (the
-                groups vary no more than the fixed effects explain); the fit is
-                then that of the model without random intercept, a warning is
-                given and sigma has no standard error.
+            float: sigma, None without a random effect; zero at the boundary,
+                where the fit is that of the model without random effect.
         """
         return self.sigma
 
     def getranef(self) -> dict:
         """
-        Return the predicted random intercept of each group, the mean of its
-        conditional distribution given the group's data.
+        Return the predicted random effect of each group, its conditional
+        mean given the group's data.
 
         Returns:
-            dict: Predicted intercept of each group label, or None for a model
-                without random intercept.
+            dict: Predicted random effect of each group label, or None without a
+                random effect.
         """
         if self.ranef is None:
             return None
@@ -255,8 +328,7 @@ class fitreg:
     def getinitdist(self) -> np.array:
         """
         Return the initial distribution of the baseline phase-type distribution.
-        With observations at zero it sums to 1 - p, the missing mass being the
-        point mass at zero, as in fit.
+        With observations at zero it sums to 1 - p, as in fit.
 
         Returns:
             np.array: The initial distribution.
@@ -265,20 +337,18 @@ class fitreg:
 
     def getzeroprob(self) -> float:
         """
-        Return the estimated probability p that an observation is zero: the
-        share of zeros in the data, the maximum likelihood estimate of the
-        point mass at zero, the same for every observation.
+        Return the estimated probability of an observation at zero, the share
+        of zeros in the data.
 
         Returns:
-            float: p, zero when the data have no zeros.
+            float: The probability, zero without zeros.
         """
         return self.zeroprob
 
     def getphasegen(self) -> np.array:
         """
-        Return the baseline phase-type generator: the one of an observation
-        whose continuous covariates are zero, whose categorical covariates are
-        at their reference levels, and whose random intercept is zero.
+        Return the baseline phase-type generator: continuous covariates zero,
+        categorical covariates at their reference levels, random effect zero.
 
         Returns:
             np.array: The baseline sub-intensity matrix.
@@ -296,8 +366,8 @@ class fitreg:
 
     def getloglik(self) -> float:
         """
-        Return the log-likelihood of the fitted model, the marginal one when
-        there is a random intercept.
+        Return the log-likelihood of the fitted model, the marginal one with a
+        random effect.
 
         Returns:
             float: The log-likelihood.
@@ -324,18 +394,16 @@ class fitreg:
 
     def getdist(self, covariates: dict = None, group=None) -> dist:
         """
-        Return the conditional distribution of the response for given
-        covariates as a dist object.
+        Return the conditional distribution of the response as a dist object.
 
         Args:
-            covariates (dict, optional): Value of each variable of the model, a
-                level for a categorical variable. The baseline when omitted.
-            group (optional): Label of a group, whose predicted random
-                intercept is then included. Zero intercept when omitted.
+            covariates (dict, optional): Value of each variable, a level for a
+                categorical variable; the baseline when omitted.
+            group (optional): Label of a group, whose predicted random effect
+                is then included; zero when omitted.
 
         Returns:
-            dist: The phase-type distribution PH(pi, exp(eta) T), or None if
-                the covariates or the group are unusable.
+            dist: PH(pi, exp(eta) T), or None if the input is unusable.
         """
         eta = self.__eta(covariates, group)
         if eta is None:
@@ -391,65 +459,129 @@ class fitreg:
         u = np.array([np.exp(eta) * float(x)])
         return float(1.0 - np.sum(self.pi @ self.__unif.run(self.phgen, u)[0]))
 
-    def summary(self) -> None:
+    def summary(self, effecttest: str = "lrt", nsim: int = 0, seed: int = None) -> None:
         """
-        Print a summary of the fitted model: the coefficients with standard
-        errors, Wald tests and 95% confidence intervals, the Wald test of each
-        term with more than one coefficient, the random-intercept standard
-        deviation where present, and the fit statistics.
+        Print a summary of the model and its effects: the data, a test of each
+        fixed effect, the random effect with the likelihood-ratio test of
+        sigma = 0 against 0.5 chi2(0) + 0.5 chi2(1) (Self and Liang, 1987),
+        the point mass at zero and the fit. The individual coefficients are
+        reported by coeftest.
+
+        Args:
+            effecttest (str, default="lrt"): The test of the fixed effects: "lrt"
+                (getlrtest), "wald" (getwaldtest) or None.
+            nsim (int, default=0): With "lrt", simulated data sets per effect
+                for a simulated p-value; 0 for none.
+            seed (int, optional): Random seed of the simulation.
 
         Returns:
             None: Prints to standard output.
+
+        References:
+            Self, S. G., & Liang, K.-Y. (1987). Asymptotic properties of maximum likelihood
+            estimators and likelihood ratio tests under nonstandard conditions. Journal of
+            the American Statistical Association, 82(398), 605-610.
+            https://doi.org/10.1080/01621459.1987.10478472
         """
 
+        if effecttest not in ("lrt", "wald", None):
+            print("Error: The effect test must be 'lrt', 'wald' or None.")
+            return None
+        if not isinstance(nsim, int) or isinstance(nsim, bool) or nsim < 0:
+            print("Error: The number of simulations must be an integer of at least 0.")
+            return None
+        if nsim and effecttest != "lrt":
+            print("Error: Simulated p-values are available for the likelihood-ratio tests (effecttest='lrt').")
+            return None
+        if seed is not None and (not isinstance(seed, int) or isinstance(seed, bool)):
+            print("Error: The seed can only be specified as an integer.")
+            return None
+
+        # the model and the data
         print("Phase-type regression (%s, %d phases)" % (self.dtype, self.nphases))
         print("Formula: %s" % self.formula)
         line = "Observations: %d" % self.nobs
         if self.nzero:
             line += " (%d at zero)" % self.nzero
         if self.design.group is not None:
-            line += "   Groups (%s): %d" % (self.design.group, len(self.design.grouplabels))
+            sizes = np.bincount(self.design.groupcodes)
+            line += "   Groups (%s): %d, of %d to %d observations" % (self.design.group, sizes.size,
+                                                                     int(sizes.min()), int(sizes.max()))
         print(line)
+        effects = list(self.design.termcolumns)
+        print("Fixed effects: %d, with %d coefficient%s" % (len(effects), self.design.d, "" if self.design.d == 1 else "s")
+              if effects else "Fixed effects: none (no covariates)")
         print("")
 
-        if self.design.d:
-            print("Coefficients (every intensity is multiplied by exp(x'beta); positive means shorter times):")
-            width = max(12, max(len(name) for name in self.design.columns) + 2)
-            print("%-*s %10s %10s %9s %9s %21s" % (width, "", "Estimate", "Std.Err", "z value",
-                                                   "Pr(>|z|)", "95% conf. int."))
-            intervals = self.getconfint(0.95)
-            pvalues = self.getpvalue()
-            for name, b, se in zip(self.design.columns, self.beta, self.stderr):
-                z = b / se if se > 0 else np.nan
-                p = pvalues[name]
-                lower, upper = intervals[name]
-                ptext = "<0.001" if p < 0.001 else ("%.3f" % p)
-                print("%-*s %10.4f %10.4f %9.2f %9s %10.4f %10.4f"
-                      % (width, name, b, se, z, ptext, lower, upper))
+        # the fixed effects
+        if effects and effecttest is not None:
+            width = max(12, max(len(effect) for effect in effects) + 2)
+            if effecttest == "wald":
+                tests = self.getwaldtest()
+                print("Wald tests of the fixed effects:")
+                print("%-*s %10s %5s %9s" % (width, "", "Chi-sq", "df", "Pr(>Chi)"))
+                for effect in effects:
+                    statistic, df, p = tests[effect]
+                    print("%-*s %10.2f %5d %9s" % (width, effect, statistic, df, self.__ptext(p)))
+            else:
+                tests = self.getlrtest(effects, nsim=nsim, seed=seed)
+                print("Likelihood-ratio tests of the fixed effects:")
+                if nsim:
+                    print("%-*s %10s %5s %9s %9s %17s" % (width, "", "LR stat", "df", "Pr(>Chi)",
+                                                         "Sim. p", "95% MC interval"))
+                else:
+                    print("%-*s %10s %5s %9s" % (width, "", "LR stat", "df", "Pr(>Chi)"))
+                for effect in effects:
+                    test = tests[effect]
+                    text = "%-*s %10.2f %5d %9s" % (width, effect, test["statistic"], test["df"],
+                                                    self.__ptext(test["pvalue"]))
+                    if nsim:
+                        text += " %9.4f %8.4f %8.4f" % ((test["simpvalue"],) + tuple(test["siminterval"]))
+                    print(text)
+                if nsim:
+                    print("Simulated p-values from %d data sets per effect simulated without the effect." % nsim)
+            print("(The individual coefficients with Wald tests and intervals: coeftest())")
             print("")
 
-            tests = {term: test for term, test in self.getwaldtest().items() if test[1] > 1}
-            if tests:
-                print("Wald tests of the terms with more than one coefficient:")
-                width = max(12, max(len(term) for term in tests) + 2)
-                print("%-*s %10s %5s %9s" % (width, "", "Chi-sq", "df", "Pr(>Chi)"))
-                for term, (statistic, df, p) in tests.items():
-                    ptext = "<0.001" if p < 0.001 else ("%.3f" % p)
-                    print("%-*s %10.2f %5d %9s" % (width, term, statistic, df, ptext))
-                print("")
-
-        if self.sigma is not None and self.boundary:
-            print("Random intercept (1|%s): sigma = 0 (at the boundary: the groups vary no more "
-                  "than the fixed effects explain)" % self.design.group)
-        elif self.sigma is not None:
-            print("Random intercept (1|%s): sigma = %.4f (std. err. %.4f)"
-                  % (self.design.group, self.sigma, self.sigmastderr))
+        # the random effect and the point mass
+        if self.sigma is not None:
+            statistic, pvalue = self.__sigmatest()
+            if self.boundary:
+                print("Random effect (1|%s): sigma = 0 (at the boundary: the groups vary no more "
+                      "than the fixed effects explain)" % self.design.group)
+            else:
+                print("Random effect (1|%s): sigma = %.4f (std. err. %.4f)"
+                      % (self.design.group, self.sigma, self.sigmastderr))
+            print("  Likelihood-ratio test of sigma = 0: LR stat %.2f, p-value %s (against 0.5 chi2(0) + 0.5 chi2(1))"
+                  % (statistic, self.__ptext(pvalue)))
         if self.nzero:
             print("Point mass at zero: p = %.4f (std. err. %.4f), the share of zeros"
                   % (self.zeroprob, np.sqrt(self.zeroprob * (1.0 - self.zeroprob) / self.nobs)))
-        print("Log-likelihood: %.4f   AIC: %.4f   BIC: %.4f   Parameters: %d"
-              % (self.loglikelihood, self.getaic(), self.getbic(), self.nparam))
-        print("Iterations: %d   Converged: %s" % (self.iterations, "yes" if self.converged else "no"))
+        if self.sigma is not None or self.nzero:
+            print("")
+
+        # the fit
+        nsigma = int(self.sigma is not None)
+        nzero = int(self.nzero > 0)
+        nphase = self.nparam - self.design.d - nsigma - nzero
+        parts = ["%d phase-type" % nphase, "%d coefficient%s" % (self.design.d, "" if self.design.d == 1 else "s")]
+        if nsigma:
+            parts.append("1 sigma")
+        if nzero:
+            parts.append("1 zero share")
+        print("Log-likelihood: %.4f   Deviance (-2 log-likelihood): %.4f"
+              % (self.loglikelihood, -2.0 * self.loglikelihood))
+        print("AIC: %.4f   BIC: %.4f   Parameters: %d (%s)"
+              % (self.getaic(), self.getbic(), self.nparam, ", ".join(parts)))
+        statuses = list(self.d.startstatus)
+        best = self.d.fixedloglikelihood
+        reached = sum(1 for v, status in zip(self.d.startlogliks, statuses)
+                      if status in ("converged", "itermax") and np.isfinite(v) and v >= best - 1e-3)
+        print("Iterations: %d   Converged: %s   Starts: %d, of which %d reached the best within 0.001"
+              % (self.iterations, "yes" if self.converged else "no", len(statuses), reached))
+        if self.d.degenerate:
+            print("Warning: a phase of the fitted distribution holds a negligible share of the expected time; "
+                  "fewer phases may suffice.")
 
     def plot(
         self,
@@ -459,19 +591,14 @@ class fitreg:
         filename: str = "PPcheck.png"
     ) -> None:
         """
-        Plot the probability integral transforms F(y_i | x_i, b_i) of the
-        observations against the uniform distribution (a PP plot). Under the
-        model they are uniform, so the points should follow the diagonal. With
-        a random intercept, b_i is the predicted intercept of the
-        observation's group. Within a group the transforms are dependent, so
-        the plot is a visual check rather than a test. With observations at
-        zero, the plot shows the positive observations and the phase-type
-        part of the model, the point mass being fitted exactly.
+        PP plot of the probability integral transforms F(y_i | x_i, b_i) of the
+        positive observations against the uniform distribution, b_i being the
+        predicted random effect of the group. Within a group the transforms are
+        dependent, so the plot is a visual check rather than a test.
 
         Args:
             confint (bool, default=False): Whether to add pointwise
-                Clopper-Pearson intervals for the empirical CDF of the
-                transforms.
+                Clopper-Pearson intervals.
             confidence (float, default=0.95): Confidence level for the intervals.
             title (str): Plot title.
             filename (str, default="PPcheck.png"): Filename of the generated graph.
@@ -505,10 +632,38 @@ class fitreg:
         plt.legend()
         plt.grid()
         plt.savefig(filename)
-
-        # the figure is only written to file, so it is closed rather than left
-        # open for a later call to accumulate
         plt.close()
+
+    # ----------------------------------------------------------------------
+    #   INTERNAL METHODS (used by coeftest)
+    # ----------------------------------------------------------------------
+
+    def _getwaldcoeftest(self) -> dict:
+        """
+        Return the two-sided Wald p-value of each coefficient,
+        2 P(Z > |estimate / std. err.|).
+
+        Returns:
+            dict: p-value of each coefficient, NaN without a standard error.
+        """
+        out = {}
+        for name, b, se in zip(self.design.columns, self.beta, self.stderr):
+            out[name] = float(2.0 * norm.sf(abs(b / se))) if np.isfinite(se) and se > 0 else np.nan
+        return out
+
+    def _getwaldconfint(self, confidence: float = 0.95) -> dict:
+        """
+        Return the Wald confidence interval of each coefficient.
+
+        Args:
+            confidence (float, default=0.95): Confidence level.
+
+        Returns:
+            dict: The interval (lower, upper) of each coefficient.
+        """
+        z = norm.ppf(0.5 + confidence / 2.0)
+        return {name: (b - z * se, b + z * se)
+                for name, b, se in zip(self.design.columns, self.beta, self.stderr)}
 
     # ----------------------------------------------------------------------
     #   PRIVATE METHODS
@@ -516,8 +671,7 @@ class fitreg:
 
     def __checkinputs(self) -> bool:
         """
-        Validate input parameters, parse the formula and build the design
-        prior to fitting.
+        Validate the input, parse the formula and build the design.
 
         Returns:
             bool: True if all inputs are valid; otherwise False.
@@ -571,8 +725,7 @@ class fitreg:
             print("Error: %s" % error)
             return False
 
-        # observations at zero are a point mass of their own; the regression
-        # is built and fitted on the positive observations
+        # zeros are a point mass; the regression is fitted to the positive observations
         zeros = self.design.y == 0.0
         self.nobs = self.design.n
         self.nzero = int(np.count_nonzero(zeros))
@@ -589,23 +742,21 @@ class fitreg:
                       % (str(error).rstrip("."), self.nobs - self.nzero, self.nzero))
                 return False
 
-        # the variance of a random intercept is only identified through the
-        # dependence within groups
+        # sigma is identified only through the dependence within groups
         if self.design.group is not None:
             sizes = np.bincount(self.design.groupcodes)
             if np.count_nonzero(sizes >= 2) < 5:
                 warnings.warn(
                     "Fewer than five groups have two or more observations, so the "
-                    "standard deviation of the random intercept is poorly identified.",
+                    "standard deviation of the random effect is poorly identified.",
                     UserWarning, stacklevel=3)
 
         return True
 
     def __structure(self) -> tuple:
         """
-        Return the structure of the phase-type distribution named by dtype:
-        the non-zero pattern of the initial distribution, the generator and
-        the exit rates, as fit uses it for its random initialization.
+        Return the non-zero patterns of the initial distribution, generator
+        and exit rates of the structure dtype, as in fit.
 
         Returns:
             tuple: Initial distribution, generator and exit-rate patterns.
@@ -641,8 +792,7 @@ class fitreg:
 
     def __fitmodel(self) -> int:
         """
-        Fit the model and transform the estimates back to the scale of the
-        data.
+        Fit the model and transform the estimates back to the scale of the data.
 
         Returns:
             int: 0 if successful, 1 otherwise.
@@ -658,6 +808,10 @@ class fitreg:
         else:
             self.order = np.arange(design.n)
             groups = None
+        # kept for the likelihood-ratio tests
+        self.__groups = groups
+        self.__lrobs = design.y[self.order]
+        self.__lrcache = {}
 
         self.d = _fitcphreg(
             obs=design.y[self.order],
@@ -686,34 +840,27 @@ class fitreg:
         self.loglikelihood = self.d.loglikelihood
         self.nparam = self.d.nparam
 
-        # the point mass at zero: the model is the mixture p (zero) + (1 - p)
-        # (phase-type regression), so the positive observations carry a factor
-        # 1 - p each and the zeros p each; p is the share of zeros, one more
-        # parameter
+        # the point mass at zero, its probability one more parameter
         if self.nzero:
             npositive = self.nobs - self.nzero
             self.loglikelihood += (self.nzero * np.log(self.zeroprob)
                                    + npositive * np.log(1.0 - self.zeroprob))
             self.nparam += 1
 
-        # back to the scale of the data: the centring moved
-        # delta = sum_k beta~_k c_k / s_k into the scale of the generator
+        # back to the scale of the data; the centring moved delta into the
+        # scale of the generator
         self.beta, delta = design.backtransform(self.d.beta)
         factor = np.exp(-delta)
-        # with zeros the initial distribution is scaled by 1 - p, as in fit,
-        # leaving the point mass at zero
         self.pi = (1.0 - self.zeroprob) * np.asarray(self.d.pi, dtype=float)
         self.phgen = factor * self.d.phgen
         self.exitrates = factor * self.d.exitrates
         self.sigma = self.d.sigma
 
-        # the covariance of the coefficients on the scale of the data:
-        # beta = beta~ / s, so cov(beta) = cov(beta~) / (s s')
+        # cov(beta) = cov(beta~) / (s s'); the standard error of sigma by the
+        # delta method from that of log sigma
         standard = np.sqrt(np.diag(self.d.covariance))
         self.covariance = self.d.covariance[:design.d, :design.d] / np.outer(design.scale, design.scale)
         self.stderr = standard[:design.d] / design.scale if design.d else np.zeros(0)
-        # the standard error of sigma by the delta method from that of
-        # log sigma; none at the boundary sigma = 0
         self.sigmastderr = None
         if design.group is not None:
             self.sigmastderr = float(self.sigma * standard[design.d])
@@ -724,9 +871,7 @@ class fitreg:
 
         self.__unif = _unif(tolerance=1e-14)
 
-        # the probability integral transforms of the positive observations, in
-        # the order of the data, from the phase-type part (the point mass left
-        # out)
+        # probability integral transforms of the positive observations
         basepi = np.asarray(self.d.pi, dtype=float)
         eta = design.X @ self.beta
         if self.ranef is not None:
@@ -742,13 +887,219 @@ class fitreg:
 
         return 0
 
+    def __engine(self, obs: np.array, X: np.array, restarts: int, seed: int, starts: list):
+        """
+        Fit the engine with the settings of the fit, without covariance and
+        warnings, for the likelihood-ratio tests.
+
+        Args:
+            obs (ndarray): Positive observations, in the order of the fit.
+            X (ndarray): Centred design, in the order of the fit.
+            restarts (int): Number of random starts.
+            seed (int): Random seed of the engine.
+            starts (list): Further starting values (see _fitcphreg).
+
+        Returns:
+            _fitcphreg: The fitted engine, or None if the fit failed.
+        """
+
+        initdist, initphgen, initexitrates = self.__structure()
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            engine = _fitcphreg(obs=obs, design=X, groups=self.__groups, initpi=initdist,
+                                initphgen=initphgen, initexitrates=initexitrates,
+                                quadnodes=self.quadnodes, restarts=restarts, seed=seed,
+                                tolerance=self.tolerance, itermax=int(self.itermax),
+                                accelerate=self.accelerate, verbose=False, starts=starts,
+                                covariance=False)
+            engine.fit()
+        return None if engine.failed else engine
+
+    @staticmethod
+    def __startfrom(engine) -> dict:
+        """
+        Return the estimates of a fitted engine as a starting value.
+
+        Args:
+            engine (_fitcphreg): A fitted engine.
+
+        Returns:
+            dict: Copies of 'pi', 'T' and 'beta'.
+        """
+        return dict(pi=np.array(engine.pi, dtype=float), T=np.array(engine.phgen, dtype=float),
+                    beta=np.array(engine.beta, dtype=float).reshape(-1))
+
+    @staticmethod
+    def __insert(values: np.array, keep: list, d: int) -> np.array:
+        """
+        Return the coefficients of the kept columns as a full coefficient
+        vector, zero in the dropped columns.
+
+        Args:
+            values (ndarray): Coefficients of the kept columns.
+            keep (list): Indices of the kept columns.
+            d (int): Number of columns of the full model.
+
+        Returns:
+            ndarray: The full coefficient vector.
+        """
+        out = np.zeros(d)
+        out[keep] = values
+        return out
+
+    def __sigmatest(self) -> tuple:
+        """
+        Return the likelihood-ratio test of sigma = 0 against the best
+        fixed-effects start of the fit, referred to 0.5 chi2(0) + 0.5 chi2(1).
+
+        Returns:
+            tuple: The statistic and the p-value (1 at the boundary).
+        """
+        statistic = max(2.0 * (self.d.loglikelihood - self.d.fixedloglikelihood), 0.0)
+        pvalue = 0.5 * float(chi2.sf(statistic, 1)) if statistic > 0.0 else 1.0
+        return statistic, pvalue
+
+    @staticmethod
+    def __ptext(p: float) -> str:
+        """
+        Format a p-value for printing.
+
+        Args:
+            p (float): The p-value.
+
+        Returns:
+            str: '<0.001', three decimals, or 'NA'.
+        """
+        if not np.isfinite(p):
+            return "NA"
+        return "<0.001" if p < 0.001 else ("%.3f" % p)
+
+    @staticmethod
+    def __clopperpearson(k: int, m: int, confidence: float) -> tuple:
+        """
+        Return the Clopper-Pearson interval for k successes in m trials.
+
+        Args:
+            k (int): Number of successes.
+            m (int): Number of trials, at least 1.
+            confidence (float): Confidence level.
+
+        Returns:
+            tuple: Lower and upper limit.
+        """
+        alpha = 1.0 - confidence
+        lower = 0.0 if k == 0 else float(beta.ppf(alpha / 2.0, k, m - k + 1))
+        upper = 1.0 if k == m else float(beta.ppf(1.0 - alpha / 2.0, k + 1, m - k))
+        return lower, upper
+
+    @staticmethod
+    def __simulateph(pi: np.array, T: np.array, n: int, rng) -> np.array:
+        """
+        Simulate n absorption times of PH(pi, T), running the Markov jump
+        processes side by side.
+
+        Args:
+            pi (ndarray): Initial distribution.
+            T (ndarray): Sub-intensity matrix.
+            n (int): Number of absorption times.
+            rng (Generator): Random number generator.
+
+        Returns:
+            ndarray: The absorption times.
+        """
+
+        p = T.shape[0]
+        rates = -np.diag(T)
+        jumps = np.zeros((p, p + 1))
+        jumps[:, :p] = np.maximum(T, 0.0) / rates[:, None]
+        np.fill_diagonal(jumps[:, :p], 0.0)
+        jumps[:, p] = np.maximum(-np.sum(T, axis=1), 0.0) / rates
+        cumulative = np.cumsum(jumps / np.sum(jumps, axis=1, keepdims=True), axis=1)
+        start = np.cumsum(pi / np.sum(pi))
+
+        state = np.minimum(np.searchsorted(start, rng.random(n), side="right"), p - 1)
+        times = np.zeros(n)
+        alive = np.arange(n)
+        while alive.size:
+            current = state[alive]
+            times[alive] += rng.exponential(size=alive.size) / rates[current]
+            nxt = np.minimum(np.sum(rng.random(alive.size)[:, None] >= cumulative[current], axis=1), p)
+            state[alive] = nxt
+            alive = alive[nxt < p]
+        return times
+
+    def __simulatenull(self, truth: dict, eta0: np.array, sigma0, rng) -> np.array:
+        """
+        Simulate positive responses in the order of the fit,
+        y = U exp(-eta0 - b) with U ~ PH(pi, T) and b ~ N(0, sigma0^2) per group.
+
+        Args:
+            truth (dict): 'pi' and 'T' on the scale of the centred design.
+            eta0 (ndarray): Linear predictor without random effect.
+            sigma0 (float or None): Standard deviation of the random effect.
+            rng (Generator): Random number generator.
+
+        Returns:
+            ndarray: The simulated responses.
+        """
+        eta = eta0
+        if sigma0:
+            eta = eta0 + rng.normal(scale=sigma0, size=len(self.design.grouplabels))[self.__groups]
+        return self.__simulateph(truth["pi"], truth["T"], eta0.size, rng) * np.exp(-eta)
+
+    def __simulatelr(self, reduced, keep: list, nsim: int, rng, term: str) -> np.array:
+        """
+        Simulate the likelihood-ratio statistic of an effect under the model
+        fitted without it. The smaller model is started from the parameters
+        that generated the data and the larger from the smaller fit, so the
+        statistic is not negative; data sets whose fits fail are left out.
+
+        Args:
+            reduced (_fitcphreg): The model fitted without the effect.
+            keep (list): Indices of the columns without the effect.
+            nsim (int): Number of simulated data sets.
+            rng (Generator): Random number generator.
+            term (str): Name of the effect, for progress output.
+
+        Returns:
+            ndarray: The simulated statistics.
+        """
+
+        X = self.design.Xtilde[self.order]
+        Xr = X[:, keep]
+        truth = self.__startfrom(reduced)
+        eta0 = Xr @ truth["beta"] if keep else np.zeros(X.shape[0])
+        sigma0 = reduced.sigma if self.__groups is not None else None
+
+        values = []
+        for r in range(nsim):
+            y = self.__simulatenull(truth, eta0, sigma0, rng)
+            seed = int(rng.integers(2 ** 31))
+            fitted = self.__engine(y, Xr, self.lrsimrestarts, seed, [truth])
+            if fitted is None:
+                continue
+            start = self.__startfrom(fitted)
+            start["beta"] = self.__insert(start["beta"], keep, self.design.d)
+            full = self.__engine(y, X, self.lrsimrestarts, seed, [start])
+            if full is None:
+                continue
+            values.append(max(2.0 * (full.loglikelihood - fitted.loglikelihood), 0.0))
+            if self.verbose:
+                print("likelihood-ratio test of %s: simulation %d of %d, statistic %.4f"
+                      % (term, r + 1, nsim, values[-1]))
+
+        if len(values) < nsim:
+            print("Warning: %d of the %d simulated data sets for '%s' could not be fitted and were left out."
+                  % (nsim - len(values), nsim, term))
+        return np.array(values)
+
     def __eta(self, covariates: dict, group) -> float:
         """
         Return the linear predictor for a set of covariates and a group.
 
         Args:
             covariates (dict): Value of each variable, or None for the baseline.
-            group: Label of a group, or None for a zero intercept.
+            group: Label of a group, or None for a zero random effect.
 
         Returns:
             float: The linear predictor, or None if the input is unusable.
@@ -764,7 +1115,7 @@ class fitreg:
 
         if group is not None:
             if self.ranef is None:
-                print("Error: The model has no random intercept, so a group cannot be given.")
+                print("Error: The model has no random effect, so a group cannot be given.")
                 return None
             labels = self.design.grouplabels
             matches = [index for index, label in enumerate(labels) if label == group]

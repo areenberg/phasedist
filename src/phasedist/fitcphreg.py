@@ -10,44 +10,20 @@ from phasedist.regtools import _stoprule, _aghq
 
 class _fitcphreg:
     """
-    Fits a continuous-time phase-type regression with proportional
-    intensities, Bladt (2022), optionally with a Gaussian random intercept
-    per group.
+    Fits a continuous-time phase-type regression with proportional intensities,
+    Y | x, b ~ PH(pi, exp(x'beta + b) T), see Bladt (2022), optionally with a
+    Gaussian random effect b per group.
 
-    Given covariates x and the random intercept b of its group, an observation
-    is the absorption time of a Markov jump process whose every intensity is
-    multiplied by exp(eta), eta = x'beta + b:
-
-        Y | x, b ~ PH(pi, exp(eta) T),
-
-    so that U = exp(eta) Y ~ PH(pi, T). The design matrix carries no
-    intercept: the intercept is the scale of T. Only the homogeneous model is
-    fitted, as in fitcph; the inhomogeneous variants of Bladt (2022) are left
-    out.
-
-    The parameters are estimated by an ECM algorithm (Meng and Rubin, 1993).
-    The E-step is the one of p. 678 in Bladt and Nielsen (2017) on the
-    transformed times U, with the Van Loan block matrix evaluated by
-    uniformization. The conditional M-steps are the closed-form phase-type
-    M-step for (pi, T) (mcph), a Poisson regression for beta, and, with a
-    random intercept, a closed form for its variance. A random intercept is
-    integrated out by adaptive Gauss-Hermite quadrature: the
-    nodes are adapted for at least 30 iterations, then frozen so that the EM
-    runs on a fixed objective, and re-checked after convergence. Before that,
-    the derivative of the likelihood in sigma^2 at zero is evaluated at the
-    fixed-effects fit (Verbeke and Molenberghs, 2003); where it is not
-    positive, sigma = 0 is the estimate and the fit ends there, instead of an
-    EM crawling towards the boundary.
-
-    Starting values: beta from the quasi-likelihood equations of a Gamma
-    regression (Gardner, 2024, Chapter 4), (pi, T) from an ordered preset for
-    the chain structures and `restarts` random structures (rndcph), every
-    start run to convergence. A fit that ends with a phase holding a
-    negligible share of the expected time is a lower-order model in disguise
-    that EM cannot leave, and the best other start is used instead.
-
-    Convergence is assessed by the windowed Aitken rule with a confirmation
-    block (_stoprule).
+    The parameters are estimated by an ECM algorithm (Meng and Rubin, 1993):
+    the E-step of p. 678 in Bladt and Nielsen (2017) on the transformed times
+    exp(x'beta + b) y, and conditional M-steps for (pi, T), beta (a Poisson
+    regression) and sigma. A random effect is integrated out by adaptive
+    Gauss-Hermite quadrature, with sigma = 0 detected by the score test of
+    Verbeke and Molenberghs (2003). The starting coefficients are those of
+    Gardner (2024), Chapter 4. Convergence is assessed by Aitken acceleration
+    with a confirmation block (_stoprule), and the iterations are accelerated
+    by SQUAREM, see Varadhan and Roland (2008). The design is in the design
+    note phreg-fitting-algorithm.md.
 
     Warning: This class does not contain any input checks.
 
@@ -64,36 +40,14 @@ class _fitcphreg:
         Meng, X.-L., & Rubin, D. B. (1993). Maximum likelihood estimation via the ECM
         algorithm. Biometrika, 80(2), 267-278. https://doi.org/10.1093/biomet/80.2.267
 
+        Varadhan, R., & Roland, C. (2008). Simple and Globally Convergent Methods for
+        Accelerating the Convergence of Any EM Algorithm. Scandinavian Journal of
+        Statistics, 35(2), 335-353. https://doi.org/10.1111/j.1467-9469.2007.00585.x
+
         Verbeke, G., & Molenberghs, G. (2003). The use of score tests for inference on
         variance components. Biometrics, 59(2), 254-262.
         https://doi.org/10.1111/1541-0420.00032
     """
-
-    # the share of the expected time below which a phase counts as unused,
-    # and the number of iterations a start may stay so before it is abandoned
-    UNUSEDSHARE = 1e-6
-    UNUSEDPATIENCE = 20
-    # a start is given up once, after at least HOPELESSITER iterations, even
-    # its projected limit lies more than HOPELESSGAP below the best start so
-    # far
-    HOPELESSITER = 1000
-    HOPELESSGAP = 1.0
-
-    # the node schedule of the random intercept
-    MINADAPT = 30
-    MAXADAPT = 1000
-    ADAPTCHANGE = 1e-3
-    MAXREADAPT = 20
-    # the confirmation block after a re-adaptation, which starts from a fit
-    # that has already passed the full block on nearly the same objective
-    READAPTCONFIRM = 30
-    # the largest Poisson parameter (rate times time) handed to _unif; longer
-    # times are halved until below it and the result squared back
-    MAXPOISSON = 1000.0
-    # an extrapolated SQUAREM candidate whose largest Poisson parameter (rate
-    # times transformed time) exceeds this multiple of the plain iterate's is
-    # rejected without being evaluated
-    SQUAREMSCALE = 10.0
 
     def __init__(
         self,
@@ -110,31 +64,30 @@ class _fitcphreg:
         itermax: int = 100000,
         accelerate: bool = True,
         verbose: bool = False,
+        starts: list = None,
+        covariance: bool = True,
     ) -> None:
         """
         Initializes the phase-type regression fitter.
 
         Args:
-            obs (ndarray): Positive observations, sorted by group when there
-                are groups.
-            design (ndarray): Design matrix without intercept column, one row
-                per observation, centred column by column.
-            groups (ndarray, optional): Group code 0, ..., J-1 of each
-                observation, in non-decreasing order. None for a model
-                without random intercept.
+            obs (ndarray): Positive observations, sorted by group.
+            design (ndarray): Centred design matrix without intercept column.
+            groups (ndarray, optional): Group code 0, ..., J-1 of each observation,
+                non-decreasing; None without random effect.
             initpi (ndarray): Structure of the initial distribution.
             initphgen (ndarray): Structure of the phase-type generator.
             initexitrates (ndarray): Structure of the exit-rate vector.
             quadnodes (int, default=7): Quadrature nodes per group.
             restarts (int, default=10): Number of random starts.
-            seed (int): Random seed for reproducibility.
+            seed (int): Random seed.
             tolerance (float, default=1e-5): Convergence tolerance.
-            itermax (int, default=100000): Maximum number of iterations of each
-                run to convergence.
-            accelerate (bool, default=True): Whether to accelerate the
-                iterations on a fixed objective by SQUAREM.
-            verbose (bool, default=False): Whether to print intermediate
-                fitting information.
+            itermax (int, default=100000): Maximum number of iterations of each start.
+            accelerate (bool, default=True): Whether to accelerate by SQUAREM.
+            verbose (bool, default=False): Verbosity flag.
+            starts (list, optional): Further starting values, run first:
+                dictionaries with 'pi', 'T' and 'beta' on the scale of the design.
+            covariance (bool, default=True): Whether to compute the covariance.
         """
 
         self.obs = np.asarray(obs, dtype=float)
@@ -151,6 +104,25 @@ class _fitcphreg:
         self.itermax = itermax
         self.accelerate = accelerate
         self.verbose = verbose
+        self.extrastarts = [] if starts is None else list(starts)
+        self.wantcovariance = covariance
+
+        # unused phases (share of the expected time) and their patience
+        self.unusedshare = 1e-6
+        self.unusedpatience = 20
+        # a start that cannot become the best is given up (design note, 5.3)
+        self.hopelessiter = 1000
+        self.hopelessgap = 1.0
+        # the node schedule of the random effect (design note, 6.4)
+        self.minadapt = 30
+        self.maxadapt = 1000
+        self.adaptchange = 1e-3
+        self.maxreadapt = 20
+        self.readaptconfirm = 30
+        # scaling and squaring above this Poisson parameter
+        self.maxpoisson = 1000.0
+        # SQUAREM candidates costlier than this multiple are rejected unevaluated
+        self.squaremscale = 10.0
 
         self.__initialize()
 
@@ -199,8 +171,7 @@ class _fitcphreg:
         self.unif = _unif(tolerance=1e-14)
         self.mstep = mcph(nphases=self.nphases, nobs=self.n)
 
-        # the generator entries that are free; the structural zeros stay zero
-        # through every iteration and every extrapolation
+        # the free generator entries; structural zeros stay zero
         self.offmask = (self.initphgen != 0.0) & ~np.eye(self.nphases, dtype=bool)
 
         if self.groups is not None:
@@ -228,23 +199,9 @@ class _fitcphreg:
 
     def __expm(self, matrix: np.array, times: np.array, nrows: int = None) -> np.array:
         """
-        Returns exp(matrix * y), or its leading rows, for every y, evaluated by
-        uniformization. The cost is the Poisson weights, times by terms, and
-        the number of terms is set by the longest time of a call. The times
-        are therefore sorted and processed in chunks whose Poisson parameter
-        (the uniformization rate times y) spans at most a factor of two, or
-        32 at the short end, so that each time gets about the terms it needs
-        rather than those of the longest time. A chunk is split further to
-        keep its weights within a fixed memory budget.
-
-        Uniformization needs about as many terms as the Poisson parameter, so
-        a stiff generator (one fast phase) makes it slow: in one
-        random-intercept fit the ECM moved a first phase to rate 2,400 to
-        model the shortest times, the Poisson parameter reached 50,000, and an
-        iteration took seconds. For a chunk whose Poisson parameter exceeds
-        MAXPOISSON the times are halved s times until it does not,
-        exp(matrix y / 2^s) is evaluated by uniformization, and squared s
-        times: exp(matrix y) = exp(matrix y / 2^s)^(2^s).
+        Returns exp(matrix * y), or its leading rows, for every y by
+        uniformization. The times are processed in chunks of similar Poisson
+        parameter, and a chunk above maxpoisson is scaled and squared.
 
         Args:
             matrix (ndarray): A sub-intensity matrix.
@@ -275,10 +232,10 @@ class _fitcphreg:
             stop = max(int(np.searchsorted(mus, limit, side="right")), start + 1)
             terms = mus[stop - 1] + 6.0 * np.sqrt(mus[stop - 1]) + 20.0
             stop = min(stop, start + max(16, int(budget / (terms + 1.0))))
-            if mus[stop - 1] <= self.MAXPOISSON:
+            if mus[stop - 1] <= self.maxpoisson:
                 out[order[start:stop]] = self.unif.run(matrix, ordered[start:stop], nrows=nrows)
             else:
-                halvings = int(np.ceil(np.log2(mus[stop - 1] / self.MAXPOISSON)))
+                halvings = int(np.ceil(np.log2(mus[stop - 1] / self.maxpoisson)))
                 block = self.unif.run(matrix, ordered[start:stop] / 2.0 ** halvings)
                 for _ in range(halvings):
                     block = block @ block
@@ -289,7 +246,7 @@ class _fitcphreg:
 
     def __rowexp(self, pi: np.array, T: np.array, u: np.array) -> np.array:
         """
-        Returns pi exp(T u) for every u, one row each.
+        Returns pi exp(T u) for every u.
 
         Args:
             pi (ndarray): Initial distribution.
@@ -323,12 +280,8 @@ class _fitcphreg:
     def __derivs(self, s: dict, eta: np.array, y: np.array) -> tuple:
         """
         Returns the first and second derivatives of each row's log-density in
-        eta. With a = pi exp(uT), f_k = a T^k t and u = e^eta y,
-
-            l'  = 1 + u f1/f0,
-            l'' = u f1/f0 + u^2 (f2/f0 - (f1/f0)^2),
-
-        T commuting with exp(uT).
+        eta, l' = 1 + u f1/f0 and l'' = u f1/f0 + u^2 (f2/f0 - (f1/f0)^2) with
+        f_k = pi exp(uT) T^k t and u = e^eta y.
 
         Args:
             s (dict): The parameters.
@@ -351,16 +304,9 @@ class _fitcphreg:
 
     def __estep(self, s: dict, u: np.array) -> dict:
         """
-        Performs the E-step on the transformed times u, one row each.
-        Exponentiated over u, the block matrix [[T, t pi],[0, T]] has top-left
-        block exp(Tu) and top-right block J(u), Theorem A.2.1 (Van Loan).
-
-        Returns per row the density of U and the quantities the conditional
-        expectations are built from; __weigh() turns them into the weighted
-        sums of the M-step. The two steps are separate because, with a random
-        intercept, the weights depend on the densities computed here. A row
-        whose density underflows gets zero statistics; this only happens at
-        quadrature nodes of negligible weight.
+        Performs the E-step on the transformed times u. The integral over the time
+        of the jump is the upper right block of exp(Bu) for B = [[T, t pi], [0, T]],
+        see Van Loan (1978).
 
         Args:
             s (dict): The parameters.
@@ -390,10 +336,8 @@ class _fitcphreg:
 
     def __weigh(self, s: dict, e: dict, weights: np.array) -> dict:
         """
-        Returns the weighted sums of the conditional expectations that the
-        M-step needs, and per row the two inputs of the beta step: the
-        expected number of jumps, the absorption included, and the expected
-        time in each phase on the transformed clock u = exp(eta) y.
+        Returns the weighted sums of the conditional expectations for the M-step,
+        and per row the expected jumps and phase times for the beta step.
 
         Args:
             s (dict): The parameters.
@@ -418,8 +362,7 @@ class _fitcphreg:
         out["bi"] = pi * (inv @ e["eTut"])
         out["zi"] = inv @ Jdiag
         out["ni"] = t * (inv @ e["a"])
-        # element k,s is t_ks times the weighted sum of J[s,k], i.e. the
-        # generator against the transpose of the J-matrix
+        # the generator against the transpose of the J-matrix
         out["nij"] = offdiagonal * np.einsum("m,msk->ks", inv, J)
         out["jumps"] = 1.0 + np.einsum("ks,msk->m", offdiagonal, J) * invf
         out["zrow"] = Jdiag * invf[:, None]
@@ -433,14 +376,9 @@ class _fitcphreg:
     def __betastep(self, rows: np.array, jumps: np.array, exposure: np.array,
                    beta: np.array, offset) -> np.array:
         """
-        Maximizes the part of the expected complete-data log-likelihood that
-        depends on beta,
-
-            Q(beta) = sum m (x'beta + o) - exp(x'beta + o) w,
-
-        a Poisson log-likelihood with pseudo-counts m (the expected jumps) and
-        exposures w. Q is concave, so Newton's method with step halving on Q
-        converges in a few steps, and no matrix exponential is needed.
+        Maximizes Q(beta) = sum m (x'beta + o) - exp(x'beta + o) w, a Poisson
+        log-likelihood with pseudo-counts m and exposures w, by Newton's method
+        with step halving.
 
         Args:
             rows (ndarray): Design rows.
@@ -498,10 +436,8 @@ class _fitcphreg:
 
     def __pack(self, s: dict) -> np.array:
         """
-        Returns the parameters as one vector: the initial distribution, the
-        exit rates, the off-diagonal generator entries, beta, and sigma where
-        the model has it. The generator's diagonal is left out
-        since it is minus the rest of its row.
+        Returns the parameters as one vector: pi, t, the off-diagonal entries of T,
+        beta and sigma where present.
 
         Args:
             s (dict): The parameters.
@@ -518,13 +454,11 @@ class _fitcphreg:
 
     def __unpack(self, values: np.array, template: dict) -> dict:
         """
-        Returns the parameters held in a vector from __pack, rebuilding the
-        generator's diagonal and normalizing the initial distribution.
+        Returns the parameters held in a vector from __pack.
 
         Args:
             values (ndarray): The parameters as one vector.
-            template (dict): Parameters of the same model, telling whether
-                sigma is present.
+            template (dict): Parameters of the same model.
 
         Returns:
             dict: The parameters.
@@ -552,9 +486,7 @@ class _fitcphreg:
 
     def __isfeasible(self, values: np.array, template: dict) -> bool:
         """
-        Returns whether a vector of parameters describes a model: rates and
-        probabilities non-negative, every phase possible to leave, and sigma
-        positive. beta is unrestricted.
+        Returns whether a vector of parameters describes a model.
 
         Args:
             values (ndarray): The parameters as one vector.
@@ -586,10 +518,8 @@ class _fitcphreg:
 
     def __poissonbound(self, s: dict) -> float:
         """
-        Returns the largest Poisson parameter of the uniformization at s, the
-        largest rate of T times the largest transformed time exp(x'beta) y,
-        random intercepts left out. The cost of a
-        likelihood evaluation grows with it.
+        Returns the largest Poisson parameter of the uniformization at s, which
+        sets the cost of a likelihood evaluation.
 
         Args:
             s (dict): The parameters.
@@ -604,28 +534,14 @@ class _fitcphreg:
 
     def __squaremstep(self, s: dict, mapping, objective) -> tuple:
         """
-        Performs one accelerated iteration, moving the parameter vector x to
-        x - 2 alpha r + alpha^2 v for the step r of two iterations and its
-        change v, see Varadhan and Roland (2008), as in fitcph2dist. At
-        alpha = -1 this is the second iterate exactly, so a candidate that is
-        infeasible or does not improve on it is rejected and backtracking ends
-        at the plain algorithm: the likelihood stays monotone.
-
-        When the change v is small against the step r, alpha is large and the
-        first candidates can have rates or coefficients orders of magnitude
-        beyond the iterates. Their likelihood is poor, but evaluating it
-        costs time in proportion to the largest Poisson parameter of the
-        uniformization, which in one fit reached 50,000 and kept a single
-        backtracking search busy for minutes. A candidate whose bound exceeds
-        SQUAREMSCALE times the plain iterate's is therefore rejected without
-        evaluation, and one whose uniformization still reaches its term limit
-        is rejected after it. Rejecting a candidate never lowers the
-        likelihood.
+        Performs one SQUAREM iteration, see Varadhan and Roland (2008), as in
+        fitcph2dist. A candidate is rejected if it is infeasible, does not improve
+        on the second plain iterate, or is too costly to evaluate (squaremscale),
+        so the likelihood stays monotone.
 
         Args:
             s (dict): The parameters.
-            mapping (callable): One plain iteration, returning the objective at
-                its argument and the updated parameters (None on failure).
+            mapping (callable): One plain iteration.
             objective (callable): The objective at a set of parameters.
 
         Returns:
@@ -652,7 +568,7 @@ class _fitcphreg:
         if lengthv > 0.0:
             alpha = -float(np.linalg.norm(r)) / lengthv
             plain = objective(second)
-            largest = self.SQUAREMSCALE * self.__poissonbound(second)
+            largest = self.squaremscale * self.__poissonbound(second)
 
             while alpha < -1.001:
                 candidate = start - 2.0 * alpha * r + alpha * alpha * v
@@ -662,8 +578,7 @@ class _fitcphreg:
                         alpha = (alpha - 1.0) / 2.0
                         continue
                     try:
-                        # a candidate whose likelihood cannot be evaluated to
-                        # the uniformization's tolerance is rejected
+                        # reject a candidate the uniformization cannot evaluate
                         with warnings.catch_warnings(record=True) as caught:
                             warnings.simplefilter("always")
                             value = objective(trial)
@@ -707,7 +622,7 @@ class _fitcphreg:
 
         Returns:
             tuple: The log-likelihood at s (float) and the updated parameters
-                (dict), the latter None if the likelihood is not finite.
+                (dict, None if the likelihood is not finite).
         """
 
         eta = self.X @ s["beta"]
@@ -726,9 +641,7 @@ class _fitcphreg:
         new["pi"], new["T"], new["t"] = self.mstep.run(bi=e["bi"], zi=e["zi"],
                                                        ni=e["ni"], nij=e["nij"])
 
-        # the exposure is the expected occupation on the time axis of y,
-        # weighted by the new rates: E(H_k) = E(Z_k) / exp(eta), Z being on
-        # the time axis of u
+        # the exposure on the time axis of y, E(Z_k) / exp(eta), weighted by the new rates
         exposure = (e["zrow"] @ (-np.diag(new["T"]))) / np.exp(eta)
         new["beta"] = self.__betastep(self.X, e["jumps"], exposure, s["beta"], 0.0)
 
@@ -736,21 +649,15 @@ class _fitcphreg:
 
     def __quasilikelihood(self, y: np.array) -> tuple:
         """
-        Returns the starting coefficients from the quasi-likelihood equations
-        of a Gamma regression with log link, sum x (y/mu - 1) = 0, fitted with
-        an intercept. The mean of the model scales as exp(-x'beta) and its
-        variance as the square of the mean, so these are its quasi-likelihood
-        equations (Gardner, 2024, Chapter 4); their root is unique, needs no
-        phase-type quantities, and coincides with the maximum likelihood
-        estimate of the one-phase model. The sign is flipped to the
-        convention of the regression, where positive means shorter times.
+        Returns the starting coefficients from the quasi-likelihood equations of a
+        Gamma regression with log link, see Gardner (2024), Chapter 4, with the
+        sign of the regression (positive means shorter times).
 
         Args:
             y (ndarray): The observations.
 
         Returns:
-            tuple: The coefficients (ndarray) and the fitted mean at x = 0
-                (float).
+            tuple: The coefficients (ndarray) and the fitted mean at x = 0 (float).
         """
 
         design = np.column_stack([np.ones(self.n), self.X])
@@ -783,17 +690,14 @@ class _fitcphreg:
 
     def __ischain(self) -> bool:
         """
-        Returns whether the structure is an ordered chain: every phase but the
-        last may move to the next, and no phase may move back. Its phases are
-        not exchangeable, so a deterministic preset is not a fixed point of EM
-        there, unlike for the general and hyper-exponential structures.
+        Returns whether the structure is an ordered chain (Coxian, generalized
+        Coxian, generalized Erlang), for which a deterministic preset is used.
 
         Args:
             None
 
         Returns:
-            bool: True for the Coxian, generalized Coxian and generalized
-                Erlang structures.
+            bool: True for an ordered chain.
         """
 
         p = self.nphases
@@ -808,10 +712,8 @@ class _fitcphreg:
 
     def __preset(self) -> tuple:
         """
-        Returns a deterministic start for an ordered chain: distinct total
-        rates, decreasing along the chain so the phases are not exchangeable,
-        nine tenths of each rate moving forward where the phase may also exit,
-        and the initial distribution spread evenly over its free entries.
+        Returns a deterministic start for an ordered chain, with distinct rates
+        decreasing along the chain.
 
         Args:
             None
@@ -844,13 +746,9 @@ class _fitcphreg:
 
     def __startvalues(self) -> list:
         """
-        Returns the starting values: the quasi-likelihood coefficients
-        combined with phase-type representations of the requested structure,
-        each scaled so that its mean matches the transformed data. The
-        representations are a deterministic preset for an ordered chain and
-        `restarts` random ones (rndcph). A symmetric preset is not used for the
-        general or hyper-exponential structures, being a fixed point of EM
-        there (design note, Section 5.3).
+        Returns the starting values: the given starts, then the preset and
+        `restarts` random representations (rndcph), scaled to the transformed
+        data, with the quasi-likelihood coefficients.
 
         Args:
             None
@@ -873,7 +771,14 @@ class _fitcphreg:
                          exitrates=self.initexitrates)
             representations.append(rnd.run())
 
+        # starts given by the caller run first, usually close to the maximum
         starts = []
+        for given in self.extrastarts:
+            T = np.array(given["T"], dtype=float)
+            starts.append(dict(pi=np.array(given["pi"], dtype=float).reshape(-1), T=T,
+                               t=-np.sum(T, axis=1), beta=np.array(given["beta"], dtype=float).reshape(-1),
+                               sigma=None))
+
         for pi, T, t in representations:
             mean = float(pi @ np.linalg.solve(-T, np.ones(self.nphases)))
             factor = mean / target
@@ -884,8 +789,7 @@ class _fitcphreg:
 
     def __itermaxwarning(self, rule: _stoprule, iteration: int) -> None:
         """
-        Warns that a run to convergence reached itermax, saying whether the
-        stopping rule had already been satisfied and was being confirmed.
+        Warns that a run reached itermax.
 
         Args:
             rule (_stoprule): The stopping rule of the run.
@@ -918,34 +822,21 @@ class _fitcphreg:
     def __runfixed(self, s: dict, maxiter: int, final: bool, abandon: bool = False,
                    target: float = None) -> tuple:
         """
-        Runs the fixed-effects ECM from s, for at most maxiter iterations or
-        until the stopping rule is satisfied.
-
-        With abandon, a run whose representation has had an unused phase for
-        UNUSEDPATIENCE iterations is stopped as degenerate. Such a run cannot
-        leave the lower-order model it has become, and its rates then grow
-        without bound: in one run the unused phases' rates went from 100 to
-        7,000 in 60 iterations, the uniformization needed ever more terms, and
-        an iteration came to take seconds while the likelihood stayed put.
+        Runs the fixed-effects ECM from s until the stopping rule is satisfied. A
+        run with an unused phase for unusedpatience iterations is stopped as
+        degenerate (with abandon), and one whose projected limit lies more than
+        hopelessgap below target after hopelessiter iterations as inferior.
 
         Args:
             s (dict): Starting parameters.
             maxiter (int): Largest number of iterations.
-            final (bool): Whether this is a run to convergence, which reports
-                on reaching maxiter.
+            final (bool): Whether to warn on reaching maxiter.
             abandon (bool, default=False): Whether to stop a degenerate run.
-            target (float, optional): The log-likelihood of the best start so
-                far. A run whose projected limit, the log-likelihood plus the
-                stopping rule's estimate of the remaining gain, lies more than
-                HOPELESSGAP below it after HOPELESSITER iterations is stopped
-                as inferior: it cannot become the best start. In one data set
-                a start crawled for more than 22,000 iterations two units below
-                the best, gaining 3e-9 per iteration.
+            target (float, optional): The log-likelihood of the best start so far.
 
         Returns:
-            tuple: The parameters (dict), their log-likelihood (float), the
-                status ("converged", "itermax", "degenerate", "inferior" or
-                "failed") and
+            tuple: The parameters (dict), their log-likelihood (float), the status
+                ("converged", "itermax", "degenerate", "inferior" or "failed") and
                 the number of iterations (int).
         """
 
@@ -969,8 +860,7 @@ class _fitcphreg:
 
             self.__checkdecrease(previous, loglik, iteration)
             previous = loglik
-            # an accelerated iteration costs about two plain ones, so it counts
-            # twice and itermax keeps its meaning
+            # an accelerated iteration counts as two plain ones
             iteration += 2 if self.accelerate else 1
             s = new
 
@@ -980,7 +870,7 @@ class _fitcphreg:
 
             if abandon:
                 unusedfor = unusedfor + (2 if self.accelerate else 1) if self.__unused(s) else 0
-                if unusedfor >= self.UNUSEDPATIENCE:
+                if unusedfor >= self.unusedpatience:
                     status = "degenerate"
                     break
 
@@ -988,8 +878,8 @@ class _fitcphreg:
                 status = "converged"
                 break
 
-            if (target is not None and iteration >= self.HOPELESSITER
-                    and np.isfinite(rule.eps) and loglik + rule.eps < target - self.HOPELESSGAP):
+            if (target is not None and iteration >= self.hopelessiter
+                    and np.isfinite(rule.eps) and loglik + rule.eps < target - self.hopelessgap):
                 status = "inferior"
                 break
 
@@ -1005,10 +895,8 @@ class _fitcphreg:
 
     def __unused(self, s: dict) -> bool:
         """
-        Returns whether some phase holds a negligible share of the expected
-        time before absorption, pi (-T)^(-1). Such a fit is a lower-order
-        model in disguise: a vanishing transition behaves like a structural
-        zero, so EM cannot leave it.
+        Returns whether some phase holds a negligible share of the expected time
+        before absorption, pi (-T)^(-1), which EM cannot leave.
 
         Args:
             s (dict): The parameters.
@@ -1023,17 +911,12 @@ class _fitcphreg:
         occupation = np.linalg.solve(-s["T"].T, s["pi"])
         total = float(np.sum(occupation))
 
-        return bool(np.any(occupation < self.UNUSEDSHARE * total))
+        return bool(np.any(occupation < self.unusedshare * total))
 
     def __fitfixed(self) -> None:
         """
-        Fits the fixed-effects model: runs every start to convergence and
-        keeps the best fit without an unused phase. Every start is run to the
-        end because the order of the starts after a short run need not be
-        their order at convergence; a start that becomes degenerate is
-        abandoned, and so is one that can no longer become the best (see
-        __runfixed). If every start ends degenerate, the best of them is run to
-        convergence and kept with a warning.
+        Fits the fixed-effects model: runs every start to convergence and keeps the
+        best fit without an unused phase, or the best degenerate fit with a warning.
 
         Args:
             None
@@ -1047,8 +930,7 @@ class _fitcphreg:
         self.startlogliks = []
         self.startiterations = []
         self.startseconds = []
-        # per start: "converged", "itermax", "degenerate" (an unused phase),
-        # "inferior" (given up below the best start) or "failed"
+        # per start: "converged", "itermax", "degenerate", "inferior" or "failed"
         self.startstatus = []
 
         for number, start in enumerate(self.__startvalues()):
@@ -1098,23 +980,19 @@ class _fitcphreg:
 
         self.state, self.loglikelihood, status, self.iterations = best
         self.converged = status == "converged"
-        # the log-likelihood at sigma = 0, the reference of a likelihood-ratio
-        # test of the random intercept
+        # the log-likelihood at sigma = 0, for the test of the random effect
         self.fixedloglikelihood = self.loglikelihood
 
         return None
 
     # ----------------------------------------------------------------------
-    #   PRIVATE METHODS: RANDOM INTERCEPT
+    #   PRIVATE METHODS: RANDOM EFFECT
     # ----------------------------------------------------------------------
 
     def __modes(self, s: dict, start: np.array) -> tuple:
         """
-        Returns the mode of each group's integrand, l_j(b) + log phi(b; 0,
-        sigma^2), found by damped Newton steps on all groups at once, and the
-        curvature scale (-H)^(-1/2) at the mode. Where the curvature is not
-        negative (possible for a log-convex base density) the prior's
-        curvature is used instead.
+        Returns the mode of each group's integrand, l_j(b) + log phi(b; 0, sigma^2),
+        by damped Newton steps, and the curvature scale (-H)^(-1/2) at the mode.
 
         Args:
             s (dict): The parameters.
@@ -1122,7 +1000,7 @@ class _fitcphreg:
 
         Returns:
             tuple: The modes (ndarray), the scales (ndarray) and the number of
-                groups that needed the fallback (int).
+                groups whose curvature fell back on the prior's (int).
         """
 
         base = self.X @ s["beta"]
@@ -1153,7 +1031,7 @@ class _fitcphreg:
 
         Args:
             nodes (ndarray): The nodes.
-            sigma (float): The standard deviation of the random intercept.
+            sigma (float): The standard deviation of the random effect.
 
         Returns:
             ndarray: The log-densities.
@@ -1163,8 +1041,8 @@ class _fitcphreg:
 
     def __frozenloglik(self, s: dict, nodes: np.array, scales: np.array) -> tuple:
         """
-        Returns the marginal log-likelihood on the given nodes and the
-        posterior node weights.
+        Returns the marginal log-likelihood on the given nodes and the posterior
+        node weights.
 
         Args:
             s (dict): The parameters.
@@ -1185,8 +1063,7 @@ class _fitcphreg:
 
     def __randomiteration(self, s: dict, nodes: np.array, scales: np.array) -> tuple:
         """
-        One ECM iteration of the random-intercept model on fixed nodes, the
-        complete data being the node and the hidden path of each observation.
+        One ECM iteration of the random-effect model on fixed nodes.
 
         Args:
             s (dict): The parameters.
@@ -1195,8 +1072,7 @@ class _fitcphreg:
 
         Returns:
             tuple: The marginal log-likelihood at s (float) and the updated
-                parameters (dict), the latter None if the likelihood is not
-                finite.
+                parameters (dict, None if the likelihood is not finite).
         """
 
         R = nodes.shape[1]
@@ -1206,8 +1082,7 @@ class _fitcphreg:
 
         e = self.__estep(s, u.ravel())
 
-        # the node weights are the posterior of the node given the group's
-        # data, so they are only known once the densities are
+        # the node weights are the posterior of the node given the group's data
         with np.errstate(divide="ignore", invalid="ignore"):
             rows = eta + np.log(e["f0"].reshape(self.n, R))
         logintegrand = np.add.reduceat(rows, self.starts, axis=0) + self.__prior(nodes, s["sigma"])
@@ -1234,7 +1109,7 @@ class _fitcphreg:
 
     def __change(self, old: dict, new: dict) -> float:
         """
-        Returns the largest relative change of the identified parameters.
+        Returns the largest relative change of beta and sigma.
 
         Args:
             old (dict): Parameters before an iteration.
@@ -1254,15 +1129,8 @@ class _fitcphreg:
     def __boundaryscore(self, s: dict) -> float:
         """
         Returns the derivative of the marginal log-likelihood in sigma^2 at
-        sigma = 0, the other parameters at s. With l_i the log-density of row
-        i as a function of its linear predictor, group j has the likelihood
-        E exp(sum_i l_i(eta_i + b)), b ~ N(0, sigma^2), which to first order
-        in sigma^2 is exp(sum_i l_i(eta_i)) (1 + sigma^2 c_j / 2) with
-        c_j = (sum_i l'_i)^2 + sum_i l''_i. The derivative is the sum of
-        c_j / 2 over the groups. At the fixed-effects fit the gradient in the
-        other parameters vanishes, so a negative derivative makes sigma = 0 a
-        local maximum (Verbeke and Molenberghs, 2003); a derivative of exactly
-        zero is treated the same.
+        sigma = 0, the sum over the groups of ((sum_i l'_i)^2 + sum_i l''_i) / 2,
+        see Verbeke and Molenberghs (2003).
 
         Args:
             s (dict): The parameters, normally the fixed-effects fit.
@@ -1278,9 +1146,7 @@ class _fitcphreg:
 
     def __atboundary(self, s: dict, converged: bool) -> None:
         """
-        Ends the fit at sigma = 0 with the fixed-effects parameters s: the
-        model is then the one without random intercept, and every group's
-        predicted intercept is zero.
+        Ends the fit at sigma = 0 with the fixed-effects parameters s.
 
         Args:
             s (dict): The fixed-effects fit.
@@ -1294,23 +1160,18 @@ class _fitcphreg:
         self.boundary = True
         self.converged = converged
         warnings.warn(
-            "The estimated standard deviation of the random intercept is zero: the "
+            "The estimated standard deviation of the random effect is zero: the "
             "likelihood does not increase as it moves away from zero, so the groups "
             "vary no more than the fixed effects explain. The fit is that of the "
-            "model without random intercept.", RuntimeWarning, stacklevel=3)
+            "model without random effect.", RuntimeWarning, stacklevel=3)
 
         return None
 
     def __fitrandom(self) -> None:
         """
-        Fits the random-intercept model from the fixed-effects fit. The nodes
-        are adapted for at least MINADAPT iterations and until the parameters
-        settle, then frozen; after convergence they are adapted once more, and
-        the run resumes if that moves the log-likelihood by more than the
-        tolerance. The stopping rule starts afresh whenever the nodes move,
-        since the objective changes with them; after a re-adaptation with a
-        confirmation block of READAPTCONFIRM iterations rather than the full
-        one, the run starting from a fit that has passed the full block.
+        Fits the random-effect model from the fixed-effects fit. The nodes are
+        adapted for at least minadapt iterations, then frozen, and re-adapted
+        after convergence.
 
         Args:
             None
@@ -1321,9 +1182,7 @@ class _fitcphreg:
 
         s = dict(self.state)
 
-        # sigma = 0 is the fixed-effects fit; where the likelihood does not
-        # increase away from it, that is the estimate, and the ECM below would
-        # only crawl towards it (design note, Section 6.6)
+        # sigma = 0 when the likelihood does not increase away from it (design note, 6.6)
         self.boundaryscore = self.__boundaryscore(s)
         if not self.boundaryscore > 0.0:
             self.__atboundary(s, self.converged)
@@ -1351,8 +1210,7 @@ class _fitcphreg:
                 if adapting or not self.accelerate:
                     loglik, new = self.__randomiteration(s, nodes, scales)
                 else:
-                    # the nodes are frozen, so the objective is fixed and the
-                    # accelerated iteration keeps the likelihood monotone
+                    # frozen nodes: a fixed objective, so SQUAREM stays monotone
                     loglik, new = self.__squaremstep(
                         s,
                         lambda x: self.__randomiteration(x, nodes, scales),
@@ -1370,9 +1228,9 @@ class _fitcphreg:
 
             if adapting:
                 adapted += 1
-                settled = self.__change(s, new) < self.ADAPTCHANGE
+                settled = self.__change(s, new) < self.adaptchange
                 s = new
-                if (adapted >= self.MINADAPT and settled) or adapted >= self.MAXADAPT:
+                if (adapted >= self.minadapt and settled) or adapted >= self.maxadapt:
                     adapting = False
                     rule.reset()
                     previous = None
@@ -1382,14 +1240,10 @@ class _fitcphreg:
             sigmas.append(s["sigma"])
 
             if self.verbose and iteration % 25 == 0:
-                print("random intercept: iter =", iteration, "  eps =", rule.eps,
+                print("random effect: iter =", iteration, "  eps =", rule.eps,
                       "  loglik =", loglik, "  sigma =", s["sigma"])
 
-            # a standard deviation heading for zero converges sublinearly, so
-            # rather than crawl after it the fit moves to the boundary. The
-            # score check above makes this rare: it takes a likelihood that
-            # increases away from zero at the fixed-effects fit and yet has a
-            # path to zero from the start of this run
+            # sigma heading for zero converges sublinearly: move to the boundary
             if (s["sigma"] < 1e-3 and len(sigmas) > 50 and s["sigma"] < sigmas[-51]):
                 fixed = dict(s, sigma=None)
                 fixed, _, status, more = self.__runfixed(fixed, self.itermax, final=True)
@@ -1405,12 +1259,12 @@ class _fitcphreg:
                 newnodes = self.aghq.nodes(newmodes, newscales)
                 before = self.__frozenloglik(s, nodes, scales)[0]
                 after = self.__frozenloglik(s, newnodes, newscales)[0]
-                if abs(after - before) <= self.tolerance or readapts >= self.MAXREADAPT:
+                if abs(after - before) <= self.tolerance or readapts >= self.maxreadapt:
                     status = "converged"
                     break
                 modes, scales, nodes = newmodes, newscales, newnodes
                 readapts += 1
-                rule = _stoprule(tolerance=self.tolerance, confirmmin=self.READAPTCONFIRM)
+                rule = _stoprule(tolerance=self.tolerance, confirmmin=self.readaptconfirm)
                 previous = None
 
         if status == "itermax":
@@ -1429,8 +1283,7 @@ class _fitcphreg:
 
     def __checkdecrease(self, previous: float, loglik: float, iteration: int) -> None:
         """
-        Warns if the log-likelihood decreased by more than rounding, which an
-        ECM iteration on a fixed objective cannot do.
+        Warns if the log-likelihood decreased by more than rounding.
 
         Args:
             previous (float): The log-likelihood of the iteration before, or None.
@@ -1451,18 +1304,14 @@ class _fitcphreg:
 
     def __rateparameters(self, s: dict) -> tuple:
         """
-        Returns the free parameters of the phase-type representation at s on
-        the log scale, and the function that rebuilds the parameters from
-        them: the initial probabilities as log-ratios to the largest one, and
-        the logarithms of the positive exit rates and off-diagonal entries.
-        Entries that are zero at s stay zero.
+        Returns the free parameters of the phase-type representation on the log
+        scale, and the function that rebuilds the parameters from them.
 
         Args:
             s (dict): The parameters.
 
         Returns:
-            tuple: The free parameters (ndarray) and the function that maps
-                them back to a parameter dictionary.
+            tuple: The free parameters (ndarray) and the rebuilding function.
         """
 
         p = self.nphases
@@ -1497,12 +1346,8 @@ class _fitcphreg:
 
     def __information(self) -> np.array:
         """
-        Returns the observed information of beta in the fixed-effects model
-        with (pi, T) held at the fit, on the centred design:
-        -X' diag(l'') X. With every column centred, the information shared
-        between beta and the scale of T vanishes to first order, which is
-        what makes this conditional information valid for beta (design note,
-        Sections 9 and 11.9).
+        Returns the observed information of beta with (pi, T) held at the fit,
+        -X' diag(l'') X on the centred design.
 
         Args:
             None
@@ -1518,25 +1363,15 @@ class _fitcphreg:
 
     def __randominformation(self) -> tuple:
         """
-        Returns the observed information of all free parameters of the
-        random-intercept model: those of the phase-type representation
-        (__rateparameters), beta and log sigma, by central differences of the
-        marginal log-likelihood with the nodes re-adapted at each evaluation.
-
-        Holding (pi, T) at the fit is not enough here. sigma trades off
-        against the shape of the base distribution, a wider base distribution
-        explaining part of the spread that a larger sigma would, and the
-        information it shares with the rates does not vanish under centring.
-        On one data set the conditional standard errors of log sigma and of a
-        coefficient were 0.14 and 0.17 against 0.25 and 0.34 from the full
-        information (design note, Section 11.11).
+        Returns the observed information of the phase-type parameters, beta and
+        log sigma by central differences of the marginal log-likelihood.
 
         Args:
             None
 
         Returns:
-            tuple: The information matrix (ndarray), the free parameters of
-                the representation coming first, and their number (int).
+            tuple: The information matrix (ndarray) and the number of phase-type
+                parameters, which come first (int).
         """
 
         s = self.state
@@ -1572,11 +1407,8 @@ class _fitcphreg:
     @staticmethod
     def __profiled(information: np.array, m: int) -> np.array:
         """
-        Returns the information of the parameters after the first m, the
-        first m profiled out: A - B C^+ B' for the blocks C (the first m), B
-        and A. The raw phase-type parameters need not be identified, so C can
-        be singular; its pseudo-inverse drops the directions in which the
-        likelihood is flat, which identified parameters do not load on.
+        Returns the information of the parameters after the first m with the first
+        m profiled out, A - B C^+ B'.
 
         Args:
             information (ndarray): The full information matrix.
@@ -1600,8 +1432,8 @@ class _fitcphreg:
 
     def __finalize(self) -> None:
         """
-        Evaluates the final log-likelihood, the predicted random intercepts,
-        the covariance of the identified parameters and the parameter count.
+        Evaluates the final log-likelihood, the predicted random effects, the
+        covariance and the parameter count.
 
         Args:
             None
@@ -1622,7 +1454,7 @@ class _fitcphreg:
             self.modes = None
             self.ranef = None
         elif self.boundary:
-            # sigma = 0: the model without random intercept
+            # sigma = 0: the model without random effect
             self.loglikelihood = self.__fixedloglik(s)
             self.modes = np.zeros(self.ngroups)
             self.ranef = np.zeros(self.ngroups)
@@ -1630,18 +1462,14 @@ class _fitcphreg:
             self.modes, scales, _ = self.__modes(s, np.zeros(self.ngroups))
             nodes = self.aghq.nodes(self.modes, scales)
             self.loglikelihood, weights = self.__frozenloglik(s, nodes, scales)
-            # the posterior mean of each group's intercept
+            # the posterior mean of each group's random effect
             self.ranef = np.sum(weights * nodes, axis=1)
 
-        # the covariance of the identified parameters, (beta, log sigma);
-        # unavailable where the information is not positive definite. Without
-        # a random intercept, and at the boundary sigma = 0, that of beta with
-        # (pi, T) held at the fit; with a random intercept the full
-        # information with (pi, T) profiled out
+        # the covariance of (beta, log sigma) (design note, Section 9)
         k = self.d + (self.groups is not None)
         kidentified = k - 1 if self.boundary else k
         self.covariance = np.full((k, k), np.nan)
-        if kidentified:
+        if kidentified and self.wantcovariance:
             if self.groups is None or self.boundary:
                 information = self.__information()
             else:
@@ -1653,8 +1481,7 @@ class _fitcphreg:
                     "The observed information is not positive definite, so no "
                     "standard errors are reported.", RuntimeWarning, stacklevel=3)
 
-        # independent parameters: those of the phase-type representation, the
-        # diagonal of T being fixed by its row, plus beta and sigma
+        # independent parameters of the representation, plus beta and sigma
         offdiagonal = np.array(self.phgen, dtype=float)
         np.fill_diagonal(offdiagonal, 0.0)
         self.nparam = (int(np.count_nonzero(self.pi)) - 1

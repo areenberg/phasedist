@@ -4,23 +4,11 @@ from numpy.polynomial.hermite import hermgauss
 
 class _stoprule:
     """
-    Decides when an EM-type iteration has converged, from the sequence of
-    log-likelihoods it produces.
-
-    The remaining gain is estimated by Aitken extrapolation, see McLachlan and
-    Krishnan (2008), Section 4.9, with two changes that the stability studies
-    of the regression design showed to be needed:
-
-    - the convergence rate is the geometric mean of the last `window` step
-      ratios rather than a single ratio, so one irregular step early in the
-      fit cannot trigger a stop;
-    - a stop is only accepted after a confirmation block of further
-      iterations whose realised gain also stays below the tolerance, which
-      catches a slow phase that follows a fast one and a rate that drifts
-      upwards.
-
-    The rule only makes sense for a fixed objective. A caller that changes
-    the objective (for instance by moving quadrature nodes) must call reset().
+    Decides when an EM-type iteration has converged from its log-likelihoods,
+    by Aitken extrapolation, see McLachlan and Krishnan (2008), Section 4.9,
+    with the rate averaged over a window of steps and a stop confirmed by a
+    block of further iterations (design note, Section 7). The rule assumes a
+    fixed objective; call reset() when it changes.
 
     Warning: This class does not contain any input checks.
 
@@ -80,9 +68,8 @@ class _stoprule:
     def update(self, loglik: float, iterations: int = 1) -> bool:
         """
         Adds the log-likelihood of the latest step and reports whether the
-        iteration has converged. The confirmation block is measured in
-        iterations, so a step that counts as several (an accelerated one)
-        shortens it accordingly; the window is measured in steps.
+        iteration has converged. The confirmation block is counted in iterations,
+        the window in steps.
 
         Args:
             loglik (float): The log-likelihood of the latest step.
@@ -105,8 +92,7 @@ class _stoprule:
             if gain <= self.tolerance:
                 self.converged = True
                 return True
-            # the block gained more than the tolerance, so the stop was
-            # premature; the rule is applied again from here
+            # a premature stop: apply the rule again from here
             self.confirmstart = None
             self.confirmend = None
 
@@ -119,9 +105,8 @@ class _stoprule:
 
     def __remaining(self, k: int) -> float:
         """
-        Returns the estimated remaining gain after iteration k. Before
-        window + 1 steps have been seen there is nothing to estimate from, and
-        the estimate is infinite, which doubles as a minimum iteration count.
+        Returns the estimated remaining gain after iteration k, infinite before
+        window + 1 steps.
 
         Args:
             k (int): Index of the latest iteration since the last reset.
@@ -149,14 +134,9 @@ class _stoprule:
 
 class _aghq:
     """
-    Adaptive Gauss-Hermite quadrature for integrals over one Gaussian random
-    intercept per group,
-
-        int prod_i f(y_ij | b) phi(b; 0, sigma^2) db,
-
-    with the nodes of each group centred at the mode of the integrand and
-    scaled by its curvature, as in Liu and Pierce (1994) and Pinheiro and
-    Bates (1995).
+    Adaptive Gauss-Hermite quadrature for one Gaussian random effect per
+    group, the nodes centred at the mode of the integrand and scaled by its
+    curvature, see Liu and Pierce (1994) and Pinheiro and Bates (1995).
 
     Warning: This class does not contain any input checks.
 
@@ -200,18 +180,15 @@ class _aghq:
 
     def weights(self, logintegrand: np.array, scale: np.array) -> tuple:
         """
-        Returns each group's log-integral and its normalized posterior node
-        weights. Computed in logarithms, since the integrand of a group of
-        many observations under- or overflows.
+        Returns each group's log-integral and its posterior node weights,
+        computed in logarithms.
 
         Args:
-            logintegrand (ndarray): Log of the integrand at the nodes, one row
-                per group.
+            logintegrand (ndarray): Log of the integrand at the nodes, one row per group.
             scale (ndarray): Curvature scale of each group.
 
         Returns:
-            tuple: The group log-integrals (ndarray) and the node weights
-                (ndarray, rows summing to one).
+            tuple: The group log-integrals (ndarray) and the node weights (ndarray).
         """
 
         c = (logintegrand + self.logw[None, :] + self.x2[None, :]

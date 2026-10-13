@@ -4,35 +4,20 @@ import re
 import numpy as np
 
 
-# a variable name as R and Python both accept it: a letter or an underscore,
-# then letters, digits, underscores or dots
+# a variable name: a letter or an underscore, then letters, digits, underscores or dots
 _NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_.]*$")
 
 
 class _regformula:
     """
-    Parses a regression formula in the notation of R's lm and lme4 packages,
-    restricted to what fitreg supports:
+    Parses a regression formula in the notation of R's lm and lme4, restricted
+    to what fitreg supports: 'y ~ x + z', 'y ~ x * z' (x + z + x:z),
+    'y ~ x + z + (1|g)' and 'y ~ 1 + (1|g)'. Repeated effects are kept once,
+    and an interaction needs all its lower-order effects. The effects are
+    tuples of variable names, sorted by degree.
 
-        'y ~ x + z'            main effects of x and z
-        'y ~ x * z'            main effects and their interaction, x + z + x:z
-        'y ~ x + z + x:z'      the same, written out
-        'y ~ x + z + (1|g)'    plus a Gaussian random intercept per level of g
-        'y ~ 1 + (1|g)'        a random intercept and no fixed effects
-
-    A '*' term expands to every main effect and interaction of its variables,
-    as in R. An explicit intercept '1' is accepted and ignored, the intercept
-    being the scale of the phase-type generator. Repeated terms are kept once.
-    Every interaction must come with all its lower-order terms (x:z needs x
-    and z), which keeps the coding of categorical variables unambiguous.
-    Transformations, random slopes and more than one random intercept are
-    refused with a message saying so.
-
-    The terms are returned as tuples of variable names, main effects first,
-    then two-way interactions, and so on.
-
-    Warning: This class reports a malformed formula by raising ValueError
-    with a message meant for the user; the caller prints it.
+    Warning: This class reports a malformed formula by raising ValueError with
+    a message meant for the user; the caller prints it.
     """
 
     def __init__(self, formula: str) -> None:
@@ -58,8 +43,7 @@ class _regformula:
 
     def __parse(self) -> None:
         """
-        Splits the formula into response, fixed-effect terms and grouping
-        variable.
+        Splits the formula into response, fixed effects and grouping variable.
 
         Args:
             None
@@ -81,20 +65,20 @@ class _regformula:
 
         righthand = sides[1]
 
-        # the random terms are the parenthesized ones
+        # the random effects are the parenthesized parts
         groups = []
         for match in re.finditer(r"\(([^()]*)\)", righthand):
             inner = match.group(1)
             if "|" not in inner:
-                raise ValueError("Parentheses are only used for random intercepts such as (1|g). Transformations such as log(x) and functions such as C(x) are not supported; categorical variables are marked by giving them the 'category' dtype in the DataFrame.")
+                raise ValueError("Parentheses are only used for random effects such as (1|g). Transformations such as log(x) and functions such as C(x) are not supported; categorical variables are marked by giving them the 'category' dtype in the DataFrame.")
             if "||" in inner:
-                raise ValueError("The '||' notation is not supported; only random intercepts such as (1|g) are.")
+                raise ValueError("The '||' notation is not supported; only random effects such as (1|g) are.")
             left, right = inner.split("|", 1)
             if left.strip() != "1":
-                raise ValueError("Only random intercepts such as (1|g) are supported; '(%s)' asks for random slopes." % inner.strip())
+                raise ValueError("Only random effects of the form (1|g), random intercepts, are supported; '(%s)' asks for random slopes." % inner.strip())
             group = right.strip()
             if not _NAME.match(group):
-                raise ValueError("The grouping variable of a random intercept must be a single variable name, not '%s'." % group)
+                raise ValueError("The grouping variable of a random effect must be a single variable name, not '%s'." % group)
             groups.append(group)
 
         fixedpart = re.sub(r"\([^()]*\)", " ", righthand)
@@ -102,12 +86,12 @@ class _regformula:
             raise ValueError("The formula has unbalanced or nested parentheses.")
 
         if len(groups) > 1:
-            raise ValueError("fitreg supports one random intercept, but the formula has %d: %s. Keep one of them."
+            raise ValueError("fitreg supports one random effect, but the formula has %d: %s. Keep one of them."
                              % (len(groups), ", ".join("(1|%s)" % group for group in groups)))
 
-        # the fixed-effect terms, each a tuple of variable names
+        # the fixed effects, each a tuple of variable names
         order = []          # variables in order of first appearance
-        found = []          # terms in order of appearance, before sorting
+        found = []          # effects in order of appearance
         for token in fixedpart.split("+"):
             term = token.strip()
             if term == "" or term == "1":
@@ -115,17 +99,17 @@ class _regformula:
             if term == "0" or "-" in term:
                 raise ValueError("The intercept cannot be removed: in a phase-type regression it is the scale of the phase-type generator.")
             if "*" in term and ":" in term:
-                raise ValueError("'%s' mixes '*' and ':'; write such terms out with '+', e.g. x + z + x:z." % term)
+                raise ValueError("'%s' mixes '*' and ':'; write such effects out with '+', e.g. x + z + x:z." % term)
 
             separator = "*" if "*" in term else ":"
             names = [name.strip() for name in term.split(separator)]
             for name in names:
                 if not _NAME.match(name):
-                    raise ValueError("'%s' is not a variable name. Terms are variable names joined by '+', with ':' or '*' for interactions." % name)
+                    raise ValueError("'%s' is not a variable name. Effects are variable names joined by '+', with ':' or '*' for interactions." % name)
                 if name not in order:
                     order.append(name)
             if len(set(names)) != len(names):
-                raise ValueError("The term '%s' names a variable more than once." % term)
+                raise ValueError("The effect '%s' names a variable more than once." % term)
 
             if separator == "*":
                 # every main effect and interaction of the variables
@@ -135,8 +119,7 @@ class _regformula:
             else:
                 found.append(tuple(names))
 
-        # repeated terms are kept once, written in the order the variables
-        # first appear, and sorted by degree
+        # repeated effects kept once, sorted by degree
         terms = []
         seen = set()
         for term in found:
@@ -146,14 +129,14 @@ class _regformula:
                 terms.append(canonical)
         terms.sort(key=len)
 
-        # every interaction needs all its lower-order terms
+        # every interaction needs all its lower-order effects
         for term in terms:
             if len(term) < 2:
                 continue
             for size in range(1, len(term)):
                 for subset in itertools.combinations(term, size):
                     if frozenset(subset) not in seen:
-                        raise ValueError("The interaction '%s' needs its lower-order term '%s' in the formula as well; '%s' adds them all." % (":".join(term), ":".join(subset), "*".join(term)))
+                        raise ValueError("The interaction '%s' needs its lower-order effect '%s' in the formula as well; '%s' adds them all." % (":".join(term), ":".join(subset), "*".join(term)))
 
         variables = [name for name in order if any(name in term for term in terms)]
         group = groups[0] if groups else None
@@ -163,7 +146,7 @@ class _regformula:
         if group is not None and group in variables:
             raise ValueError("The grouping variable '%s' cannot also be a fixed effect." % group)
         if not terms and group is None:
-            raise ValueError("The formula has neither covariates nor a random intercept. Use the class fit for a phase-type distribution without covariates.")
+            raise ValueError("The formula has neither covariates nor a random effect. Use the class fit for a phase-type distribution without covariates.")
 
         self.response = response
         self.terms = terms
@@ -176,23 +159,11 @@ class _regformula:
 class _regdesign:
     """
     Builds the design of a phase-type regression from a pandas DataFrame: the
-    response, the fixed-effect design matrix, and the group codes of a random
-    intercept.
-
-    The type of each variable is read from the DataFrame. A column with the
-    'category' dtype is categorical and is coded by treatment dummies, the
-    first category with observations being the reference level (reorder the
-    categories to change it). A numeric column is continuous. Any other
-    column (text, boolean, dates) is refused with a message saying how to
-    convert it. The grouping variable of a random intercept must be
-    categorical. An interaction's columns are the products of the columns of
-    its variables.
-
-    For the fitting, every column of the design matrix is centred, the dummies
-    included, and the columns with a continuous variable in them are scaled
-    to unit standard deviation. Centring every column makes the conditional
-    standard errors of the coefficients valid (see the design note, Section
-    9). backtransform() returns the estimates to the scale of the data.
+    response, the design matrix of the fixed effects, and the group codes of a
+    random effect. A column with the 'category' dtype is coded by treatment
+    dummies against its first category with observations; a numeric column is
+    continuous. Every column is centred and the continuous ones are scaled
+    (design note, Section 3.1); backtransform() returns to the scale of the data.
 
     Warning: This class reports unusable data by raising ValueError with a
     message meant for the user; the caller prints it.
@@ -209,11 +180,10 @@ class _regdesign:
         Builds the design.
 
         Args:
-            data (DataFrame): The data, one column per variable.
+            data (DataFrame): The data.
             response (str): Name of the response variable.
-            terms (list): The fixed-effect terms, tuples of variable names.
-            group (str, optional): Name of the grouping variable of a random
-                intercept.
+            terms (list): The fixed effects, tuples of variable names.
+            group (str, optional): Name of the grouping variable.
 
         Raises:
             ValueError: If the data cannot be used.
@@ -234,10 +204,8 @@ class _regdesign:
 
     def backtransform(self, betatilde: np.array) -> tuple:
         """
-        Returns the coefficients on the scale of the data, and the shift that
-        the centring moved into the scale of the generator: with
-        eta~ = sum_k beta~_k (x_k - c_k)/s_k = x'beta - delta, the baseline
-        generator is exp(-delta) times the fitted one.
+        Returns the coefficients on the scale of the data, and the shift delta that
+        the centring moved into the scale of the generator.
 
         Args:
             betatilde (ndarray): Coefficients on the centred and scaled design.
@@ -257,14 +225,12 @@ class _regdesign:
 
     def row(self, covariates: dict = None) -> np.array:
         """
-        Returns the design row, on the scale of the data, for one set of
-        covariate values. Without covariates the row is the baseline: zero for
-        the continuous variables and the reference level for the categorical
-        ones.
+        Returns the design row for one set of covariate values; the baseline
+        without covariates.
 
         Args:
-            covariates (dict, optional): Value of each variable, the level for
-                a categorical variable.
+            covariates (dict, optional): Value of each variable, a level for a
+                categorical variable.
 
         Returns:
             ndarray: The design row.
@@ -330,7 +296,7 @@ class _regdesign:
     @staticmethod
     def __iscategorical(column) -> bool:
         """
-        Returns whether a column has pandas' 'category' dtype.
+        Returns whether a column has the 'category' dtype.
 
         Args:
             column (Series): The column.
@@ -350,7 +316,7 @@ class _regdesign:
             column (Series): The column.
 
         Returns:
-            ndarray: The values as floats.
+            ndarray: The values.
 
         Raises:
             ValueError: If the column is not numeric or has missing values.
@@ -368,8 +334,8 @@ class _regdesign:
 
     def __categorical(self, name: str, column) -> tuple:
         """
-        Returns the levels of a categorical column (its categories in order,
-        those without observations left out) and the code of each row.
+        Returns the levels of a categorical column with observations, and the code
+        of each row.
 
         Args:
             name (str): Name of the variable.
@@ -379,7 +345,7 @@ class _regdesign:
             tuple: The levels (list) and the codes (ndarray of int).
 
         Raises:
-            ValueError: If the column has missing values or a single level.
+            ValueError: If the column has missing values.
         """
 
         codes = np.asarray(column.cat.codes, dtype=int)
@@ -396,12 +362,11 @@ class _regdesign:
 
     def __products(self, bases: dict) -> np.array:
         """
-        Returns the design matrix built from the columns of each variable:
-        for every term, the products of the columns of its variables, the
-        first variable's columns varying slowest.
+        Returns the design matrix: for every effect, the products of the columns of
+        its variables.
 
         Args:
-            bases (dict): The columns of each variable, (rows, columns).
+            bases (dict): The columns of each variable.
 
         Returns:
             ndarray: The design matrix.
@@ -423,8 +388,7 @@ class _regdesign:
 
     def __build(self) -> None:
         """
-        Reads the response, the variables and the groups from the data and
-        builds the centred design matrix.
+        Reads the response, variables and groups, and builds the centred design.
 
         Args:
             None
@@ -506,7 +470,7 @@ class _regdesign:
         if self.d and np.linalg.matrix_rank(self.Xtilde) < self.d:
             raise ValueError("The design matrix is rank deficient: some columns are linear combinations of others.")
 
-        # the groups of the random intercept
+        # the groups of the random effect
         self.groupcodes = None
         self.grouplabels = None
         if self.group is not None:
