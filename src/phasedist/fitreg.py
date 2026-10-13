@@ -15,23 +15,25 @@ class fitreg:
     """
     Fit a continuous-time phase-type regression to data.
 
-    The model is specified by a formula as in R's lm and lme4, e.g.
-    'y ~ x + z', 'y ~ x * z' (x + z + x:z) or 'y ~ x + z + (1|g)' with a
-    Gaussian random effect (a random intercept) per level of g. It is the
-    proportional-intensities model of Bladt (2022): given the covariates x and
-    the random effect b, Y ~ PH(pi, exp(x'beta + b) T), so a positive
-    coefficient means shorter times. Only homogeneous phase-type distributions
-    are fitted, as in fit.
+    This class implements the proportional-intensities model of 
+    Bladt (2022), given the covariates x and a random effect b,
+    Y ~ PH(pi, exp(x'beta + b) T), so a positive coefficient means
+    shorter absorption times. Note though that only homogeneous phase-type
+    distributions are considered (similar to the fit class).
+    
+    The model is specified by a formula, e.g. 'y ~ x + z',
+    'y ~ x * z' (corresponding to 'y ~ x + z + x:z') or 'y ~ x + z + (1|g)'
+    with a Gaussian random effect (a random intercept) per level of g. 
 
-    Observations at zero are fitted as a point mass whose probability is the
-    share of zeros, as in fit. The fixed effects of the formula are tested by
-    likelihood-ratio tests (getlrtest, summary), and the individual
-    coefficients by Wald tests (coeftest).
+    Observations at zero are treated independently from the non-zero observations 
+    assuming that the probability of a zero-observation is constant (i.e. independent
+    from the covariates).
+    
+    The fixed effects of the formula are tested by likelihood-ratio tests (getlrtest,
+    summary), and the individual coefficients by Wald tests (coeftest).
 
-    The data are a pandas DataFrame: a column with the 'category' dtype is
-    categorical, coded by treatment dummies against its first category, and
-    a numeric column is continuous. Details are in the design note
-    phreg-fitting-algorithm.md.
+    The data are imported as a pandas DataFrame. A column with the 'category' dtype is
+    categorical, and a numeric column is continuous.
 
     References:
         Bladt, M. (2022). Phase-type distributions for claim severity regression modeling.
