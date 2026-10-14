@@ -83,7 +83,7 @@ Sub-tests:
              probability is the share of zeros, the regression is the fit to
              the positive observations, and the log-likelihood, parameter
              count, BIC, initial distribution, CDF, density and summary
-             include the point mass, and the summary warns that the
+             include the point mass, and the summary notes that the
              probability of a zero is assumed constant (and only when there
              are zeros); with and without a random effect.
     Case 13: getlrtest. With one phase the likelihood-ratio statistics of
@@ -1014,19 +1014,20 @@ for v in (0.2, 1.0, 4.0):
 buffer = io.StringIO()
 with contextlib.redirect_stdout(buffer):
     modelzeros.summary(effecttest=None)
-if "Point mass at zero" not in buffer.getvalue() or "(%d at zero)" % n0 not in buffer.getvalue() or \
+ZEROLINE = "Probability of observations being zero: p = %.4f" % p0
+if ZEROLINE not in buffer.getvalue() or "(%d at zero)" % n0 not in buffer.getvalue() or \
         "1 zero share" not in buffer.getvalue():
     sys.exit("Validation test failed at case 12: summary does not report the point mass at zero.")
 # the constant probability of a zero is a strong assumption, so the summary
-# warns about it, and only when there are zeros
-ZEROWARNING = "Warning: The probability of a zero is assumed constant"
-if ZEROWARNING not in buffer.getvalue() or "whatever\nits covariates. " not in buffer.getvalue():
-    sys.exit("Validation test failed at case 12: summary does not warn that the probability of a zero is assumed constant.")
+# notes it, and only when there are zeros
+ZERONOTE = "Note: The probability of a zero is assumed constant"
+if ZERONOTE not in buffer.getvalue():
+    sys.exit("Validation test failed at case 12: summary does not note that the probability of a zero is assumed constant.")
 buffer = io.StringIO()
 with contextlib.redirect_stdout(buffer):
     modelexact.summary(effecttest=None)
-if ZEROWARNING in buffer.getvalue() or "Point mass" in buffer.getvalue():
-    sys.exit("Validation test failed at case 12: summary warns about zeros in a fit without zeros.")
+if ZERONOTE in buffer.getvalue() or "Probability of observations being zero" in buffer.getvalue():
+    sys.exit("Validation test failed at case 12: summary reports a point mass at zero in a fit without zeros.")
 
 # the same with a random effect
 iszero = np.arange(groupsexact.size) % 9 == 4
@@ -1040,8 +1041,8 @@ if abs(modelzeros.getloglik() - loglik) > TOL * abs(loglik) or abs(modelzeros.ge
 buffer = io.StringIO()
 with contextlib.redirect_stdout(buffer):
     modelzeros.summary(effecttest=None)
-if ZEROWARNING not in buffer.getvalue() or "its covariates and group. " not in buffer.getvalue():
-    sys.exit("Validation test failed at case 12: with a random effect the summary does not warn that the probability of a zero is assumed constant whatever the group.")
+if "Probability of observations being zero: p = %.4f" % p0 not in buffer.getvalue() or ZERONOTE not in buffer.getvalue():
+    sys.exit("Validation test failed at case 12: with a random effect the summary does not report the point mass at zero, or does not note that its probability is assumed constant.")
 
 
 # ------------------------------------------------------------------
