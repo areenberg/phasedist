@@ -36,7 +36,8 @@ Sub-tests:
              and the standard errors equal its inverse Hessian.
     Case 3:  Interactions: '*' expands to the main effects and interactions,
              repeated effects are kept once (x:z and z:x being one effect), an
-             interaction without its lower-order effects is refused, the same
+             interaction of three variables without its lower-order effects is
+             refused by the parser, the same
              model written in another order gives the same fit, and the design
              columns, their names and a prediction row equal hand-built
              products.
@@ -61,7 +62,9 @@ Sub-tests:
              intercept enters the linear predictor, and bad covariates are
              refused.
     Case 9:  The formula parser accepts the supported notation and refuses the
-             unsupported notation with a message.
+             unsupported notation with a message; an interaction of two
+             variables without its main effects passes the parser, whose
+             types only the design knows (case 14).
     Case 10: Infeasible input terminates, and the arguments of earlier
              versions are refused.
     Case 11: summary prints, plot writes a file, AIC and BIC are the same
@@ -80,7 +83,9 @@ Sub-tests:
              probability is the share of zeros, the regression is the fit to
              the positive observations, and the log-likelihood, parameter
              count, BIC, initial distribution, CDF, density and summary
-             include the point mass; with and without a random effect.
+             include the point mass, and the summary warns that the
+             probability of a zero is assumed constant (and only when there
+             are zeros); with and without a random effect.
     Case 13: getlrtest. With one phase the likelihood-ratio statistics of
              effects, including effects that are part of an interaction (whose
              columns alone are dropped), equal those of exponential
@@ -94,6 +99,21 @@ Sub-tests:
              one-phase data (a statistical test at a set level); the
              simulators behind it follow their laws (statistical tests).
              Bad arguments are refused.
+    Case 14: A separate slope of a continuous x for each level of a
+             categorical g. With one phase, 'y ~ x:g' (one column per level)
+             and 'y ~ x + x:g' (a slope and differences against the
+             reference level) equal a log-link Gamma GLM on hand-built
+             columns, with the standard errors of exponential regression;
+             the two are one model (same log-likelihood, the slope of each
+             level the same), 'y ~ g + x:g' is 'y ~ x*g', and the fit does not
+             depend on the reference level of g. It does depend on the origin
+             of x: on a shifted x it is the GLM on the shifted columns, with a
+             different log-likelihood. The columns are named as in R, a
+             prediction row and the CDF follow the coding, the
+             likelihood-ratio test of x:g is the test of equal slopes, and an
+             interaction without its main effects is refused, with a
+             message, for two continuous or two categorical variables and
+             for three variables.
 
 References:
     Bladt, M. (2022). Phase-type distributions for claim severity regression
@@ -196,6 +216,17 @@ NBINSLR = 10
 NREPLR = 400
 ALPHALR = 0.01
 NCHECKSLR = 5
+
+# The one-phase data of case 14: a separate slope of x for each level of g,
+# distinct so that a swapped level cannot go unnoticed, and an x whose mean is
+# away from zero, so that the origin of x matters. Adding ORIGINSHIFT to x
+# changes the model; measured over seeds 0-29 the log-likelihood changed by
+# 77.6 to 137.1, far above ORIGINGAP (a shift of +1 changed it by as little
+# as 1.3, too close to any threshold).
+SLOPES = {"a": 0.3, "b": -0.5, "c": 0.8}
+SLOPEMEAN = 1.0
+ORIGINSHIFT = -3.0
+ORIGINGAP = 10.0
 
 # The multi-phase truth: a Coxian of three phases with distinct rates, so the
 # phases are not exchangeable, and effects large enough that their signs are
@@ -459,12 +490,14 @@ parsed = _regformula("y ~ x*w*g + w:x + (1|u)")
 expected = [("x",), ("w",), ("g",), ("x", "w"), ("x", "g"), ("w", "g"), ("x", "w", "g")]
 if parsed.terms != expected or parsed.group != "u":
     sys.exit("Validation test failed at case 3: 'x*w*g + w:x' was parsed as %s, not as every main effect and interaction once." % parsed.terms)
+# an interaction of three variables needs all its lower-order effects (those
+# of two variables are checked by the design, which knows the types: case 14)
 try:
-    _regformula("y ~ x + x:g")
+    _regformula("y ~ x + w + g + x:w + x:g + x:w:g")
     sys.exit("Validation test failed at case 3: an interaction without its lower-order effect was accepted.")
 except ValueError as error:
-    if "x*g" not in str(error):
-        sys.exit("Validation test failed at case 3: the refusal of an incomplete interaction does not say how to write it.")
+    if "x*w*g" not in str(error) or "'w:g'" not in str(error):
+        sys.exit("Validation test failed at case 3: the refusal of an incomplete interaction does not say what is missing and how to write it.")
 
 # x:z and z:x are one effect: within a formula a repeated interaction is kept
 # once whatever the order of its variables, and it is named in the order the
@@ -702,13 +735,16 @@ accepted = {
     "y ~ x*z": ("y", [("x",), ("z",), ("x", "z")], None),
     "y ~ z:x + x + z": ("y", [("x",), ("z",), ("z", "x")], None),
     "y ~ x + x": ("y", [("x",)], None),
+    # the design decides whether an interaction may leave out its main
+    # effects (case 14), so the parser lets it pass
+    "y ~ x:z": ("y", [("x", "z")], None),
 }
 for formula, (response, terms, group) in accepted.items():
     parsed = _regformula(formula)
     if (parsed.response, parsed.terms, parsed.group) != (response, terms, group):
         sys.exit("Validation test failed at case 9: '%s' was parsed as %s." % (formula, (parsed.response, parsed.terms, parsed.group)))
 
-refused = ["y x + z", "y ~ x ~ z", "y ~ x:z", "y ~ log(x)", "y ~ x - 1", "y ~ 0 + x",
+refused = ["y x + z", "y ~ x ~ z", "y ~ x:z:w", "y ~ log(x)", "y ~ x - 1", "y ~ 0 + x",
            "y ~ x + (x|g)", "y ~ x + (1|g) + (1|h)", "y ~ x + (1||g)", "y ~ x + y",
            "y ~ g + (1|g)", "y ~ 1", "log(y) ~ x", "y ~ x*z:w", "y ~ x:x", 42]
 for formula in refused:
@@ -981,6 +1017,16 @@ with contextlib.redirect_stdout(buffer):
 if "Point mass at zero" not in buffer.getvalue() or "(%d at zero)" % n0 not in buffer.getvalue() or \
         "1 zero share" not in buffer.getvalue():
     sys.exit("Validation test failed at case 12: summary does not report the point mass at zero.")
+# the constant probability of a zero is a strong assumption, so the summary
+# warns about it, and only when there are zeros
+ZEROWARNING = "Warning: The probability of a zero is assumed constant"
+if ZEROWARNING not in buffer.getvalue() or "whatever\nits covariates. " not in buffer.getvalue():
+    sys.exit("Validation test failed at case 12: summary does not warn that the probability of a zero is assumed constant.")
+buffer = io.StringIO()
+with contextlib.redirect_stdout(buffer):
+    modelexact.summary(effecttest=None)
+if ZEROWARNING in buffer.getvalue() or "Point mass" in buffer.getvalue():
+    sys.exit("Validation test failed at case 12: summary warns about zeros in a fit without zeros.")
 
 # the same with a random effect
 iszero = np.arange(groupsexact.size) % 9 == 4
@@ -991,6 +1037,11 @@ p0 = iszero.mean()
 loglik = modelpositive.getloglik() + iszero.sum() * np.log(p0) + (~iszero).sum() * np.log(1.0 - p0)
 if abs(modelzeros.getloglik() - loglik) > TOL * abs(loglik) or abs(modelzeros.getsigma() - modelpositive.getsigma()) > TOL:
     sys.exit("Validation test failed at case 12: with a random effect the zeros are not a point mass beside the fit to the positive observations.")
+buffer = io.StringIO()
+with contextlib.redirect_stdout(buffer):
+    modelzeros.summary(effecttest=None)
+if ZEROWARNING not in buffer.getvalue() or "its covariates and group. " not in buffer.getvalue():
+    sys.exit("Validation test failed at case 12: with a random effect the summary does not warn that the probability of a zero is assumed constant whatever the group.")
 
 
 # ------------------------------------------------------------------
@@ -1172,6 +1223,139 @@ for arguments in (dict(effects="z"), dict(effects=["x", 3]), dict(effects=5), di
     result, printed = quiet(modellr.getlrtest, **arguments)
     if result is not None or "Error" not in printed:
         sys.exit("Validation test failed at case 13: getlrtest accepted the arguments %s." % arguments)
+
+
+# ------------------------------------------------------------------
+# CASE 14: A separate slope of x for each level of g
+# ------------------------------------------------------------------
+
+sloperng = np.random.default_rng([SEED, 14])
+xs = SLOPEMEAN + sloperng.normal(size=NEXACT)
+gs = sloperng.choice(["a", "b", "c"], size=NEXACT)
+if set(gs) != set(SLOPES):
+    sys.exit("Validation test failed at case 14: the simulated g does not contain all its levels.")
+levelcols = np.column_stack([(gs == level) * 1.0 for level in ("a", "b", "c")])
+ys = sloperng.exponential(size=NEXACT) / (EXACTRATE * np.exp(xs * (levelcols @ np.array([SLOPES[k] for k in "abc"]))))
+DATASLOPES = pd.DataFrame({"y": ys, "x": xs, "g": categorical(gs)})
+
+
+def slopesoracle(X, response, model, names, label):
+    """
+    Checks a one-phase fit against exponential regression on the hand-built
+    columns X: the coefficients are minus those of a log-link Gamma GLM, and
+    the log-likelihood and standard errors are those of exponential
+    regression at the estimates.
+    """
+    coef = model.getcoef()
+    if list(coef) != names:
+        sys.exit("Validation test failed at case 14: the coefficients of %s are named %s, not %s." % (label, list(coef), names))
+    full = np.column_stack([np.ones(response.size), X])
+    oracle = sm.GLM(response, full, family=sm.families.Gamma(link=sm.families.links.Log())).fit(tol=1e-14, maxiter=1000)
+    estimates = np.array([coef[name] for name in names])
+    if np.max(np.abs(estimates + oracle.params[1:])) > TOLEXACT:
+        sys.exit("Validation test failed at case 14: the coefficients of %s differ from minus those of the Gamma GLM by %.3e." % (label, np.max(np.abs(estimates + oracle.params[1:]))))
+    rate = -model.getphasegen()[0, 0]
+    u = rate * np.exp(X @ estimates) * response
+    loglik = np.sum(np.log(rate) + X @ estimates - u)
+    if abs(model.getloglik() - loglik) > TOLEXACT * abs(loglik):
+        sys.exit("Validation test failed at case 14: the log-likelihood of %s is %.10f, against %.10f by hand." % (label, model.getloglik(), loglik))
+    stderr = np.sqrt(np.diag(np.linalg.inv((full * u[:, None]).T @ full)))[1:]
+    reported = np.array([model.getstderr()[name] for name in names])
+    if np.max(np.abs(reported / stderr - 1.0)) > TOLEXACT:
+        sys.exit("Validation test failed at case 14: the standard errors of %s differ from those of exponential regression by a factor of up to %.3e." % (label, np.max(np.abs(reported / stderr - 1.0))))
+    return estimates
+
+
+def levelslopes(coef, levels):
+    """The slope of x for each level of g, from either coding."""
+    if "x" in coef:
+        return {level: coef["x"] + coef.get("x:g[%s]" % level, 0.0) for level in levels}
+    return {level: coef["x:g[%s]" % level] for level in levels}
+
+
+# 'x:g': one column per level, since g alone is not in the model
+modelfull, _, _ = quietfit(formula="y ~ x:g", data=DATASLOPES, **EXACT)
+slopesoracle(xs[:, None] * levelcols, ys, modelfull, ["x:g[a]", "x:g[b]", "x:g[c]"], "'y ~ x:g'")
+
+# 'x + x:g': the common slope and the differences against the reference level,
+# since x alone is in the model
+modelcontrast, _, _ = quietfit(formula="y ~ x + x:g", data=DATASLOPES, **EXACT)
+slopesoracle(np.column_stack([xs, xs * levelcols[:, 1], xs * levelcols[:, 2]]), ys, modelcontrast,
+             ["x", "x:g[b]", "x:g[c]"], "'y ~ x + x:g'")
+
+# the two are one model: the same likelihood and the same slope for each level
+if abs(modelfull.getloglik() - modelcontrast.getloglik()) > TOLEXACT * abs(modelfull.getloglik()):
+    sys.exit("Validation test failed at case 14: 'y ~ x:g' and 'y ~ x + x:g' have different log-likelihoods.")
+slopesfull = levelslopes(modelfull.getcoef(), "abc")
+slopescontrast = levelslopes(modelcontrast.getcoef(), "abc")
+if max(abs(slopesfull[k] - slopescontrast[k]) for k in "abc") > TOLEXACT:
+    sys.exit("Validation test failed at case 14: 'y ~ x:g' and 'y ~ x + x:g' give different slopes for the levels of g: %s and %s." % (slopesfull, slopescontrast))
+
+# 'g + x:g': g by treatment dummies, x:g one column per level, which spans the
+# same columns as 'x*g'
+modelwithg, _, _ = quietfit(formula="y ~ g + x:g", data=DATASLOPES, **EXACT)
+modelstar, _, _ = quietfit(formula="y ~ x*g", data=DATASLOPES, **EXACT)
+slopesoracle(np.column_stack([levelcols[:, 1:], xs[:, None] * levelcols]), ys, modelwithg,
+             ["g[b]", "g[c]", "g[a]:x", "g[b]:x", "g[c]:x"], "'y ~ g + x:g'")
+if abs(modelwithg.getloglik() - modelstar.getloglik()) > TOLEXACT * abs(modelstar.getloglik()):
+    sys.exit("Validation test failed at case 14: 'y ~ g + x:g' is not the model 'y ~ x*g'.")
+
+# the reference level of g does not matter: with c first the fit is the same,
+# slope for slope, and in 'x + x:g' the coefficient of x is now the slope of c
+reordered = DATASLOPES.assign(g=DATASLOPES["g"].cat.reorder_categories(["c", "a", "b"]))
+for formula, original in (("y ~ x:g", slopesfull), ("y ~ x + x:g", slopescontrast)):
+    model, _, _ = quietfit(formula=formula, data=reordered, **EXACT)
+    slopes = levelslopes(model.getcoef(), "abc")
+    if abs(model.getloglik() - modelfull.getloglik()) > TOLEXACT * abs(modelfull.getloglik()) or \
+            max(abs(slopes[k] - original[k]) for k in "abc") > TOLEXACT:
+        sys.exit("Validation test failed at case 14: '%s' depends on the reference level of g." % formula)
+    if formula == "y ~ x + x:g" and (list(model.getcoef()) != ["x", "x:g[a]", "x:g[b]"] or abs(model.getcoef()["x"] - original["c"]) > TOLEXACT):
+        sys.exit("Validation test failed at case 14: with c as the reference level, 'y ~ x + x:g' is not coded against c.")
+
+# but it does depend on the origin of x, unlike 'x*g' (case 6): on a shifted x
+# the fit is exponential regression on the shifted columns, not the original
+# fit moved along
+shifted = xs + ORIGINSHIFT
+modelshifted, _, _ = quietfit(formula="y ~ x:g", data=DATASLOPES.assign(x=shifted), **EXACT)
+slopesoracle(shifted[:, None] * levelcols, ys, modelshifted, ["x:g[a]", "x:g[b]", "x:g[c]"], "'y ~ x:g' on a shifted x")
+if abs(modelshifted.getloglik() - modelfull.getloglik()) < ORIGINGAP:
+    sys.exit("Validation test failed at case 14: shifting x changed the log-likelihood by only %.3f, so the fit does not depend on the origin of x." % abs(modelshifted.getloglik() - modelfull.getloglik()))
+
+# a prediction row follows the coding, and so does the CDF
+for model, covariates, handrow in ((modelfull, {"x": 2.0, "g": "b"}, [0.0, 2.0, 0.0]),
+                                   (modelcontrast, {"x": 2.0, "g": "b"}, [2.0, 2.0, 0.0]),
+                                   (modelcontrast, {"x": 2.0, "g": "a"}, [2.0, 0.0, 0.0]),
+                                   (modelwithg, {"x": 2.0, "g": "c"}, [0.0, 1.0, 0.0, 0.0, 2.0])):
+    row = model.design.row(covariates)
+    if np.max(np.abs(row - np.array(handrow))) > TOL:
+        sys.exit("Validation test failed at case 14: the prediction row of '%s' at %s is %s, not %s." % (model.formula, covariates, row, handrow))
+    rate = -model.getphasegen()[0, 0] * np.exp(row @ np.array(list(model.getcoef().values())))
+    if abs(model.getcumprob(1.5, covariates) - (1.0 - np.exp(-1.5 * rate))) > TOL:
+        sys.exit("Validation test failed at case 14: the CDF of '%s' at %s is not that of the exponential distribution with the predicted rate." % (model.formula, covariates))
+
+# the likelihood-ratio test of x:g in 'x + x:g' drops the differences, leaving
+# one slope for all levels: the test of equal slopes
+lrslopes = quiet(modelcontrast.getlrtest, "x:g")[0]["x:g"]
+hand = 2.0 * (exponentialloglik(xs[:, None] * levelcols, ys) - exponentialloglik(xs[:, None], ys))
+if lrslopes["df"] != 2 or abs(lrslopes["statistic"] - hand) > TOLEXACT * max(1.0, hand):
+    sys.exit("Validation test failed at case 14: the likelihood-ratio statistic of equal slopes is %.10f (%d df), against %.10f (2 df) by hand." % (lrslopes["statistic"], lrslopes["df"], hand))
+
+# only an interaction of a continuous and a categorical variable may leave out
+# its main effects; otherwise the design refuses it, saying what is missing
+# and how to write it, and fitreg terminates
+DATAKINDS = DATASLOPES.assign(z=sloperng.normal(size=NEXACT), h=categorical(sloperng.choice(["p", "q"], size=NEXACT)))
+for formula, missing, written in (("y ~ x:z", "'x'", "x*z"), ("y ~ x + x:z", "'z'", "x*z"),
+                                  ("y ~ g:h", "'g'", "g*h"), ("y ~ g + g:h", "'h'", "g*h"),
+                                  ("y ~ x + g + h + x:g + x:h + x:g:h", "'g:h'", "x*g*h")):
+    try:
+        parsed = _regformula(formula)
+        _regdesign(DATAKINDS, parsed.response, parsed.terms, parsed.group)
+        sys.exit("Validation test failed at case 14: the design accepted '%s'." % formula)
+    except ValueError as error:
+        if missing not in str(error) or written not in str(error):
+            sys.exit("Validation test failed at case 14: the refusal of '%s' does not name %s and '%s': %s" % (formula, missing, written, error))
+    if not terminates(formula=formula, data=DATAKINDS, **EXACT):
+        sys.exit("Validation test failed at case 14: '%s' did not terminate." % formula)
 
 
 print("fitreg: All tests passed.")

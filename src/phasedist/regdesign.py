@@ -12,9 +12,11 @@ class _regformula:
     """
     Parses a regression formula in the target notation, restricted
     to what fitreg supports: 'y ~ x + z', 'y ~ x * z' (x + z + x:z),
-    'y ~ x + z + (1|g)' and 'y ~ 1 + (1|g)'. Repeated effects are kept once,
-    and an interaction needs all its lower-order effects. The effects are
-    tuples of variable names, sorted by degree.
+    'y ~ x + z + (1|g)' and 'y ~ 1 + (1|g)'. Repeated effects are kept once.
+    An interaction of three or more variables needs all its lower-order
+    effects; whether an interaction of two may leave out a main effect
+    depends on the variable types and is decided by _regdesign. The effects
+    are tuples of variable names, sorted by degree.
 
     Warning: This class returns a warning if the formula contains a syntax
     error.
@@ -129,9 +131,12 @@ class _regformula:
                 terms.append(canonical)
         terms.sort(key=len)
 
-        # every interaction needs all its lower-order effects
+        # an interaction of three or more variables needs all its lower-order
+        # effects; one of two variables is checked by _regdesign, which knows
+        # the types (x + x:w and x:w are allowed for a continuous x and a
+        # categorical w)
         for term in terms:
-            if len(term) < 2:
+            if len(term) < 3:
                 continue
             for size in range(1, len(term)):
                 for subset in itertools.combinations(term, size):
@@ -162,8 +167,11 @@ class _regdesign:
     response, the design matrix of the fixed effects, and the group codes of a
     random effect. A column with the 'category' dtype is coded by treatment
     dummies against its first category with observations; a numeric column is
-    continuous. Every column is centred and the continuous ones are scaled
-    (design note, Section 3.1); backtransform() returns to the scale of the data.
+    continuous. In an interaction of a continuous x and a categorical w, the
+    main effects may be left out: in 'x + x:w' w has treatment dummies, in
+    'x:w' and 'w + x:w' one column per level, as in R. Every column is centred
+    and the continuous ones are scaled (design note, Section 3.1);
+    backtransform() returns to the scale of the data.
 
     Warning: This class reports unusable data by raising ValueError with a
     message meant for the user; the caller prints it.
@@ -249,7 +257,7 @@ class _regdesign:
         if unknown:
             raise ValueError("The model has no variable named '%s'." % unknown[0])
 
-        bases = {}
+        bases, fullbases = {}, {}
         for name, info in self.info.items():
             if name not in covariates:
                 raise ValueError("A value is needed for every variable of the model, and '%s' has none." % name)
@@ -262,9 +270,10 @@ class _regdesign:
             else:
                 if not any(value == level for level in info["levels"]):
                     raise ValueError("'%s' is not a level of '%s'; the levels are %s." % (value, name, info["levels"]))
-                bases[name] = np.array([[float(value == level) for level in info["levels"][1:]]])
+                fullbases[name] = np.array([[float(value == level) for level in info["levels"]]])
+                bases[name] = fullbases[name][:, 1:]
 
-        return self.__products(bases)[0]
+        return self.__products(bases, fullbases)[0]
 
     # ----------------------------------------------------------------------
     #   PRIVATE METHODS
@@ -360,13 +369,15 @@ class _regdesign:
 
         return levels, recode[codes]
 
-    def __products(self, bases: dict) -> np.array:
+    def __products(self, bases: dict, fullbases: dict) -> np.array:
         """
         Returns the design matrix: for every effect, the products of the columns of
         its variables.
 
         Args:
-            bases (dict): The columns of each variable.
+            bases (dict): The columns of each variable, treatment dummies for a
+                categorical one.
+            fullbases (dict): One column per level of each categorical variable.
 
         Returns:
             ndarray: The design matrix.
@@ -374,10 +385,10 @@ class _regdesign:
 
         blocks = []
         for term in self.terms:
-            block = bases[term[0]]
-            for name in term[1:]:
-                other = bases[name]
-                block = (block[:, :, None] * other[:, None, :]).reshape(block.shape[0], -1)
+            block = None
+            for name in term:
+                other = fullbases[name] if self.coding[term][name] == "full" else bases[name]
+                block = other if block is None else (block[:, :, None] * other[:, None, :]).reshape(block.shape[0], -1)
             blocks.append(block)
 
         if not blocks:
@@ -385,6 +396,45 @@ class _regdesign:
             return np.zeros((first.shape[0], 0))
 
         return np.column_stack(blocks)
+
+    def __codings(self) -> dict:
+        """
+        Returns how each variable of each effect is coded: a categorical
+        variable by treatment dummies ("contrast") if the effect without it is
+        in the model, else by one column per level ("full"), as in R; a
+        continuous variable by its values ("numeric"). Only an interaction of
+        a continuous and a categorical variable may leave out a main effect.
+
+        Args:
+            None
+
+        Returns:
+            dict: For every effect, the coding of each of its variables.
+
+        Raises:
+            ValueError: If an interaction leaves out a main effect it needs.
+        """
+
+        present = {frozenset(term) for term in self.terms}
+        coding = {}
+        for term in self.terms:
+            kinds = [self.info[name]["kind"] for name in term]
+            missing = [name for name in term if len(term) > 1 and frozenset(term) - {name} not in present]
+            if missing and not (len(term) == 2 and sorted(kinds) == ["categorical", "numeric"]):
+                lacking = [other for other in term if frozenset([other]) not in present]
+                raise ValueError("The interaction '%s' needs its lower-order effect '%s' in the formula as well; '%s' adds them all. "
+                                 "Only an interaction of a continuous and a categorical variable may leave out main effects (e.g. 'x + x:w' or 'x:w')."
+                                 % (":".join(term), lacking[0] if lacking else ":".join(missing), "*".join(term)))
+            coding[term] = {}
+            for name, kind in zip(term, kinds):
+                if kind == "numeric":
+                    coding[term][name] = "numeric"
+                elif len(term) == 1 or frozenset(term) - {name} in present:
+                    coding[term][name] = "contrast"
+                else:
+                    coding[term][name] = "full"
+
+        return coding
 
     def __build(self) -> None:
         """
@@ -412,8 +462,8 @@ class _regdesign:
 
         # the columns of each variable, and their names
         self.info = {}
-        bases = {}
-        labels = {}
+        bases, fullbases = {}, {}
+        labels, fulllabels = {}, {}
         variables = []
         for term in self.terms:
             for name in term:
@@ -426,8 +476,10 @@ class _regdesign:
                 levels, codes = self.__categorical(name, column)
                 if len(levels) < 2:
                     raise ValueError("The categorical variable '%s' has only one level with observations." % name)
-                bases[name] = (codes[:, None] == np.arange(1, len(levels))[None, :]).astype(float)
-                labels[name] = ["%s[%s]" % (name, level) for level in levels[1:]]
+                fullbases[name] = (codes[:, None] == np.arange(len(levels))[None, :]).astype(float)
+                bases[name] = fullbases[name][:, 1:]
+                fulllabels[name] = ["%s[%s]" % (name, level) for level in levels]
+                labels[name] = fulllabels[name][1:]
                 self.info[name] = dict(kind="categorical", levels=levels, reference=levels[0])
             else:
                 values = self.__numeric(name, column)
@@ -437,19 +489,23 @@ class _regdesign:
                 labels[name] = [name]
                 self.info[name] = dict(kind="numeric")
 
+        # how each variable of each effect is coded
+        self.coding = self.__codings()
+
         # the design matrix and the names of its columns
-        self.X = self.__products(bases) if self.terms else np.zeros((self.n, 0))
+        self.X = self.__products(bases, fullbases) if self.terms else np.zeros((self.n, 0))
         self.columns = []
         self.termcolumns = {}
         scaled = []
         for term in self.terms:
-            names = [labels[term[0]]]
-            for name in term[1:]:
-                names = [[a + ":" + b for a in names[0] for b in labels[name]]]
-            self.termcolumns[":".join(term)] = list(range(len(self.columns), len(self.columns) + len(names[0])))
-            self.columns.extend(names[0])
+            names = None
+            for name in term:
+                own = fulllabels[name] if self.coding[term][name] == "full" else labels[name]
+                names = own if names is None else [a + ":" + b for a in names for b in own]
+            self.termcolumns[":".join(term)] = list(range(len(self.columns), len(self.columns) + len(names)))
+            self.columns.extend(names)
             continuous = any(self.info[name]["kind"] == "numeric" for name in term)
-            scaled.extend([continuous] * len(names[0]))
+            scaled.extend([continuous] * len(names))
 
         self.d = len(self.columns)
         if self.d:
