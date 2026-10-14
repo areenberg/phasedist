@@ -174,8 +174,8 @@ class fitreg:
             if not out:
                 print("The model has no coefficients.")
                 return out
-            print("Wald tests of the coefficients (every intensity is multiplied by exp(x'beta); "
-                  "positive means shorter times):")
+            print("Wald tests of the coefficients (every intensity is multiplied by exp(x'beta), "
+                  "i.e. positive means lower response):")
             width = max(12, max(len(name) for name in out) + 2)
             label = "%g%% conf. int." % (100.0 * confidence)
             print("%-*s %10s %10s %9s %9s %21s" % (width, "", "Estimate", "Std.Err", "z value", "Pr(>|z|)", label))
