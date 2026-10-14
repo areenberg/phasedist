@@ -9,9 +9,10 @@ the published numbers are those printed in the vignette of the R package
 ivreg, which documents this regression as Card's Table 2(1). The experience
 terms are printed there only in another form and are not compared.
 
-Why fitreg: The wage is positive and the model is multiplicative,
-log(wage) = x'b + error. fitreg fits log(wage) = -x'beta + log(U) with a
-phase-type U, so -beta is comparable to the published coefficients.
+Application of fitreg from PhaseDist: The wage is positive and the model
+is multiplicative, log(wage) = x'b + error. fitreg fits log(wage) =
+-x'beta + log(U) with a phase-type U, so -beta is comparable to the
+published coefficients.
 
 Run from the repository root:  python validation/card_1995.py
 

@@ -7,9 +7,10 @@ data/prostate.csv are the original release used by Tibshirani (as in the R
 package lasso2): The log prostate weight of observation 32 is 6.1076, which
 later releases corrected to 3.8044.
 
-Why fitreg: PSA is positive and the model is multiplicative,
-log(PSA) = x'b + error. fitreg fits log(PSA) = -x'beta + log(U) with a
-phase-type U, so -beta is comparable to the published coefficients.
+Application of fitreg from PhaseDist: PSA is positive and the model is
+multiplicative, log(PSA) = x'b + error. fitreg fits log(PSA) =
+-x'beta + log(U) with a phase-type U, so -beta is comparable to the
+published coefficients.
 
 Run from the repository root:  python validation/tibshirani_1996.py
 

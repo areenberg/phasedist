@@ -5,9 +5,10 @@ Study: Hedonic house prices in 506 Boston census tracts. The log median home
 value is regressed on 13 tract characteristics, among them air pollution
 (NOX squared). The variables are built below as in the paper.
 
-Why fitreg: The home value is positive and the model is multiplicative,
-log(value) = x'b + error. fitreg fits log(value) = -x'beta + log(U) with a
-phase-type U, so -beta is comparable to the published coefficients.
+Application of fitreg from PhaseDist: The home value is positive and the model
+is multiplicative, log(value) = x'b + error. fitreg fits log(value) =
+-x'beta + log(U) with a phase-type U, so -beta is comparable to the published
+coefficients.
 
 Run from the repository root:  python validation/harrison_rubinfeld_1978.py
 (runtime is about 15 minutes)
