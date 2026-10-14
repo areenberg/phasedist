@@ -539,7 +539,7 @@ class fitreg:
         if self.sigma is not None:
             statistic, pvalue = self.__sigmatest()
             if self.boundary:
-                print("Random effect (1|%s): sigma = 0 (at the boundary: the groups vary no more "
+                print("Random effect (1|%s): sigma = 0 (at the boundary, i.e. groups vary no more "
                       "than the fixed effects explain)" % self.design.group)
             else:
                 print("Random effect (1|%s): sigma = %.4f (std. err. %.4f)"
@@ -547,8 +547,9 @@ class fitreg:
             print("  Likelihood-ratio test of sigma = 0: LR stat %.2f, p-value %s (against 0.5 chi2(0) + 0.5 chi2(1))"
                   % (statistic, self.__ptext(pvalue)))
         if self.nzero:
-            print("Point mass at zero: p = %.4f (std. err. %.4f), the share of zeros"
+            print("Probability of observations being zero: p = %.4f (std. err. %.4f)"
                   % (self.zeroprob, np.sqrt(self.zeroprob * (1.0 - self.zeroprob) / self.nobs)))
+            print("Note: The probability of a zero is assumed constant")
         if self.sigma is not None or self.nzero:
             print("")
 
