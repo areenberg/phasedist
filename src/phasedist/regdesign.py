@@ -4,15 +4,21 @@ import re
 import numpy as np
 
 
-# a variable name: a letter or an underscore, then letters, digits, underscores or dots
-_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_.]*$")
+# a variable name: a letter (any alphabet) or an underscore, then letters,
+# digits, underscores or dots; any other name is written in backticks, as in R
+_NAME = re.compile(r"^[^\W\d][\w.]*$")
+# a name in backticks is replaced by a placeholder while the formula is parsed
+_QUOTED = re.compile(r"\x00(\d+)\x00")
 
 
 class _regformula:
     """
     Parses a regression formula in the target notation, restricted
     to what fitreg supports: 'y ~ x + z', 'y ~ x * z' (x + z + x:z),
-    'y ~ x + z + (1|g)' and 'y ~ 1 + (1|g)'. Repeated effects are kept once.
+    'y ~ x + z + (1|g)' and 'y ~ 1 + (1|g)'. A name with spaces or other
+    symbols is written in backticks, e.g. 'y ~ `body mass index` + age'.
+    Spaces around the operators do not matter. Every effect is given once:
+    'x + y + x*y' and 'x*y + x*y*z' are refused.
     An interaction of three or more variables needs all its lower-order
     effects; whether an interaction of two may leave out a main effect
     depends on the variable types and is decided by _regdesign. The effects
@@ -57,13 +63,36 @@ class _regformula:
         if not isinstance(self.formula, str):
             raise ValueError("The formula must be a string, e.g. 'y ~ x + z + (1|g)'.")
 
-        sides = self.formula.split("~")
+        # names in backticks become placeholders, so their symbols are not read
+        # as operators; they are put back as each name is read
+        pieces = self.formula.split("`")
+        if len(pieces) % 2 == 0:
+            raise ValueError("The formula has an unmatched backtick; names with spaces or other symbols are written as `name`.")
+        quoted = pieces[1::2]
+        for name in quoted:
+            if name.strip() == "":
+                raise ValueError("The formula has an empty name in backticks.")
+        formula = "".join(piece if k % 2 == 0 else "\x00%d\x00" % (k // 2)
+                          for k, piece in enumerate(pieces))
+
+        def isname(token):
+            return bool(_NAME.match(token)) or bool(_QUOTED.fullmatch(token))
+
+        def unquote(token):
+            match = _QUOTED.fullmatch(token)
+            return quoted[int(match.group(1))] if match else token
+
+        def show(text):
+            return _QUOTED.sub(lambda m: "`%s`" % quoted[int(m.group(1))], text)
+
+        sides = formula.split("~")
         if len(sides) != 2:
             raise ValueError("The formula must contain exactly one '~', e.g. 'y ~ x + z'.")
 
         response = sides[0].strip()
-        if not _NAME.match(response):
-            raise ValueError("The left-hand side of the formula must be the name of the response variable, not '%s'." % response)
+        if not isname(response):
+            raise ValueError("The left-hand side of the formula must be the name of the response variable, not '%s'." % show(response))
+        response = unquote(response)
 
         righthand = sides[1]
 
@@ -77,18 +106,18 @@ class _regformula:
                 raise ValueError("The '||' notation is not supported; only random effects such as (1|g) are.")
             left, right = inner.split("|", 1)
             if left.strip() != "1":
-                raise ValueError("Only random effects of the form (1|g), random intercepts, are supported; '(%s)' asks for random slopes." % inner.strip())
+                raise ValueError("Only random effects of the form (1|g), random intercepts, are supported; '(%s)' asks for random slopes." % show(inner.strip()))
             group = right.strip()
-            if not _NAME.match(group):
-                raise ValueError("The grouping variable of a random effect must be a single variable name, not '%s'." % group)
-            groups.append(group)
+            if not isname(group):
+                raise ValueError("The grouping variable of a random effect must be a single variable name, not '%s'." % show(group))
+            groups.append(unquote(group))
 
         fixedpart = re.sub(r"\([^()]*\)", " ", righthand)
         if "(" in fixedpart or ")" in fixedpart:
             raise ValueError("The formula has unbalanced or nested parentheses.")
 
         if len(groups) > 1:
-            raise ValueError("fitreg supports one random effect, but the formula has %d: %s. Keep one of them."
+            raise ValueError("The class fitreg supports one random effect, but the formula has %d: %s. Keep one of them."
                              % (len(groups), ", ".join("(1|%s)" % group for group in groups)))
 
         # the fixed effects, each a tuple of variable names
@@ -99,36 +128,42 @@ class _regformula:
             if term == "" or term == "1":
                 continue
             if term == "0" or "-" in term:
-                raise ValueError("The intercept cannot be removed: in a phase-type regression it is the scale of the phase-type generator.")
+                raise ValueError("The intercept cannot be removed: In a phase-type regression it is the scale of the phase-type generator.")
             if "*" in term and ":" in term:
-                raise ValueError("'%s' mixes '*' and ':'; write such effects out with '+', e.g. x + z + x:z." % term)
+                raise ValueError("'%s' mixes '*' and ':'; write such effects out with '+', e.g. x + z + x:z." % show(term))
 
             separator = "*" if "*" in term else ":"
             names = [name.strip() for name in term.split(separator)]
             for name in names:
-                if not _NAME.match(name):
-                    raise ValueError("'%s' is not a variable name. Effects are variable names joined by '+', with ':' or '*' for interactions." % name)
+                if not isname(name):
+                    raise ValueError("'%s' is not a variable name. Effects are variable names joined by '+', with ':' or '*' for interactions; a name with spaces or other symbols is written in backticks, e.g. `body mass index`." % show(name))
+            names = [unquote(name) for name in names]
+            for name in names:
                 if name not in order:
                     order.append(name)
             if len(set(names)) != len(names):
-                raise ValueError("The effect '%s' names a variable more than once." % term)
+                raise ValueError("The effect '%s' names a variable more than once." % show(term))
 
             if separator == "*":
                 # every main effect and interaction of the variables
                 for size in range(1, len(names) + 1):
                     for subset in itertools.combinations(names, size):
-                        found.append(subset)
+                        found.append((subset, term))
             else:
-                found.append(tuple(names))
+                found.append((tuple(names), term))
 
-        # repeated effects kept once, sorted by degree
+        # every effect once: a repeated effect, written twice or also added by
+        # a '*', means the formula is not what was intended (x + y + x*y was
+        # probably meant as x + y + x:y); sorted by degree
         terms = []
-        seen = set()
-        for term in found:
+        seen = {}
+        for term, written in found:
             canonical = tuple(sorted(term, key=order.index))
-            if frozenset(canonical) not in seen:
-                seen.add(frozenset(canonical))
-                terms.append(canonical)
+            key = frozenset(canonical)
+            if key in seen:
+                raise ValueError("Infeasible formula: The effect '%s' is given more than once." % ":".join(canonical))
+            seen[key] = written
+            terms.append(canonical)
         terms.sort(key=len)
 
         # an interaction of three or more variables needs all its lower-order
@@ -171,7 +206,9 @@ class _regdesign:
     main effects may be left out: in 'x + x:w' w has treatment dummies, in
     'x:w' and 'w + x:w' one column per level, as in R. Every column is centred
     and the continuous ones are scaled (design note, Section 3.1);
-    backtransform() returns to the scale of the data.
+    backtransform() returns to the scale of the data. Censoring limits are
+    read from two columns, lower and upper, as kind and limits of each row
+    (design note, Section 8.13).
 
     Warning: This class reports unusable data by raising ValueError with a
     message meant for the user; the caller prints it.
@@ -183,6 +220,7 @@ class _regdesign:
         response: str,
         terms: list,
         group: str = None,
+        censoring: tuple = None,
     ) -> None:
         """
         Builds the design.
@@ -192,6 +230,8 @@ class _regdesign:
             response (str): Name of the response variable.
             terms (list): The fixed effects, tuples of variable names.
             group (str, optional): Name of the grouping variable.
+            censoring (tuple, optional): Names of the columns with the lower
+                and the upper censoring limits.
 
         Raises:
             ValueError: If the data cannot be used.
@@ -201,6 +241,7 @@ class _regdesign:
         self.response = response
         self.terms = [tuple(term) for term in terms]
         self.group = group
+        self.censoringcolumns = None if censoring is None else tuple(censoring)
 
         self.__build()
 
@@ -315,6 +356,81 @@ class _regdesign:
         """
 
         return str(column.dtype) == "category"
+
+    def __censoring(self) -> None:
+        """
+        Reads the lower and upper censoring limits and sets the kind of each
+        row: both missing exact, only lower right-censored (Y > lower), only
+        upper left-censored (Y <= upper), both interval-censored
+        (lower < Y <= upper). An infinite upper limit counts as missing.
+
+        Args:
+            None
+
+        Returns:
+            None
+
+        Raises:
+            ValueError: If the limits cannot be used.
+        """
+
+        names = self.censoringcolumns
+        used = {self.response, self.group} | {name for term in self.terms for name in term}
+        for name in names:
+            if name in used:
+                raise ValueError("The censoring column '%s' is also used in the formula." % name)
+
+        limits = []
+        for name in names:
+            column = self.__column(name)
+            kind = getattr(column.dtype, "kind", "O")
+            if self.__iscategorical(column) or kind not in "iuf":
+                raise ValueError("The censoring column '%s' must be numeric, with missing values (NaN) where there is no limit." % name)
+            limits.append(np.asarray(column, dtype=float).copy())
+        lower, upper = limits
+        upper[upper == np.inf] = np.nan
+
+        given = ~np.isnan(lower)
+        if not np.all(np.isfinite(lower[given])) or np.any(lower[given] < 0.0):
+            raise ValueError("The lower censoring limits ('%s') must be finite and zero or positive." % names[0])
+        if np.any(upper[~np.isnan(upper)] <= 0.0):
+            raise ValueError("The upper censoring limits ('%s') must be positive." % names[1])
+
+        both = given & ~np.isnan(upper)
+        if np.any(lower[both] >= upper[both]):
+            raise ValueError("In an interval-censored row the lower limit ('%s') must be smaller than the upper limit ('%s')." % names)
+
+        self.kind = np.where(given, np.where(np.isnan(upper), 1, 3), np.where(np.isnan(upper), 0, 2))
+        self.limits = np.column_stack([lower, upper])
+
+        return None
+
+    def __response(self, column) -> np.array:
+        """
+        Returns the response with censoring: needed and finite in exact rows,
+        ignored (NaN) in censored rows.
+
+        Args:
+            column (Series): The response column.
+
+        Returns:
+            ndarray: The response, NaN in censored rows.
+
+        Raises:
+            ValueError: If the response is not numeric or missing in an exact row.
+        """
+
+        kind = getattr(column.dtype, "kind", "O")
+        if kind not in "iuf":
+            raise ValueError("The response '%s' has dtype '%s' and must be numeric." % (self.response, column.dtype))
+
+        values = np.asarray(column, dtype=float).copy()
+        exact = self.kind == 0
+        if not np.all(np.isfinite(values[exact])):
+            raise ValueError("The response '%s' has missing or infinite values in rows that are not censored." % self.response)
+        values[~exact] = np.nan
+
+        return values
 
     def __numeric(self, name: str, column) -> np.array:
         """
@@ -452,12 +568,21 @@ class _regdesign:
         column = self.__column(self.response)
         if self.__iscategorical(column):
             raise ValueError("The response '%s' must be numeric, not categorical." % self.response)
-        self.y = self.__numeric(self.response, column)
+        # the censoring of each row: kind 0 exact, 1 right, 2 left, 3 interval,
+        # and the limits [lower, upper], NaN where there is none
+        self.kind = None
+        self.limits = None
+        if self.censoringcolumns is None:
+            self.y = self.__numeric(self.response, column)
+        else:
+            self.__censoring()
+            self.y = self.__response(column)
         self.n = self.y.size
 
         if self.n < 2:
             raise ValueError("At least two observations are needed.")
-        if not np.min(self.y) >= 0.0:
+        exact = np.isfinite(self.y)
+        if np.any(exact) and not np.min(self.y[exact]) >= 0.0:
             raise ValueError("Every value of the response must be zero or positive.")
 
         # the columns of each variable, and their names
@@ -524,7 +649,7 @@ class _regdesign:
         if self.d >= self.n:
             raise ValueError("There must be more observations than coefficients.")
         if self.d and np.linalg.matrix_rank(self.Xtilde) < self.d:
-            raise ValueError("The design matrix is rank deficient: some columns are linear combinations of others.")
+            raise ValueError("The design matrix is rank deficient: Some columns are linear combinations of others.")
 
         # the groups of the random effect
         self.groupcodes = None

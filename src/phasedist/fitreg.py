@@ -1,4 +1,5 @@
 import sys
+import time
 import warnings
 
 import numpy as np
@@ -35,6 +36,10 @@ class fitreg:
     The data are imported as a pandas DataFrame. A column with the 'category' dtype is
     categorical, and a numeric column is continuous.
 
+    Right-, left- and interval-censored observations are given by two columns of
+    limits, named in the argument censoring. Censored observations count as positive,
+    as in the fit class.
+
     References:
         Bladt, M. (2022). Phase-type distributions for claim severity regression modeling.
         ASTIN Bulletin, 52(2), 417-448. https://doi.org/10.1017/asb.2021.40
@@ -53,6 +58,7 @@ class fitreg:
         itermax: int = 100000,
         accelerate: bool = True,
         verbose: bool = False,
+        censoring: tuple = None,
     ) -> None:
         """
         Initialize and fit a phase-type regression.
@@ -88,6 +94,14 @@ class fitreg:
                 Whether to accelerate the iterations by SQUAREM.
             verbose (bool, default=False):
                 If True, prints progress output during fitting.
+            censoring (tuple, optional):
+                Names of two numeric columns of data, the lower and the upper
+                censoring limit of each observation. A limit can be set to missing
+                (np.nan) when there is no limit, both missing for an uncensored
+                observation, only the lower for a right-censored one (Y > lower),
+                only the upper for a left-censored one (Y <= upper), both for an
+                interval-censored one (lower < Y <= upper). The response is
+                ignored, and may be missing, in censored rows.
 
         Notes
         -----
@@ -98,6 +112,7 @@ class fitreg:
         # set parameters
         self.formula = formula
         self.data = data
+        self.censoringcolumns = censoring
         self.nphases = nphases
         self.dtype = dtype
         self.quadnodes = quadnodes
@@ -109,6 +124,8 @@ class fitreg:
         self.verbose = verbose
         # random starts of each fit to a simulated data set in getlrtest
         self.lrsimrestarts = 1
+        # getlrtest says how long it may take when that exceeds this (seconds)
+        self.lrnotice = 10.0
 
         # checking and fitting
         if self.__checkinputs():
@@ -218,8 +235,9 @@ class fitreg:
         distribution. With nsim > 0 the reference distribution is also
         simulated by a parametric bootstrap from the model without the effect,
         with a Clopper-Pearson interval for the Monte Carlo error; this takes
-        two fits per simulated data set. Zeros do not affect the test. The
-        validation is in the design note, Section 11.13.
+        two fits per simulated data set. Zeros do not affect the test. When
+        the refits are expected to take more than lrnotice seconds, a note will
+        notify the user.
 
         Args:
             effects (str or list, optional): The fixed effects to test, named as in
@@ -251,12 +269,24 @@ class fitreg:
         if not isinstance(nsim, int) or isinstance(nsim, bool) or nsim < 0:
             print("Error: The number of simulations must be an integer of at least 0.")
             return None
+        if nsim and self.censored:
+            print("Error: Simulated p-values are not available with censored observations, which would need a model of the censoring; use nsim=0.")
+            return None
         if seed is not None and (not isinstance(seed, int) or isinstance(seed, bool)):
             print("Error: The seed can only be specified as an integer.")
             return None
         if not isinstance(confidence, float) or not 0.0 < confidence < 1.0:
             print("Error: The confidence level must be a float between 0 and 1.")
             return None
+
+        # the refits take about as long as the fit itself, notify user when that is long
+        refits = sum(term not in self.__lrcache for term in effects) + 2 * nsim * len(effects)
+        expected = refits * self.fittime
+        if expected > self.lrnotice:
+            print("Note: The likelihood-ratio tests are being computed. This can take %s."
+                  "summary(effecttest='wald') gives Wald tests without refitting."
+                  % (refits, "" if refits == 1 else "s", self.__duration(self.fittime),
+                     "about " + self.__duration(expected)), flush=True)
 
         rng = np.random.default_rng(seed)
         out = {}
@@ -309,7 +339,7 @@ class fitreg:
         Return the estimated standard deviation of the random effect.
 
         Returns:
-            float: sigma, None without a random effect; zero at the boundary,
+            float: The random effect std. dev., None without a random effect; zero at the boundary,
                 where the fit is that of the model without random effect.
         """
         return self.sigma
@@ -339,8 +369,8 @@ class fitreg:
 
     def getzeroprob(self) -> float:
         """
-        Return the estimated probability of an observation at zero, the share
-        of zeros in the data.
+        Return the estimated probability of an observation at zero, the
+        proportion of zeros in the data.
 
         Returns:
             float: The probability, zero without zeros.
@@ -485,24 +515,38 @@ class fitreg:
         if nsim and effecttest != "lrt":
             print("Error: Simulated p-values are available for the likelihood-ratio tests (effecttest='lrt').")
             return None
+        if nsim and self.censored:
+            print("Error: Simulated p-values are not available with censored observations. Use nsim=0.")
+            return None
         if seed is not None and (not isinstance(seed, int) or isinstance(seed, bool)):
             print("Error: The seed can only be specified as an integer.")
             return None
+
+        # the likelihood-ratio tests first: they refit the model, which can take
+        # a while, and getlrtest says so before it starts
+        effects = list(self.design.termcolumns)
+        if effects and effecttest == "lrt":
+            lrtests = self.getlrtest(effects, nsim=nsim, seed=seed)
 
         # the model and the data
         print("Phase-type regression (%s, %d phases)" % (self.dtype, self.nphases))
         print("Formula: %s" % self.formula)
         line = "Observations: %d" % self.nobs
+        notes = []
         if self.nzero:
-            line += " (%d at zero)" % self.nzero
+            notes.append("%d at zero" % self.nzero)
+        for count, label in zip(self.ncensored, ("right", "left", "interval")):
+            if count:
+                notes.append("%d %s-censored" % (count, label))
+        if notes:
+            line += " (%s)" % ", ".join(notes)
         if self.design.group is not None:
             sizes = np.bincount(self.design.groupcodes)
             line += "   Groups (%s): %d, of %d to %d observations" % (self.design.group, sizes.size,
                                                                      int(sizes.min()), int(sizes.max()))
         print(line)
-        effects = list(self.design.termcolumns)
         print("Fixed effects: %d, with %d coefficient%s" % (len(effects), self.design.d, "" if self.design.d == 1 else "s")
-              if effects else "Fixed effects: none (no covariates)")
+              if effects else "Fixed effects: None (no covariates)")
         print("")
 
         # the fixed effects
@@ -516,7 +560,7 @@ class fitreg:
                     statistic, df, p = tests[effect]
                     print("%-*s %10.2f %5d %9s" % (width, effect, statistic, df, self.__ptext(p)))
             else:
-                tests = self.getlrtest(effects, nsim=nsim, seed=seed)
+                tests = lrtests
                 print("Likelihood-ratio tests of the fixed effects:")
                 if nsim:
                     print("%-*s %10s %5s %9s %9s %17s" % (width, "", "LR stat", "df", "Pr(>Chi)",
@@ -532,19 +576,19 @@ class fitreg:
                     print(text)
                 if nsim:
                     print("Simulated p-values from %d data sets per effect simulated without the effect." % nsim)
-            print("(The individual coefficients with Wald tests and intervals: coeftest())")
+            print("(The Wald tests and intervals of the individual coefficients are given by coeftest())")
             print("")
 
         # the random effect and the point mass
         if self.sigma is not None:
             statistic, pvalue = self.__sigmatest()
             if self.boundary:
-                print("Random effect (1|%s): sigma = 0 (at the boundary, i.e. groups vary no more "
+                print("Random effect (1|%s): Std. dev. = 0 (at the boundary, i.e. groups vary no more "
                       "than the fixed effects explain)" % self.design.group)
             else:
-                print("Random effect (1|%s): sigma = %.4f (std. err. %.4f)"
+                print("Random effect (1|%s): Std. dev. = %.4f (std. err. %.4f)"
                       % (self.design.group, self.sigma, self.sigmastderr))
-            print("  Likelihood-ratio test of sigma = 0: LR stat %.2f, p-value %s (against 0.5 chi2(0) + 0.5 chi2(1))"
+            print("  Likelihood-ratio test of std. dev. = 0: LR stat %.2f, p-value %s (against 0.5 chi2(0) + 0.5 chi2(1))"
                   % (statistic, self.__ptext(pvalue)))
         if self.nzero:
             print("Probability of observations being zero: p = %.4f (std. err. %.4f)"
@@ -559,9 +603,9 @@ class fitreg:
         nphase = self.nparam - self.design.d - nsigma - nzero
         parts = ["%d phase-type" % nphase, "%d coefficient%s" % (self.design.d, "" if self.design.d == 1 else "s")]
         if nsigma:
-            parts.append("1 sigma")
+            parts.append("1 random effect std. dev.")
         if nzero:
-            parts.append("1 zero share")
+            parts.append("1 zero prob.")
         print("Log-likelihood: %.4f   Deviance (-2 log-likelihood): %.4f"
               % (self.loglikelihood, -2.0 * self.loglikelihood))
         print("AIC: %.4f   BIC: %.4f   Parameters: %d (%s)"
@@ -571,9 +615,9 @@ class fitreg:
         reached = sum(1 for v, status in zip(self.d.startlogliks, statuses)
                       if status in ("converged", "itermax") and np.isfinite(v) and v >= best - 1e-3)
         print("Iterations: %d   Converged: %s   Starts: %d, of which %d reached the best within 0.001"
-              % (self.iterations, "yes" if self.converged else "no", len(statuses), reached))
+              % (self.iterations, "Yes" if self.converged else "No", len(statuses), reached))
         if self.d.degenerate:
-            print("Warning: a phase of the fitted distribution holds a negligible share of the expected time; "
+            print("Warning: A phase of the fitted distribution holds a negligible share of the expected time; "
                   "fewer phases may suffice.")
 
     def plot(
@@ -597,8 +641,16 @@ class fitreg:
             filename (str, default="PPcheck.png"): Filename of the generated graph.
 
         Returns:
-            None: Writes the figure to filename.
+            None: Writes the figure to filename; nothing with censored
+                observations, whose transforms are censored too.
         """
+
+        if self.censored:
+            warnings.warn(
+                "Some observations are censored, so the probability integral transforms "
+                "are censored too; the PP plot is left out and no file is written.",
+                UserWarning, stacklevel=2)
+            return None
 
         transforms = np.sort(self.pit)
         n = transforms.size
@@ -710,15 +762,24 @@ class fitreg:
         if not isinstance(self.verbose, bool):
             print("Error: The argument 'verbose' needs to be of type 'bool'.")
             return False
+        if self.censoringcolumns is not None:
+            names = self.censoringcolumns
+            if (not isinstance(names, (tuple, list)) or len(names) != 2
+                    or not all(isinstance(name, str) for name in names) or names[0] == names[1]):
+                print("Error: The censoring must be given as the names of two columns of the data, "
+                      "the lower and the upper limit, e.g. censoring=('lower', 'upper').")
+                return False
+            self.censoringcolumns = tuple(names)
 
         try:
             self.design = _regdesign(self.data, self.parsed.response, self.parsed.terms,
-                                     self.parsed.group)
+                                     self.parsed.group, self.censoringcolumns)
         except ValueError as error:
             print("Error: %s" % error)
             return False
 
-        # zeros are a point mass; the regression is fitted to the positive observations
+        # zeros are a point mass; the regression is fitted to the positive
+        # observations, censored ones included (design note, Section 8.13)
         zeros = self.design.y == 0.0
         self.nobs = self.design.n
         self.nzero = int(np.count_nonzero(zeros))
@@ -729,11 +790,20 @@ class fitreg:
                 return False
             try:
                 self.design = _regdesign(self.data[~zeros], self.parsed.response, self.parsed.terms,
-                                         self.parsed.group)
+                                         self.parsed.group, self.censoringcolumns)
             except ValueError as error:
                 print("Error: %s (This concerns the %d positive observations; the %d at zero are fitted as a point mass.)"
                       % (str(error).rstrip("."), self.nobs - self.nzero, self.nzero))
                 return False
+
+        # the number of rows of each kind; with only right-censored rows the
+        # likelihood grows as the rates go to zero
+        kind = self.design.kind
+        self.ncensored = [0, 0, 0] if kind is None else [int(np.count_nonzero(kind == k)) for k in (1, 2, 3)]
+        self.censored = sum(self.ncensored) > 0
+        if kind is not None and np.all(kind == 1):
+            print("Error: Every positive observation is right-censored, so the model cannot be estimated.")
+            return False
 
         # sigma is identified only through the dependence within groups
         if self.design.group is not None:
@@ -804,6 +874,7 @@ class fitreg:
         # kept for the likelihood-ratio tests
         self.__groups = groups
         self.__lrobs = design.y[self.order]
+        self.__lrcensoring = design.limits[self.order] if self.censored else None
         self.__lrcache = {}
 
         self.d = _fitcphreg(
@@ -820,11 +891,14 @@ class fitreg:
             itermax=int(self.itermax),
             accelerate=self.accelerate,
             verbose=self.verbose,
+            censoring=self.__lrcensoring,
         )
+        started = time.time()
         self.d.fit()
+        self.fittime = time.time() - started
 
         if self.d.failed:
-            print("Error: The fit failed: no start produced a finite likelihood.")
+            print("Error: The fit failed: No start produced a finite likelihood.")
             return 1
 
         self.converged = self.d.converged
@@ -864,7 +938,13 @@ class fitreg:
 
         self.__unif = _unif(tolerance=1e-14)
 
-        # probability integral transforms of the positive observations
+        # probability integral transforms of the positive observations; with
+        # censored observations they are censored too, and not computed
+        self.pit = None
+        if self.censored:
+            if self.d.degenerate:
+                print("Warning: The fitted distribution has a phase that holds a negligible share of the expected time.")
+            return 0
         basepi = np.asarray(self.d.pi, dtype=float)
         eta = design.X @ self.beta
         if self.ranef is not None:
@@ -904,7 +984,7 @@ class fitreg:
                                 quadnodes=self.quadnodes, restarts=restarts, seed=seed,
                                 tolerance=self.tolerance, itermax=int(self.itermax),
                                 accelerate=self.accelerate, verbose=False, starts=starts,
-                                covariance=False)
+                                covariance=False, censoring=self.__lrcensoring)
             engine.fit()
         return None if engine.failed else engine
 
@@ -951,6 +1031,23 @@ class fitreg:
         statistic = max(2.0 * (self.d.loglikelihood - self.d.fixedloglikelihood), 0.0)
         pvalue = 0.5 * float(chi2.sf(statistic, 1)) if statistic > 0.0 else 1.0
         return statistic, pvalue
+
+    @staticmethod
+    def __duration(seconds: float) -> str:
+        """
+        Format a duration for printing.
+
+        Args:
+            seconds (float): The duration.
+
+        Returns:
+            str: Seconds, minutes or hours.
+        """
+        if seconds < 90:
+            return "%.0f seconds" % seconds
+        if seconds < 5400:
+            return "%.0f minutes" % (seconds / 60.0)
+        return "%.1f hours" % (seconds / 3600.0)
 
     @staticmethod
     def __ptext(p: float) -> str:
@@ -1078,7 +1175,7 @@ class fitreg:
                 continue
             values.append(max(2.0 * (full.loglikelihood - fitted.loglikelihood), 0.0))
             if self.verbose:
-                print("likelihood-ratio test of %s: simulation %d of %d, statistic %.4f"
+                print("Likelihood-ratio test of %s: Simulation %d of %d, statistic %.4f"
                       % (term, r + 1, nsim, values[-1]))
 
         if len(values) < nsim:

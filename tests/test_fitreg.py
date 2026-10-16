@@ -1,124 +1,45 @@
 '''
-UNIT TEST FOR THE fitreg CLASS (the user-facing interface that fits a
-continuous-time phase-type regression with fixed effects, interactions and an
-optional Gaussian random effect, specified by an R-style formula on a pandas
-DataFrame).
+UNIT TEST FOR THE fitreg CLASS (phase-type regression from an R-style formula
+on a pandas DataFrame). Design note: phreg-fitting-algorithm.md. Statistical
+validation (coverage over many replicates) is kept outside the repository.
 
-The first two cases are exact ground truths: with one phase the model is a
-classical regression whose maximum likelihood estimates can be computed by
-other means, so the class must reproduce them to optimizer precision. The
-oracles are independent of the class: statsmodels' Gamma GLM on a design matrix
-built by hand, and a direct maximization of the random-effect likelihood
-with each group's integral computed by the trapezoidal rule on a fine grid.
-Case 3 checks the design with interactions against columns built by hand. The
-remaining cases are smoke tests of each functionality on multi-phase data,
-using one phase wherever the functionality does not depend on the number of
-phases, to keep the run time down. Statistical validation (coverage of the
-confidence intervals, recovery of the parameters over many replicates) is too
-slow for this file and is kept outside the repository, see the design note
-phreg-fitting-algorithm.md, Section 11.
-
-Ground truth of the multi-phase cases. The data are simulated from the model
-the class fits: a three-phase Coxian with distinct rates, scaled by
-exp(x'beta + b). The simulator builds the Markov jump process from the raw
-rates and shares no code with the class.
+Data are simulated from the model: one-phase truths for the exact oracles,
+and a three-phase Coxian with distinct rates, built from its raw rates
+without the class, for the smoke tests.
 
 Sub-tests:
-    Case 1:  With one phase the model is exponential regression: coefficients,
-             baseline rate and log-likelihood equal those of a log-link Gamma
-             GLM (statsmodels) on a hand-built design with continuous,
-             categorical and interaction effects, the coefficients with the sign
-             flipped, and the standard errors equal the exact observed
-             information of exponential regression.
-    Case 2:  With one phase and a random effect, sigma, the baseline rate,
-             the coefficient and the marginal log-likelihood equal a direct
-             maximization of the marginal likelihood computed by quadrature,
-             and the standard errors equal its inverse Hessian.
-    Case 3:  Interactions: '*' expands to the main effects and interactions,
-             repeated effects are kept once (x:z and z:x being one effect), an
-             interaction of three variables without its lower-order effects is
-             refused by the parser, the same
-             model written in another order gives the same fit, and the design
-             columns, their names and a prediction row equal hand-built
-             products.
-    Case 4:  A three-phase fixed-effects fit converges, names the coefficients
-             after the variables and levels, and recovers the effects.
-    Case 5:  Variable types come from the DataFrame: the 'category' dtype makes
-             a variable categorical, its first category is the reference
-             level (reordering a two-level factor flips the sign of its
-             coefficient and leaves the fit unchanged), unused categories are
-             ignored, and text, boolean and non-categorical grouping columns
-             are refused.
-    Case 6:  Shifting a continuous covariate leaves the centred design, the
-             coefficients and the log-likelihood unchanged, and the shifted
-             model at x = shift is the original model at x = 0.
-    Case 7:  A random effect on three-phase data: sigma is recovered and
-             every group gets a predicted intercept. When the groups vary less
-             than chance would make them, sigma is exactly zero and the fit is
-             that of the model without random effect.
-    Case 8:  Predictions: getdist, getdensity and getcumprob agree with each
-             other and with PH(pi, exp(x'beta) T), interactions included, the
-             density is the derivative of the CDF, a group's predicted
-             intercept enters the linear predictor, and bad covariates are
-             refused.
-    Case 9:  The formula parser accepts the supported notation and refuses the
-             unsupported notation with a message; an interaction of two
-             variables without its main effects passes the parser, whose
-             types only the design knows (case 14).
-    Case 10: Infeasible input terminates, and the arguments of earlier
-             versions are refused.
-    Case 11: summary prints, plot writes a file, AIC and BIC are the same
-             parameter count read two ways, the confidence intervals are Wald
-             intervals, the p-values and getwaldtest are Wald tests (the
-             latter checked against the exact covariance of case 1), the
-             summary reports the model and its effects but no individual
-             coefficients: likelihood-ratio tests of every effect by default,
-             Wald or none on request, the test of sigma = 0 (against the fit
-             without the random effect, and at the boundary), the
-             log-likelihood and deviance, the parameters by kind and the
-             starts; coeftest returns and prints the Wald test, standard
-             error and interval of every coefficient; and verbose decides
-             whether anything is printed.
-    Case 12: Observations at zero are a point mass, as in fit: its
-             probability is the share of zeros, the regression is the fit to
-             the positive observations, and the log-likelihood, parameter
-             count, BIC, initial distribution, CDF, density and summary
-             include the point mass, and the summary notes that the
-             probability of a zero is assumed constant (and only when there
-             are zeros); with and without a random effect.
-    Case 13: getlrtest. With one phase the likelihood-ratio statistics of
-             effects, including effects that are part of an interaction (whose
-             columns alone are dropped), equal those of exponential
-             regression computed from Gamma GLMs on hand-built designs; the
-             p-value is the chi-square tail. Zeros leave the test unchanged,
-             a random effect and a model left with no covariates work,
-             and on three-phase data the statistics are not negative. The
-             simulated p-value has the stated form and Monte Carlo interval,
-             is reproducible with its seed, is the one the summary prints,
-             and contains the chi-square p-value, which is accurate for
-             one-phase data (a statistical test at a set level); the
-             simulators behind it follow their laws (statistical tests).
-             Bad arguments are refused.
-    Case 14: A separate slope of a continuous x for each level of a
-             categorical g. With one phase, 'y ~ x:g' (one column per level)
-             and 'y ~ x + x:g' (a slope and differences against the
-             reference level) equal a log-link Gamma GLM on hand-built
-             columns, with the standard errors of exponential regression;
-             the two are one model (same log-likelihood, the slope of each
-             level the same), 'y ~ g + x:g' is 'y ~ x*g', and the fit does not
-             depend on the reference level of g. It does depend on the origin
-             of x: on a shifted x it is the GLM on the shifted columns, with a
-             different log-likelihood. The columns are named as in R, a
-             prediction row and the CDF follow the coding, the
-             likelihood-ratio test of x:g is the test of equal slopes, and an
-             interaction without its main effects is refused, with a
-             message, for two continuous or two categorical variables and
-             for three variables.
+    Case 1:  One phase equals a log-link Gamma GLM (statsmodels): coefficients,
+             rate, log-likelihood; standard errors equal the exact information.
+    Case 2:  One phase with a random effect equals a direct maximization of
+             a quadrature likelihood, standard errors included.
+    Case 3:  Interactions: '*' expansion, x:z = z:x, refusal of incomplete
+             three-way interactions, order invariance, design columns.
+    Case 4:  A three-phase fit recovers the effects.
+    Case 5:  Variable types from the dtypes; reference level; refusals.
+    Case 6:  Shifting a covariate leaves the fit unchanged.
+    Case 7:  Random effect on three-phase data; sigma = 0 at the boundary.
+    Case 8:  Predictions (getdist, getdensity, getcumprob).
+    Case 9:  The formula parser accepts and refuses with messages.
+    Case 10: Infeasible input terminates.
+    Case 11: summary, plot, AIC/BIC, Wald intervals and tests, coeftest,
+             verbose.
+    Case 12: Zeros are a point mass; the summary notes the assumption.
+    Case 13: getlrtest: exact statistics, zeros, random effect, simulated
+             p-values and their simulators (statistical tests).
+    Case 14: A slope of x per level of g ('x:g', 'x + x:g'): Gamma GLM,
+             reference-level invariance, origin dependence, refusals.
+    Case 15: Right-censoring, one phase: Poisson GLM; full-information
+             standard errors; likelihood-ratio test.
+    Case 16: All kinds of censoring, one phase: concave direct maximization.
+    Case 17: Empty censoring columns give the uncensored fit bit for bit;
+             three-phase censored fit; the engine's censored rows against an
+             independent expm evaluation.
+    Case 18: Censoring with a random effect: quadrature likelihood.
+    Case 19: Censoring refusals, zeros, simulated p-values, plot.
 
 References:
     Bladt, M. (2022). Phase-type distributions for claim severity regression
     modeling. ASTIN Bulletin, 52(2), 417-448.
-    https://doi.org/10.1017/asb.2021.40
 '''
 
 import contextlib
@@ -130,7 +51,7 @@ import warnings
 import numpy as np
 import matplotlib
 
-# a backend that needs no display, since case 11 only writes the figure to file
+# no display needed: case 11 only writes the figure to file
 matplotlib.use("Agg")
 
 from scipy.optimize import minimize
@@ -165,24 +86,12 @@ TOLEXACT = 1e-8      # fit against a closed-form oracle (case 1)
 TOLFIT = 1e-3        # loose convergence tolerance, enough for a smoke test
 TOLTIGHT = 1e-10     # convergence tolerance of the ground-truth fits
 
-# The oracle of case 2 is a numerical optimizer of its own, so the comparison
-# is only as good as it is. Measured over seeds 0 and 1: it agrees to 1.2e-7
-# in the parameters.
-TOLOPT = 1e-5
+TOLOPT = 1e-5        # against a numerical optimizer (case 2; measured 1.2e-7)
 
-# Two fits whose inputs differ only by rounding (the centred design of case 6
-# differs by about 4e-15) take slightly different paths and stop at slightly
-# different points of the flat ridge around the optimum, the representation
-# not being identified. As in test_fit, two runs are asked to agree to 1e-4.
-# Measured over seeds 0-3, the worst disagreement was 4.5e-7 in a coefficient
-# and 2.3e-6 in the CDF (seed 3).
-TOLRUN = 1e-4
+TOLRUN = 1e-4        # two runs differing by rounding (case 6; measured 2.3e-6)
 
-# Standard errors from finite differences of two likelihoods computed in
-# different ways (case 2). Measured over seeds 0 and 1 they agreed to six
-# decimals; 1e-4 relative leaves room for the finite-difference error.
-STEP = 1e-4
-TOLSE = 1e-4
+STEP = 1e-4          # finite-difference step of the oracles' Hessians
+TOLSE = 1e-4         # standard errors, relative (measured 1e-6 or better)
 
 SEED = 0
 NOBS = 300           # observations of the multi-phase fixed-effects data
@@ -193,62 +102,44 @@ NGROUPSEXACT = 20    # groups of the one-phase random-effect data of case 2
 GROUPSIZEEXACT = 6
 SHIFT = 10.0         # shift of the continuous covariate in case 6
 
-# The simulated p-value of case 13: NSIMLR simulated data sets, on one-phase
-# data of NLR observations with a moderate effect of w, so that the simulated
-# p-value is small and a simulation from the wrong model (the full one) would
-# move it far from the chi-square p-value. The chi-square reference is
-# accurate for one-phase data (validation: 1000 data sets of 400 observations
-# rejected at 5.3% and 4.0% at the 5% level), so the chi-square p-value must
-# lie in the Clopper-Pearson interval of the simulated one, taken at level
-# 1 - ALPHALR.
+# Case 13: the chi-square p-value (accurate for one phase) must lie in the
+# Clopper-Pearson interval of the simulated one; NCHECKSLR statistical checks
+# share the level ALPHALR (Bonferroni).
 NLR = 200
 NSIMLR = 40
 LREFFECT = 0.35
-# The simulators behind the simulated p-value are checked against theory by
-# statistical tests too: NDRAWS absorption times of the true Coxian (mean by a
-# t interval, distribution by a chi-square test on NBINSLR bins), and NREPLR
-# simulated data sets of a one-phase random-effect model (the mean of
-# log(y) + eta and the variance of its group means, by t intervals). With the
-# Clopper-Pearson check of the p-value these are NCHECKSLR checks, sharing
-# the level ALPHALR (Bonferroni).
 NDRAWS = 20000
 NBINSLR = 10
 NREPLR = 400
 ALPHALR = 0.01
 NCHECKSLR = 5
 
-# The one-phase data of case 14: a separate slope of x for each level of g,
-# distinct so that a swapped level cannot go unnoticed, and an x whose mean is
-# away from zero, so that the origin of x matters. Adding ORIGINSHIFT to x
-# changes the model; measured over seeds 0-29 the log-likelihood changed by
-# 77.6 to 137.1, far above ORIGINGAP (a shift of +1 changed it by as little
-# as 1.3, too close to any threshold).
+# Case 14: distinct slopes per level; shifting x by ORIGINSHIFT changed the
+# log-likelihood by 77.6-137.1 over seeds 0-29 (threshold ORIGINGAP).
 SLOPES = {"a": 0.3, "b": -0.5, "c": 0.8}
 SLOPEMEAN = 1.0
 ORIGINSHIFT = -3.0
 ORIGINGAP = 10.0
 
-# The multi-phase truth: a Coxian of three phases with distinct rates, so the
-# phases are not exchangeable, and effects large enough that their signs are
-# clear at NOBS observations.
+# Cases 15-19: limits independent of the times: a uniform right-censoring
+# limit, or inspections on CENSGRID (exact, right, inspected: CENSSCHEME).
+CENSRIGHT = (0.5, 6.0)
+CENSGRID = np.array([0.0, 0.5, 1.0, 2.0, 4.0, np.inf])
+CENSSCHEME = (0.4, 0.3, 0.3)
+
+# The multi-phase truth: distinct rates, so the phases are not exchangeable
 TRUERATES = np.array([3.0, 1.0, 0.4])
 TRUECONTINUE = np.array([0.6, 0.5])
 TRUEBETA = {"x": 0.8, "g[B]": -0.6, "g[C]": 0.7}
 
-# The random effect must be identifiable from the dependence within groups,
-# and the true Coxian is wide (log U has a standard deviation of about 1.5),
-# so a small sigma would leave the within-group correlation near zero and the
-# estimate of sigma at the boundary. With sigma = 1 and groups of ten the
-# correlation of log Y within a group is about 0.3.
-TRUESIGMA = 1.0
+TRUESIGMA = 1.0      # within-group correlation of log Y about 0.3: identifiable
 
 # The one-phase truths of cases 1 and 2
 EXACTRATE = 0.5
 EXACTBETA = dict(x=0.6, gb=-0.4, gc=0.5, w=0.3, hq=0.3, xgb=0.4, xgc=-0.3, xw=0.5, gbhq=0.2, gchq=-0.2)
 EXACTSIGMA = 0.8
 
-# Every public method of fitreg. Checked against the class below, so that a
-# method added later cannot go untested unnoticed.
+# every public method of fitreg, checked against the class
 COVEREDMETHODS = {"getcoef", "getstderr", "coeftest", "getwaldtest", "getlrtest", "getsigma", "getzeroprob",
                   "getranef", "getinitdist", "getphasegen", "getexitrates",
                   "getloglik", "getaic", "getbic", "getdist", "getdensity",
@@ -322,14 +213,14 @@ we = rng.uniform(-1.0, 1.0, size=NEXACT)
 ge = rng.choice(["a", "b", "c"], size=NEXACT)
 he = rng.choice(["p", "q"], size=NEXACT)
 gb, gc, hq = (ge == "b") * 1.0, (ge == "c") * 1.0, (he == "q") * 1.0
-# the design of 'y ~ x*g + w + x:w + g*h', built by hand in the order and with
+# the design of 'y ~ x*g + w + x:w + h + g:h', built by hand in the order and with
 # the names the class is documented to use
 HANDNAMES = ["x", "g[b]", "g[c]", "w", "h[q]", "x:g[b]", "x:g[c]", "x:w", "g[b]:h[q]", "g[c]:h[q]"]
 HANDX = np.column_stack([xe, gb, gc, we, hq, xe * gb, xe * gc, xe * we, gb * hq, gc * hq])
 HANDBETA = np.array([EXACTBETA[k] for k in ("x", "gb", "gc", "w", "hq", "xgb", "xgc", "xw", "gbhq", "gchq")])
 ye = rng.exponential(size=NEXACT) / (EXACTRATE * np.exp(HANDX @ HANDBETA))
 DATAEXACT = pd.DataFrame({"y": ye, "x": xe, "w": we, "g": categorical(ge), "h": categorical(he)})
-FORMULAEXACT = "y ~ x*g + w + x:w + g*h"
+FORMULAEXACT = "y ~ x*g + w + x:w + h + g:h"
 
 # The one-phase random-effect data of case 2
 groupsexact = np.repeat(np.arange(NGROUPSEXACT), GROUPSIZEEXACT)
@@ -353,13 +244,8 @@ groupintercepts = rng.normal(scale=TRUESIGMA, size=NGROUPS)
 yr = simulatecoxian(groups.size, rng) * np.exp(-(TRUEBETA["x"] * xr + groupintercepts[groups]))
 DATARANDOM = pd.DataFrame({"y": yr, "x": xr, "group": categorical(groups)})
 
-# The same design without a random effect, for the boundary of case 7
-# Data whose groups vary less than chance would make them, for the boundary of
-# case 7: the observations are dealt to the groups in the order of their
-# baseline times, so that every group gets a similar mix of short and long
-# times. The derivative of the likelihood in sigma^2 at zero is then clearly
-# negative and the estimate of sigma is exactly zero. (With groups drawn at
-# random and no random effect, about half the data sets would give zero.)
+# Case 7 boundary data: rows dealt to groups by their baseline times, so the
+# groups vary less than chance and sigma-hat is exactly zero
 uz = simulatecoxian(groups.size, rng)
 yz = uz * np.exp(-TRUEBETA["x"] * xr)
 dealt = np.empty(groups.size, dtype=int)
@@ -423,15 +309,8 @@ if np.max(np.abs(reported / stderr - 1.0)) > TOLEXACT:
 modelrandomexact, _, _ = quietfit(formula="y ~ x + (1|u)", data=DATARANDOMEXACT, quadnodes=15, **EXACT)
 
 
-# The integrand of a group is closed form: with a_j = sum(lograte + beta x)
-# and s_j = sum(exp(lograte + beta x) y) over its observations, the log of the
-# group's likelihood given b is a_j + n_j b - exp(b) s_j. Each integral is
-# computed by the trapezoidal rule on a fine fixed grid, which for a smooth
-# integrand vanishing at both ends converges geometrically, and shares nothing
-# with the adaptive Gauss-Hermite rule of the class.
-# The grid spacing is under a thirtieth of the posterior standard deviation
-# of an intercept near the optimum, where the error of the rule is far below double
-# precision.
+# A group's integrand is closed form, a_j + n_j b - exp(b) s_j; each integral by
+# the trapezoidal rule on a fine fixed grid (independent of the class's AGHQ)
 GRID = np.linspace(-15.0, 15.0, 3001)
 EXPGRID = np.exp(GRID)
 LOGTRAPEZOID = np.log(np.r_[0.5, np.ones(GRID.size - 2), 0.5] * (GRID[1] - GRID[0]))
@@ -462,10 +341,7 @@ if np.max(np.abs(fitted - oracle.x)) > TOLOPT:
 if abs(modelrandomexact.getloglik() + oracle.fun) > TOLOPT:
     sys.exit("Validation test failed at case 2: the marginal log-likelihood is %.8f, against %.8f by quadrature." % (modelrandomexact.getloglik(), -oracle.fun))
 
-# the standard errors are those of the full observed information, the rate
-# included: the inverse Hessian of the oracle's likelihood at its maximum. The
-# standard error of log(sigma) is sigmastderr / sigma. (With the rate held at
-# its estimate, the standard error of log(sigma) would be too small.)
+# standard errors: the inverse Hessian of the oracle, rate included
 hessian = np.zeros((3, 3))
 for i in range(3):
     ei = np.zeros(3)
@@ -486,10 +362,10 @@ if np.max(np.abs(reported / oraclestderr - 1.0)) > TOLSE:
 # CASE 3: Interactions
 # ------------------------------------------------------------------
 
-parsed = _regformula("y ~ x*w*g + w:x + (1|u)")
+parsed = _regformula("y ~ x*w*g + (1|u)")
 expected = [("x",), ("w",), ("g",), ("x", "w"), ("x", "g"), ("w", "g"), ("x", "w", "g")]
 if parsed.terms != expected or parsed.group != "u":
-    sys.exit("Validation test failed at case 3: 'x*w*g + w:x' was parsed as %s, not as every main effect and interaction once." % parsed.terms)
+    sys.exit("Validation test failed at case 3: 'x*w*g' was parsed as %s, not as every main effect and interaction once." % parsed.terms)
 # an interaction of three variables needs all its lower-order effects (those
 # of two variables are checked by the design, which knows the types: case 14)
 try:
@@ -499,20 +375,21 @@ except ValueError as error:
     if "x*w*g" not in str(error) or "'w:g'" not in str(error):
         sys.exit("Validation test failed at case 3: the refusal of an incomplete interaction does not say what is missing and how to write it.")
 
-# x:z and z:x are one effect: within a formula a repeated interaction is kept
-# once whatever the order of its variables, and it is named in the order the
-# variables first appear, as in R
-for formula in ("y ~ x*z + z:x", "y ~ x + z + z:x", "y ~ x + z + x:z + z:x"):
-    if _regformula(formula).terms != [("x",), ("z",), ("x", "z")]:
-        sys.exit("Validation test failed at case 3: '%s' was parsed as %s." % (formula, _regformula(formula).terms))
+# x:z and z:x are one effect, named in the order of first appearance; an
+# effect given twice is refused (test_regformula covers the details)
+if _regformula("y ~ x + z + z:x").terms != [("x",), ("z",), ("x", "z")]:
+    sys.exit("Validation test failed at case 3: 'x + z + z:x' was parsed as %s." % _regformula("y ~ x + z + z:x").terms)
+for formula in ("y ~ x*z + z:x", "y ~ x + z + x:z + z:x"):
+    try:
+        _regformula(formula)
+        sys.exit("Validation test failed at case 3: '%s' gives x:z twice but was accepted." % formula)
+    except ValueError:
+        pass
 if _regformula("y ~ z*x").terms != [("z",), ("x",), ("z", "x")]:
     sys.exit("Validation test failed at case 3: 'z*x' does not keep the order it is written in.")
 
-# and the same model written in another order is the same fit: the same
-# log-likelihood, coefficients, standard errors and effect tests, the names
-# only following the order of the formula. The comparison goes by the set of
-# variables and levels in each name, so that 'x:g[b]' matches 'g[b]:x'
-modelreordered, _, _ = quietfit(formula="y ~ h*g + w*x + g*x", data=DATAEXACT, **EXACT)
+# the same model in another order is the same fit (names compared as sets of parts)
+modelreordered, _, _ = quietfit(formula="y ~ h*g + w*x + g:x", data=DATAEXACT, **EXACT)
 
 
 def byparts(values):
@@ -566,10 +443,7 @@ if model.getsigma() is not None or model.getranef() is not None:
 # CASE 5: Variable types come from the DataFrame
 # ------------------------------------------------------------------
 
-# the reference level is the first category: reordering a two-level factor
-# flips the sign of its coefficient and leaves the fit unchanged. The type
-# handling does not depend on the number of phases, so one phase suffices,
-# whose unique optimum makes the comparison exact
+# reordering a two-level factor flips its coefficient; one phase makes it exact
 modelpq, _, _ = quietfit(formula="y ~ x + h", data=DATAEXACT, **EXACT)
 modelqp, _, _ = quietfit(formula="y ~ x + h",
                          data=DATAEXACT.assign(h=DATAEXACT["h"].cat.reorder_categories(["q", "p"])), **EXACT)
@@ -583,9 +457,7 @@ if abs(modelqp.getcoef()["h[p]"] + modelpq.getcoef()["h[q]"]) > TOLEXACT or \
 if abs(np.log(modelqp.getphasegen()[0, 0] / modelpq.getphasegen()[0, 0]) - modelpq.getcoef()["h[q]"]) > TOLEXACT:
     sys.exit("Validation test failed at case 5: the baseline rate did not move to the new reference level.")
 
-# An unused category is ignored, and integer codes are categorical once given
-# the category dtype. The fit is a deterministic function of the response and
-# the design, so equal designs are equal fits
+# unused categories are ignored; integer codes as categories give the same design
 TERMS = [("x",), ("g",)]
 designused = _regdesign(DATA, "y", TERMS)
 designunused = _regdesign(DATA.assign(g=DATA["g"].cat.add_categories(["Z"])), "y", TERMS)
@@ -623,10 +495,7 @@ if abs(modelshift.getloglik() - model.getloglik()) > TOLRUN:
     sys.exit("Validation test failed at case 6: shifting a covariate changed the log-likelihood by %.3e." % abs(modelshift.getloglik() - model.getloglik()))
 if max(abs(modelshift.getcoef()[k] - coef[k]) for k in coef) > TOLRUN:
     sys.exit("Validation test failed at case 6: shifting a covariate changed the coefficients by %.3e." % max(abs(modelshift.getcoef()[k] - coef[k]) for k in coef))
-# the shifted model at x = SHIFT is the original model at x = 0. The
-# distributions are compared rather than the generators, the representation
-# not being identified: two runs that stop a few iterations apart agree on the
-# distribution while their generators may still drift
+# the shifted model at x = SHIFT is the original at x = 0 (compared as distributions)
 for v in np.quantile(DATA["y"], [0.1, 0.5, 0.9]):
     if abs(modelshift.getcumprob(v, {"x": SHIFT, "g": "A"}) - model.getcumprob(v, {"x": 0.0, "g": "A"})) > TOLRUN:
         sys.exit("Validation test failed at case 6: the shifted model at x = %g is not the original model at x = 0." % SHIFT)
@@ -651,10 +520,8 @@ if np.corrcoef([ranef[k] for k in range(NGROUPS)], groupintercepts)[0, 1] < 0.5:
 if abs(modelrandom.getcoef()["x"] - TRUEBETA["x"]) > 4.0 * modelrandom.getstderr()["x"]:
     sys.exit("Validation test failed at case 7: the coefficient of x is not recovered.")
 
-# At the boundary sigma is exactly zero and the fit is that of the model
-# without random effect: the same coefficients, standard errors and
-# log-likelihood, every predicted intercept zero, a warning, and no standard
-# error for sigma
+# at the boundary: the fit without random effect, zero intercepts, a warning,
+# no standard error for sigma
 modelzero, _, caughtzero = quietfit(formula="y ~ x + (1|group)", data=DATANOINTERCEPT, **COMMON)
 modelnogroup, _, _ = quietfit(formula="y ~ x", data=DATANOINTERCEPT, **COMMON)
 if not modelzero.boundary or modelzero.getsigma() != 0.0:
@@ -734,7 +601,6 @@ accepted = {
     "y ~ x.1 + z_2 + ( 1|grp )": ("y", [("x.1",), ("z_2",)], "grp"),
     "y ~ x*z": ("y", [("x",), ("z",), ("x", "z")], None),
     "y ~ z:x + x + z": ("y", [("x",), ("z",), ("z", "x")], None),
-    "y ~ x + x": ("y", [("x",)], None),
     # the design decides whether an interaction may leave out its main
     # effects (case 14), so the parser lets it pass
     "y ~ x:z": ("y", [("x", "z")], None),
@@ -746,7 +612,7 @@ for formula, (response, terms, group) in accepted.items():
 
 refused = ["y x + z", "y ~ x ~ z", "y ~ x:z:w", "y ~ log(x)", "y ~ x - 1", "y ~ 0 + x",
            "y ~ x + (x|g)", "y ~ x + (1|g) + (1|h)", "y ~ x + (1||g)", "y ~ x + y",
-           "y ~ g + (1|g)", "y ~ 1", "log(y) ~ x", "y ~ x*z:w", "y ~ x:x", 42]
+           "y ~ g + (1|g)", "y ~ 1", "log(y) ~ x", "y ~ x*z:w", "y ~ x:x", "y ~ x + x", 42]
 for formula in refused:
     try:
         _regformula(formula)
@@ -812,8 +678,8 @@ with contextlib.redirect_stdout(buffer):
     # model; they are checked on the one-phase model below
     modelrandom.summary(effecttest=None)
 text = buffer.getvalue()
-if "Formula: y ~ x + (1|group)" not in text or "sigma" not in text or "Log-likelihood" not in text:
-    sys.exit("Validation test failed at case 11: summary does not report the formula, sigma and the log-likelihood.")
+if "Formula: y ~ x + (1|group)" not in text or "Random effect (1|group): Std. dev. = " not in text or "Log-likelihood" not in text:
+    sys.exit("Validation test failed at case 11: summary does not report the formula, the random effect std. dev. and the log-likelihood.")
 
 filename = "fitreg_test_plot.png"
 try:
@@ -857,9 +723,7 @@ for term, index in (("g", [1, 2]), ("x:g", [5, 6]), ("g:h", [8, 9])):
     statistic, df, p = tests[term]
     if df != 2 or abs(statistic / hand - 1.0) > TOLEXACT or abs(p - chi2.sf(hand, 2)) > TOLEXACT:
         sys.exit("Validation test failed at case 11: the Wald test of %s is %.6f, against %.6f by hand." % (term, statistic, hand))
-# the effect table of summary: likelihood-ratio tests of every effect by
-# default, Wald tests as an option, none on request; the coefficient table
-# has no tests (those are in coeftest)
+# effect table: LRT by default, Wald on request, none with effecttest=None
 def termrows(text, header):
     """Returns the rows of the effect table under the given header, as {effect: fields}."""
     lines = text.splitlines()
@@ -918,7 +782,7 @@ statistic, pvalue = modelrandomexact._fitreg__sigmatest()
 if abs(statistic - hand) > TOLOPT * max(1.0, hand) or abs(pvalue / (0.5 * chi2.sf(hand, 1)) - 1.0) > TOLOPT * max(1.0, hand):
     sys.exit("Validation test failed at case 11: the test of sigma = 0 has statistic %.8f and p-value %.3e, against %.8f and %.3e from the fit without the random effect." % (statistic, pvalue, hand, 0.5 * chi2.sf(hand, 1)))
 text = summarytext(modelrandomexact, effecttest=None)
-sigmaline = [line for line in text.splitlines() if "Likelihood-ratio test of sigma = 0" in line]
+sigmaline = [line for line in text.splitlines() if "Likelihood-ratio test of std. dev. = 0" in line]
 if len(sigmaline) != 1 or abs(float(sigmaline[0].split("LR stat")[1].split(",")[0]) - hand) > 0.005:
     sys.exit("Validation test failed at case 11: summary does not report the likelihood-ratio test of sigma = 0.")
 statistic, pvalue = modelzero._fitreg__sigmatest()
@@ -980,9 +844,8 @@ if printed != "" or printedverbose == "":
 # CASE 12: Observations at zero
 # ------------------------------------------------------------------
 
-# The model is the mixture p (zero) + (1 - p) (phase-type regression), whose
-# likelihood factorizes: p is the share of zeros, the rest is the fit to the
-# positive observations, and the zeros add n0 log p + n+ log(1 - p)
+# the likelihood factorizes: p = proportion of zeros, the rest is the fit to the
+# positive observations
 iszero = np.arange(NEXACT) % 10 == 3
 withzeros = DATAEXACT.assign(y=np.where(iszero, 0.0, DATAEXACT["y"]))
 modelzeros, _, _ = quietfit(formula=FORMULAEXACT, data=withzeros, **EXACT)
@@ -991,7 +854,7 @@ p0 = iszero.mean()
 n0, npositive = int(iszero.sum()), int((~iszero).sum())
 
 if modelzeros.getzeroprob() != p0 or modelexact.getzeroprob() != 0.0:
-    sys.exit("Validation test failed at case 12: the probability of a zero is %s, not the share of zeros %s." % (modelzeros.getzeroprob(), p0))
+    sys.exit("Validation test failed at case 12: the probability of a zero is %s, not the proportion of zeros %s." % (modelzeros.getzeroprob(), p0))
 if max(abs(modelzeros.getcoef()[k] - modelpositive.getcoef()[k]) for k in HANDNAMES) > TOL or \
         max(abs(modelzeros.getstderr()[k] - modelpositive.getstderr()[k]) for k in HANDNAMES) > TOL:
     sys.exit("Validation test failed at case 12: the regression is not the fit to the positive observations.")
@@ -1016,7 +879,7 @@ with contextlib.redirect_stdout(buffer):
     modelzeros.summary(effecttest=None)
 ZEROLINE = "Probability of observations being zero: p = %.4f" % p0
 if ZEROLINE not in buffer.getvalue() or "(%d at zero)" % n0 not in buffer.getvalue() or \
-        "1 zero share" not in buffer.getvalue():
+        "1 zero prob." not in buffer.getvalue():
     sys.exit("Validation test failed at case 12: summary does not report the point mass at zero.")
 # the constant probability of a zero is a strong assumption, so the summary
 # notes it, and only when there are zeros
@@ -1093,9 +956,7 @@ iszero = np.arange(NEXACT) % 10 == 3
 withzeros = DATAEXACT.assign(y=np.where(iszero, 0.0, DATAEXACT["y"]))
 modelzeros, _, _ = quietfit(formula=FORMULAEXACT, data=withzeros, **EXACT)
 modelpositive, _, _ = quietfit(formula=FORMULAEXACT, data=withzeros[~iszero], **EXACT)
-# (a statistic computed from the log-likelihood with the point mass would
-# make the model without the effect look better than the fit, which getlrtest
-# would report as a local maximum; it must print nothing)
+# (getlrtest must print nothing: the point mass must not enter the statistic)
 (zerotest, printed), (positivetest, _) = quiet(modelzeros.getlrtest, "x:w"), quiet(modelpositive.getlrtest, "x:w")
 zerotest, positivetest = zerotest["x:w"], positivetest["x:w"]
 if printed != "":
@@ -1143,10 +1004,7 @@ twice = quiet(modellr.getlrtest, "w", nsim=3, seed=SEED + 1)[0]["w"]
 if again["simpvalue"] != twice["simpvalue"] or again["statistic"] != test["statistic"]:
     sys.exit("Validation test failed at case 13: the simulated p-value is not reproducible with its seed.")
 
-# the Monte Carlo interval by hand: Clopper-Pearson, at both ends and in
-# between (the test above has k = 0 for most seeds, which leaves the lower
-# limit untested). Exact values from the closed forms of the beta quantiles:
-# k = 0 gives (0, 1 - (alpha/2)^(1/m)), k = m gives ((alpha/2)^(1/m), 1).
+# Clopper-Pearson by hand: closed forms at k = 0 and k = m, tables in between
 for k, m, level in ((0, 20, 0.9), (20, 20, 0.9), (3, 20, 0.95), (7, 11, 0.99)):
     lower, upper = fitreg._fitreg__clopperpearson(k, m, level)
     a = 1.0 - level
@@ -1160,9 +1018,7 @@ lower, upper = fitreg._fitreg__clopperpearson(3, 20, 0.95)
 if abs(lower - 0.0321) > 5e-5 or abs(upper - 0.3789) > 5e-5:
     sys.exit("Validation test failed at case 13: the Clopper-Pearson interval for 3 of 20 is (%.4f, %.4f), not (0.0321, 0.3789)." % (lower, upper))
 
-# the simulator of absorption times against the true Coxian, built from the
-# raw rates: its mean (t interval) and its distribution (chi-square test on
-# bins of equal true probability)
+# the absorption-time simulator: mean (t interval) and distribution (chi-square)
 truet = -np.diag(TRUERATES)
 for i in range(TRUERATES.size - 1):
     truet[i, i + 1] = TRUECONTINUE[i] * TRUERATES[i]
@@ -1188,10 +1044,8 @@ statistic = float(np.sum((counts - expected) ** 2 / expected))
 if statistic > chi2.ppf(1.0 - levellr, NBINSLR - 1):
     sys.exit("Validation test failed at case 13: the simulated absorption times do not follow the Coxian (chi-square %.2f on %d df)." % (statistic, NBINSLR - 1))
 
-# the simulated responses of a one-phase random-effect model: z = log(y) +
-# eta0 = log(U) - b, U exponential with rate RATE and b ~ N(0, SIGMA^2) per
-# group, so z has mean -gamma - log(RATE), and the group means of z have
-# variance SIGMA^2 + (pi^2 / 6) / (group size)
+# the response simulator: z = log(y) + eta0 has mean -gamma - log(RATE), and its
+# group means variance SIGMA^2 + (pi^2/6)/(group size)
 simrate, simsigma = 0.7, 0.9
 order = modelrandomexact.order
 simgroups = modelrandomexact._fitreg__groups
@@ -1313,9 +1167,7 @@ for formula, original in (("y ~ x:g", slopesfull), ("y ~ x + x:g", slopescontras
     if formula == "y ~ x + x:g" and (list(model.getcoef()) != ["x", "x:g[a]", "x:g[b]"] or abs(model.getcoef()["x"] - original["c"]) > TOLEXACT):
         sys.exit("Validation test failed at case 14: with c as the reference level, 'y ~ x + x:g' is not coded against c.")
 
-# but it does depend on the origin of x, unlike 'x*g' (case 6): on a shifted x
-# the fit is exponential regression on the shifted columns, not the original
-# fit moved along
+# the fit depends on the origin of x: on a shifted x it is the GLM on shifted columns
 shifted = xs + ORIGINSHIFT
 modelshifted, _, _ = quietfit(formula="y ~ x:g", data=DATASLOPES.assign(x=shifted), **EXACT)
 slopesoracle(shifted[:, None] * levelcols, ys, modelshifted, ["x:g[a]", "x:g[b]", "x:g[c]"], "'y ~ x:g' on a shifted x")
@@ -1341,9 +1193,7 @@ hand = 2.0 * (exponentialloglik(xs[:, None] * levelcols, ys) - exponentialloglik
 if lrslopes["df"] != 2 or abs(lrslopes["statistic"] - hand) > TOLEXACT * max(1.0, hand):
     sys.exit("Validation test failed at case 14: the likelihood-ratio statistic of equal slopes is %.10f (%d df), against %.10f (2 df) by hand." % (lrslopes["statistic"], lrslopes["df"], hand))
 
-# only an interaction of a continuous and a categorical variable may leave out
-# its main effects; otherwise the design refuses it, saying what is missing
-# and how to write it, and fitreg terminates
+# missing main effects are allowed only for continuous x categorical
 DATAKINDS = DATASLOPES.assign(z=sloperng.normal(size=NEXACT), h=categorical(sloperng.choice(["p", "q"], size=NEXACT)))
 for formula, missing, written in (("y ~ x:z", "'x'", "x*z"), ("y ~ x + x:z", "'z'", "x*z"),
                                   ("y ~ g:h", "'g'", "g*h"), ("y ~ g + g:h", "'h'", "g*h"),
@@ -1357,6 +1207,357 @@ for formula, missing, written in (("y ~ x:z", "'x'", "x*z"), ("y ~ x + x:z", "'z
             sys.exit("Validation test failed at case 14: the refusal of '%s' does not name %s and '%s': %s" % (formula, missing, written, error))
     if not terminates(formula=formula, data=DATAKINDS, **EXACT):
         sys.exit("Validation test failed at case 14: '%s' did not terminate." % formula)
+
+
+# ------------------------------------------------------------------
+# CASES 15-19: Censored observations
+# ------------------------------------------------------------------
+
+def censor(times, rng, scheme=CENSSCHEME):
+    """
+    Censors the times with limits that do not depend on them: each row is
+    exact, right-censored at a uniform limit, or inspected on CENSGRID.
+    Returns the response (NaN where censored) and the lower and upper limits
+    (NaN where there is none).
+    """
+    n = times.size
+    kind = rng.choice(3, size=n, p=scheme)
+    limit = rng.uniform(*CENSRIGHT, size=n)
+    lower = np.full(n, np.nan)
+    upper = np.full(n, np.nan)
+    right = (kind == 1) & (times > limit)
+    lower[right] = limit[right]
+    for i in np.flatnonzero(kind == 2):
+        k = np.searchsorted(CENSGRID, times[i]) - 1
+        if CENSGRID[k + 1] < np.inf:
+            upper[i] = CENSGRID[k + 1]
+        if k > 0:
+            lower[i] = CENSGRID[k]
+    response = np.where(np.isnan(lower) & np.isnan(upper), times, np.nan)
+    return response, lower, upper
+
+
+def censoredkinds(lower, upper):
+    """Kind of each row: 0 exact, 1 right, 2 left, 3 interval."""
+    return np.where(np.isnan(lower), np.where(np.isnan(upper), 0, 2), np.where(np.isnan(upper), 1, 3))
+
+
+def exponentialcensored(D, kind, lower, upper, response):
+    """
+    The one-phase censored MLE by Newton's method on (log rate, beta): the
+    log-likelihood is concave in z = D c (design note, Section 8.8). Returns
+    the estimates, the log-likelihood and the observed information.
+    """
+    lo = np.where(kind == 0, response, np.where(kind == 2, upper, lower))
+    hi = upper
+
+    def parts(c):
+        z = D @ c
+        r = np.exp(z)
+        value, g, h = np.zeros(z.size), np.zeros(z.size), np.zeros(z.size)
+        e = kind == 0
+        value[e], g[e], h[e] = z[e] - r[e] * lo[e], 1.0 - r[e] * lo[e], -r[e] * lo[e]
+        e = kind == 1
+        value[e], g[e], h[e] = -r[e] * lo[e], -r[e] * lo[e], -r[e] * lo[e]
+        e = kind >= 2
+        a = np.where(kind[e] == 3, r[e] * lo[e], 0.0)
+        b = np.where(kind[e] == 3, r[e] * hi[e], r[e] * lo[e])
+        P = np.exp(-a) - np.exp(-b)
+        G = b * np.exp(-b) - a * np.exp(-a)
+        H = G - b ** 2 * np.exp(-b) + a ** 2 * np.exp(-a)
+        value[e], g[e], h[e] = np.log(P), G / P, H / P - (G / P) ** 2
+        return np.sum(value), D.T @ g, (D * h[:, None]).T @ D
+
+    c = np.zeros(D.shape[1])
+    c[0] = -np.log(np.mean(lo))
+    for _ in range(200):
+        value, g, H = parts(c)
+        step = np.linalg.solve(-H, g)
+        scale = 1.0
+        while parts(c + scale * step)[0] < value and scale > 1e-12:
+            scale /= 2.0
+        c = c + scale * step
+        if np.max(np.abs(scale * step)) < 1e-13:
+            break
+    value, g, H = parts(c)
+    return c, value, -H
+
+
+censrng = np.random.default_rng([SEED, 15])
+xc = censrng.normal(size=NEXACT)
+gc = censrng.choice(["a", "b", "c"], size=NEXACT)
+Dc = np.column_stack([np.ones(NEXACT), xc, (gc == "b") * 1.0, (gc == "c") * 1.0])
+tc = censrng.exponential(size=NEXACT) / (EXACTRATE * np.exp(Dc[:, 1:] @ np.array([0.6, -0.4, 0.5])))
+CENSNAMES = ["x", "g[b]", "g[c]"]
+
+
+# ------------------------------------------------------------------
+# CASE 15: One phase with right-censoring is a Poisson GLM
+# ------------------------------------------------------------------
+
+response, lower, upper = censor(tc, censrng, scheme=(0.0, 1.0, 0.0))
+kind = censoredkinds(lower, upper)
+if set(kind) != {0, 1}:
+    sys.exit("Validation test failed at case 15: the data are not a mix of exact and right-censored rows.")
+DATARIGHT = pd.DataFrame({"y": response, "x": xc, "g": categorical(gc), "lo": lower, "hi": upper})
+modelright, _, _ = quietfit(formula="y ~ x + g", data=DATARIGHT, censoring=("lo", "hi"), **EXACT)
+
+# right-censored exponential regression is a Poisson GLM with offset log(time)
+event = (kind == 0) * 1.0
+time = np.where(kind == 0, response, lower)
+poisson = sm.GLM(event, Dc, family=sm.families.Poisson(), offset=np.log(time)).fit(tol=1e-14, maxiter=1000)
+estimates = np.array([modelright.getcoef()[k] for k in CENSNAMES])
+if list(modelright.getcoef()) != CENSNAMES or np.max(np.abs(estimates - poisson.params[1:])) > TOLEXACT:
+    sys.exit("Validation test failed at case 15: the coefficients with right-censoring differ from the Poisson GLM by %.3e." % np.max(np.abs(estimates - poisson.params[1:])))
+if abs(-modelright.getphasegen()[0, 0] / np.exp(poisson.params[0]) - 1.0) > TOLEXACT:
+    sys.exit("Validation test failed at case 15: the baseline rate with right-censoring differs from the Poisson GLM.")
+mu = np.exp(Dc @ poisson.params) * time
+loglik = np.sum(event * (Dc @ poisson.params) - mu)
+if abs(modelright.getloglik() - loglik) > TOLEXACT * abs(loglik):
+    sys.exit("Validation test failed at case 15: the log-likelihood with right-censoring is %.10f, against %.10f." % (modelright.getloglik(), loglik))
+
+# standard errors: the full information with the rate profiled out (the
+# conditional information is invalid with censoring and must differ)
+information = (Dc * mu[:, None]).T @ Dc
+full = np.sqrt(np.diag(np.linalg.inv(information)))[1:]
+Dcentred = Dc[:, 1:] - Dc[:, 1:].mean(axis=0)
+conditional = np.sqrt(np.diag(np.linalg.inv((Dcentred * mu[:, None]).T @ Dcentred)))
+reported = np.array([modelright.getstderr()[k] for k in CENSNAMES])
+if np.max(np.abs(reported / full - 1.0)) > TOLSE:
+    sys.exit("Validation test failed at case 15: the standard errors with censoring are %s, against %s from the profiled information." % (reported, full))
+# (measured: conditional / full = 0.978 for x at 30% censoring)
+if np.max(np.abs(conditional / full - 1.0)) < 10 * TOLSE:
+    sys.exit("Validation test failed at case 15: the data do not separate the full from the conditional information.")
+
+# the likelihood-ratio test of x is the difference of the Poisson deviances
+reducedpoisson = sm.GLM(event, Dc[:, [0, 2, 3]], family=sm.families.Poisson(), offset=np.log(time)).fit(tol=1e-14, maxiter=1000)
+lrright = quiet(modelright.getlrtest, "x")[0]["x"]
+if abs(lrright["statistic"] - 2.0 * (poisson.llf - reducedpoisson.llf)) > TOLEXACT * max(1.0, lrright["statistic"]):
+    sys.exit("Validation test failed at case 15: the likelihood-ratio statistic with censoring is %.10f, against %.10f." % (lrright["statistic"], 2.0 * (poisson.llf - reducedpoisson.llf)))
+
+
+# ------------------------------------------------------------------
+# CASE 16: One phase with every kind of censoring
+# ------------------------------------------------------------------
+
+response, lower, upper = censor(tc, censrng)
+kind = censoredkinds(lower, upper)
+if set(kind) != {0, 1, 2, 3}:
+    sys.exit("Validation test failed at case 16: the data do not contain every kind of row.")
+DATACENSORED = pd.DataFrame({"y": response, "x": xc, "g": categorical(gc), "lo": lower, "hi": upper})
+modelcensored, _, _ = quietfit(formula="y ~ x + g", data=DATACENSORED, censoring=("lo", "hi"), **EXACT)
+
+oraclec, oraclell, oracleinformation = exponentialcensored(Dc, kind, lower, upper, response)
+estimates = np.array([modelcensored.getcoef()[k] for k in CENSNAMES])
+if np.max(np.abs(estimates - oraclec[1:])) > TOLEXACT or abs(-modelcensored.getphasegen()[0, 0] / np.exp(oraclec[0]) - 1.0) > TOLEXACT:
+    sys.exit("Validation test failed at case 16: the estimates with every kind of censoring differ from the one-phase MLE by %.3e." % np.max(np.abs(estimates - oraclec[1:])))
+if abs(modelcensored.getloglik() - oraclell) > TOLEXACT * abs(oraclell):
+    sys.exit("Validation test failed at case 16: the log-likelihood with every kind of censoring is %.10f, against %.10f." % (modelcensored.getloglik(), oraclell))
+full = np.sqrt(np.diag(np.linalg.inv(oracleinformation)))[1:]
+reported = np.array([modelcensored.getstderr()[k] for k in CENSNAMES])
+if np.max(np.abs(reported / full - 1.0)) > TOLSE:
+    sys.exit("Validation test failed at case 16: the standard errors with every kind of censoring are %s, against %s." % (reported, full))
+
+counts = [int(np.count_nonzero(kind == k)) for k in (1, 2, 3)]
+text = io.StringIO()
+with contextlib.redirect_stdout(text):
+    modelcensored.summary(effecttest=None)
+expected = "Observations: %d (%d right-censored, %d left-censored, %d interval-censored)" % (NEXACT, *counts)
+if expected not in text.getvalue():
+    sys.exit("Validation test failed at case 16: the summary does not count the censored observations ('%s')." % expected)
+
+
+# ------------------------------------------------------------------
+# CASE 17: Censoring leaves the uncensored path alone; three-phase rows
+# ------------------------------------------------------------------
+
+# censoring columns in which no row is censored give the uncensored fit,
+# identical to the last bit (design note, Section 8.14)
+plain, _, _ = quietfit(formula="y ~ x + g", data=DATA, **COMMON)
+nocensoring, _, _ = quietfit(formula="y ~ x + g", data=DATA.assign(lo=np.nan, hi=np.nan), censoring=("lo", "hi"), **COMMON)
+for getter in ("getcoef", "getstderr"):
+    if getattr(plain, getter)() != getattr(nocensoring, getter)():
+        sys.exit("Validation test failed at case 17: censoring columns without censored rows changed %s." % getter)
+if plain.getloglik() != nocensoring.getloglik() or not np.array_equal(plain.getphasegen(), nocensoring.getphasegen()) \
+        or not np.array_equal(plain.getinitdist(), nocensoring.getinitdist()) or plain.iterations != nocensoring.iterations:
+    sys.exit("Validation test failed at case 17: censoring columns without censored rows changed the fit.")
+
+# three phases with every kind of censoring: the fit converges and the
+# effects are recovered
+threerng = np.random.default_rng([SEED, 17])
+response, lower, upper = censor(DATA["y"].to_numpy(), threerng)
+kind3 = censoredkinds(lower, upper)
+if set(kind3) != {0, 1, 2, 3}:
+    sys.exit("Validation test failed at case 17: the three-phase data do not contain every kind of row.")
+modelthree, _, _ = quietfit(formula="y ~ x + g", data=DATA.assign(y=response, lo=lower, hi=upper), censoring=("lo", "hi"), **COMMON)
+for name, truth in TRUEBETA.items():
+    if not modelthree.converged or abs(modelthree.getcoef()[name] - truth) > 4.0 * modelthree.getstderr()[name]:
+        sys.exit("Validation test failed at case 17: the censored three-phase fit gives %s = %.3f (s.e. %.3f), truth %.3f." % (name, modelthree.getcoef()[name], modelthree.getstderr()[name], truth))
+
+# the engine's rows at the true Coxian against scipy's expm: log-likelihood, l',
+# l'', Fisher's identity, sum E(Z) = u (right), sum E(N) = 1 (left, interval)
+engine = modelthree.d
+truthT = np.diag(-TRUERATES) + np.diag(TRUERATES[:-1] * TRUECONTINUE, 1)
+truths = dict(pi=np.eye(3)[0], T=truthT, t=-truthT.sum(axis=1), beta=np.array([0.3, -0.2, 0.1]), sigma=None)
+etas = engine.X @ truths["beta"]
+rowsll = engine._fitcphreg__censoredloglik(truths, etas, 1)
+d1, d2 = engine._fitcphreg__rowderivs(truths, etas)
+rowsll2, e = engine._fitcphreg__censoredestep(truths, etas, 1)
+weighed = engine._fitcphreg__weigh(truths, e, np.ones(engine.n))
+kinde = engine.kind
+lo, hi = engine.lo, engine.hi
+
+
+def rowloglik(i, eta):
+    """Log-likelihood of engine row i at the true Coxian, by scipy's expm."""
+    survival = lambda c: truths["pi"] @ expm(truthT * np.exp(eta) * c) @ np.ones(3)
+    if kinde[i] == 0:
+        return eta + np.log(truths["pi"] @ expm(truthT * np.exp(eta) * lo[i]) @ truths["t"])
+    if kinde[i] == 1:
+        return np.log(survival(lo[i]))
+    if kinde[i] == 2:
+        return np.log(1.0 - survival(lo[i]))
+    return np.log(survival(lo[i]) - survival(hi[i]))
+
+
+worst = dict(loglik=0.0, derivative=0.0, second=0.0, fisher=0.0, window=0.0, absorbed=0.0)
+for i in range(engine.n):
+    value = rowloglik(i, etas[i])
+    worst["loglik"] = max(worst["loglik"], abs(rowsll[i] - value), abs(rowsll2[i] - value))
+    h = 1e-4
+    numeric = (8 * (rowloglik(i, etas[i] + h) - rowloglik(i, etas[i] - h))
+               - (rowloglik(i, etas[i] + 2 * h) - rowloglik(i, etas[i] - 2 * h))) / (12 * h)
+    worst["derivative"] = max(worst["derivative"], abs(d1[i] - numeric))
+    h = 1e-3
+    second = (16 * (rowloglik(i, etas[i] + h) + rowloglik(i, etas[i] - h)) - 30 * value
+              - (rowloglik(i, etas[i] + 2 * h) + rowloglik(i, etas[i] - 2 * h))) / (12 * h * h)
+    worst["second"] = max(worst["second"], abs(d2[i] - second))
+    exposure = weighed["zrow"][i] @ (-np.diag(truthT))
+    worst["fisher"] = max(worst["fisher"], abs(weighed["jumps"][i] - exposure - d1[i]))
+    if kinde[i] == 1:
+        worst["window"] = max(worst["window"], abs(np.sum(weighed["zrow"][i]) - np.exp(etas[i]) * lo[i]))
+    if kinde[i] >= 2:
+        worst["absorbed"] = max(worst["absorbed"], abs((e["a"][i] @ truths["t"]) * e["invf"][i] - 1.0))
+if max(worst["loglik"], worst["fisher"], worst["window"], worst["absorbed"]) > TOL or worst["derivative"] > 1e-7 \
+        or worst["second"] > 1e-6:
+    sys.exit("Validation test failed at case 17: the censored rows of the engine disagree with the independent evaluation: %s." % worst)
+
+
+# ------------------------------------------------------------------
+# CASE 18: One phase with a random effect and censoring against quadrature
+# ------------------------------------------------------------------
+
+response, lower, upper = censor(yre, np.random.default_rng([SEED, 18]))
+kindre = censoredkinds(lower, upper)
+if set(kindre) != {0, 1, 2, 3}:
+    sys.exit("Validation test failed at case 18: the data do not contain every kind of row.")
+modelrandomcens, _, _ = quietfit(formula="y ~ x + (1|u)", data=DATARANDOMEXACT.assign(y=response, lo=lower, hi=upper),
+                                 censoring=("lo", "hi"), quadnodes=15, **EXACT)
+lore = np.where(kindre == 0, response, np.where(kindre == 2, upper, lower))
+
+
+def randomcensnegloglik(v):
+    """
+    Negative marginal log-likelihood of exponential regression with a Gaussian
+    random effect and censored rows, each group's integral by the trapezoidal
+    rule on GRID; a row's contribution is its log-density or the log of its
+    probability, evaluated at every grid point.
+    """
+    lograte, beta, logsigma = v
+    sigma = np.exp(logsigma)
+    z = (lograte + beta * xre)[:, None] + GRID[None, :]
+    r = np.exp(z)
+    rows = np.empty(z.shape)
+    e = kindre == 0
+    rows[e] = z[e] - r[e] * lore[e, None]
+    e = kindre == 1
+    rows[e] = -r[e] * lore[e, None]
+    e = kindre == 2
+    rows[e] = np.log(-np.expm1(-r[e] * lore[e, None]))
+    e = kindre == 3
+    rows[e] = -r[e] * lore[e, None] + np.log(-np.expm1(-r[e] * (upper[e] - lore[e])[:, None]))
+    logintegrand = np.add.reduceat(rows, np.flatnonzero(np.r_[True, np.diff(groupsexact) != 0]), axis=0)
+    logintegrand += -0.5 * GRID[None, :] ** 2 / sigma ** 2 - 0.5 * np.log(2.0 * np.pi * sigma ** 2)
+    return -np.sum(logsumexp(logintegrand + LOGTRAPEZOID[None, :], axis=1))
+
+
+oracle = minimize(randomcensnegloglik, np.array([0.0, 0.0, np.log(0.5)]), method="Nelder-Mead",
+                  options=dict(xatol=1e-9, fatol=1e-11, maxiter=4000))
+fitted = np.array([np.log(-modelrandomcens.getphasegen()[0, 0]), modelrandomcens.getcoef()["x"],
+                   np.log(modelrandomcens.getsigma())])
+if np.max(np.abs(fitted - oracle.x)) > TOLOPT or abs(modelrandomcens.getloglik() + oracle.fun) > TOLOPT:
+    sys.exit("Validation test failed at case 18: with censoring the random-effect fit differs from a direct maximization of the quadrature likelihood by %.3e." % np.max(np.abs(fitted - oracle.x)))
+hessian = np.zeros((3, 3))
+for i in range(3):
+    ei = np.zeros(3)
+    ei[i] = STEP
+    hessian[i, i] = -(randomcensnegloglik(oracle.x + 2 * ei) - 2 * oracle.fun + randomcensnegloglik(oracle.x - 2 * ei)) / (4 * STEP ** 2)
+    for j in range(i + 1, 3):
+        ej = np.zeros(3)
+        ej[j] = STEP
+        hessian[i, j] = hessian[j, i] = -(randomcensnegloglik(oracle.x + ei + ej) - randomcensnegloglik(oracle.x + ei - ej)
+                                          - randomcensnegloglik(oracle.x - ei + ej) + randomcensnegloglik(oracle.x - ei - ej)) / (4 * STEP ** 2)
+oraclestderr = np.sqrt(np.diag(np.linalg.inv(-hessian)))[1:]
+reported = np.array([modelrandomcens.getstderr()["x"], modelrandomcens.sigmastderr / modelrandomcens.getsigma()])
+if np.max(np.abs(reported / oraclestderr - 1.0)) > TOLSE:
+    sys.exit("Validation test failed at case 18: with censoring the standard errors are %s, against %s from the oracle." % (reported, oraclestderr))
+
+
+# ------------------------------------------------------------------
+# CASE 19: Censoring: refusals, zeros, simulated p-values and the plot
+# ------------------------------------------------------------------
+
+bad = {
+    "a single column name": dict(censoring="lo"),
+    "the same column twice": dict(censoring=("lo", "lo")),
+    "three columns": dict(censoring=("lo", "hi", "y")),
+    "an unknown column": dict(censoring=("lo", "upper")),
+    "a categorical column": dict(censoring=("lo", "g")),
+    "a column of the formula": dict(censoring=("x", "hi")),
+    "a negative lower limit": dict(data=DATACENSORED.assign(lo=np.where(np.arange(NEXACT) == 1, -1.0, DATACENSORED["lo"]))),
+    "a lower limit above the upper": dict(data=DATACENSORED.assign(lo=np.where(np.arange(NEXACT) == 1, 3.0, DATACENSORED["lo"]),
+                                                                    hi=np.where(np.arange(NEXACT) == 1, 2.0, DATACENSORED["hi"]))),
+    "an upper limit of zero": dict(data=DATACENSORED.assign(lo=np.where(np.arange(NEXACT) == 1, np.nan, DATACENSORED["lo"]),
+                                                             hi=np.where(np.arange(NEXACT) == 1, 0.0, DATACENSORED["hi"]))),
+    "a missing response in an exact row": dict(data=DATACENSORED.assign(y=np.where(kind == 0, np.nan, DATACENSORED["y"]))),
+    "only right-censored rows": dict(data=DATACENSORED.assign(lo=1.0, hi=np.nan)),
+}
+for name, change in bad.items():
+    arguments = dict(formula="y ~ x + g", data=DATACENSORED, censoring=("lo", "hi"), **EXACT)
+    arguments.update(change)
+    if not terminates(**arguments):
+        sys.exit("Validation test failed at case 19: censoring with %s did not terminate." % name)
+
+# zeros with censored rows: a censored row is positive whatever its response,
+# and the point mass is the proportion of exact zeros, as in fit (design note, 8.13)
+zero = (kind == 0) & (np.arange(NEXACT) % 7 == 3)
+withzeros = DATACENSORED.assign(y=np.where(zero, 0.0, np.where(kind == 0, DATACENSORED["y"], 0.0)))
+modelzc, _, _ = quietfit(formula="y ~ x + g", data=withzeros, censoring=("lo", "hi"), **EXACT)
+modelpc, _, _ = quietfit(formula="y ~ x + g", data=withzeros[~zero], censoring=("lo", "hi"), **EXACT)
+p0, n0 = zero.mean(), int(zero.sum())
+loglik = modelpc.getloglik() + n0 * np.log(p0) + (NEXACT - n0) * np.log(1.0 - p0)
+if abs(modelzc.getzeroprob() - p0) > TOL or abs(modelzc.getloglik() - loglik) > TOL * abs(loglik) or \
+        max(abs(modelzc.getcoef()[k] - modelpc.getcoef()[k]) for k in CENSNAMES) > TOL:
+    sys.exit("Validation test failed at case 19: with censored rows the zeros are not the point mass of the exact zeros.")
+
+# simulated p-values need a model of the censoring, so they are refused
+result, printed = quiet(modelcensored.getlrtest, "x", nsim=2)
+if result is not None or "Error" not in printed:
+    sys.exit("Validation test failed at case 19: getlrtest gave simulated p-values with censored observations.")
+if "Error" not in quiet(modelcensored.summary, nsim=2)[1]:
+    sys.exit("Validation test failed at case 19: summary gave simulated p-values with censored observations.")
+
+# the transforms are censored, so the PP plot is left out with a warning
+plotfile = "fitreg_test_censored_plot.png"
+try:
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        modelcensored.plot(filename=plotfile)
+    if os.path.exists(plotfile) or not any("censored" in str(w.message) for w in caught):
+        sys.exit("Validation test failed at case 19: the plot of a censored fit was drawn, or no warning was given.")
+finally:
+    if os.path.exists(plotfile):
+        os.remove(plotfile)
 
 
 print("fitreg: All tests passed.")

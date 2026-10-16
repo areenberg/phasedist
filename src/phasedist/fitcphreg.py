@@ -65,6 +65,7 @@ class _fitcphreg:
         verbose: bool = False,
         starts: list = None,
         covariance: bool = True,
+        censoring: np.array = None,
     ) -> None:
         """
         Initializes the phase-type regression fitter.
@@ -87,6 +88,9 @@ class _fitcphreg:
             starts (list, optional): Further starting values, run first:
                 dictionaries with 'pi', 'T' and 'beta' on the scale of the design.
             covariance (bool, default=True): Whether to compute the covariance.
+            censoring (ndarray, optional): The censoring limits [lower, upper] of
+                each row, NaN where there is none (design note, Section 8.13);
+                None if no row is censored.
         """
 
         self.obs = np.asarray(obs, dtype=float)
@@ -105,6 +109,7 @@ class _fitcphreg:
         self.verbose = verbose
         self.extrastarts = [] if starts is None else list(starts)
         self.wantcovariance = covariance
+        self.censoring = None if censoring is None else np.asarray(censoring, dtype=float).reshape(-1, 2)
 
         # unused phases (share of the expected time) and their patience
         self.unusedshare = 1e-6
@@ -168,6 +173,21 @@ class _fitcphreg:
 
         self.n, self.d = self.X.shape
         self.unif = _unif(tolerance=1e-14)
+
+        # censored rows: kind 0 exact, 1 right, 2 left, 3 interval, with the
+        # lower limit lo (the observation of an exact row) and the upper hi
+        # (design note, Section 8). Without censored rows the fit takes the
+        # uncensored path unchanged.
+        self.censored = False
+        self.bound = self.obs
+        if self.censoring is not None:
+            lower, upper = self.censoring[:, 0], self.censoring[:, 1]
+            self.kind = np.where(np.isnan(lower), np.where(np.isnan(upper), 0, 2),
+                                 np.where(np.isnan(upper), 1, 3))
+            self.lo = np.where(self.kind == 0, self.obs, np.where(self.kind == 2, upper, lower))
+            self.hi = np.where(self.kind == 3, upper, np.nan)
+            self.censored = bool(np.any(self.kind != 0))
+            self.bound = np.where(self.kind == 3, self.hi, self.lo)
         self.mstep = mcph(nphases=self.nphases, nobs=self.n)
 
         # the free generator entries; structural zeros stay zero
@@ -363,10 +383,275 @@ class _fitcphreg:
         out["ni"] = t * (inv @ e["a"])
         # the generator against the transpose of the J-matrix
         out["nij"] = offdiagonal * np.einsum("m,msk->ks", inv, J)
-        out["jumps"] = 1.0 + np.einsum("ks,msk->m", offdiagonal, J) * invf
+        out["jumps"] = e.get("absorbed", 1.0) + np.einsum("ks,msk->m", offdiagonal, J) * invf
         out["zrow"] = Jdiag * invf[:, None]
 
         return out
+
+    # ----------------------------------------------------------------------
+    #   PRIVATE METHODS: CENSORED ROWS (design note, Section 8)
+    # ----------------------------------------------------------------------
+
+    def __limits(self, eta: np.array, repeat: int) -> tuple:
+        """
+        Returns the kind and the transformed limits of every row, each row
+        repeated `repeat` times (once per quadrature node).
+
+        Args:
+            eta (ndarray): Linear predictor of each (repeated) row.
+            repeat (int): Number of repetitions of each row.
+
+        Returns:
+            tuple: Kind, transformed lower limit u and upper limit v (ndarray).
+        """
+
+        kind = np.repeat(self.kind, repeat)
+        scale = np.exp(eta)
+        u = scale * np.repeat(self.lo, repeat)
+        v = scale * np.repeat(self.hi, repeat)
+
+        return kind, u, v
+
+    def __rowderivs(self, s: dict, eta: np.array) -> tuple:
+        """
+        Returns l' and l'' in eta of every row: the uncensored formulas
+        unchanged when no row is censored.
+
+        Args:
+            s (dict): The parameters.
+            eta (ndarray): Linear predictor of each row.
+
+        Returns:
+            tuple: l' (ndarray) and l'' (ndarray).
+        """
+
+        if not self.censored:
+            return self.__derivs(s, eta, self.obs)
+
+        T, t = s["T"], s["t"]
+        Tt = T @ t
+        kind, u, v = self.__limits(eta, 1)
+        d1 = np.zeros(self.n)
+        d2 = np.zeros(self.n)
+
+        exact = kind == 0
+        if np.any(exact):
+            d1[exact], d2[exact] = self.__derivs(s, eta[exact], self.lo[exact])
+
+        with np.errstate(divide="ignore", invalid="ignore"):
+            # right-censored: l = log S(u)
+            rows = kind == 1
+            if np.any(rows):
+                a = self.__rowexp(s["pi"], T, u[rows])
+                S, f, f1 = np.sum(a, axis=1), a @ t, a @ Tt
+                d1[rows] = -u[rows] * f / S
+                d2[rows] = -u[rows] * f / S - u[rows] ** 2 * (f1 / S + (f / S) ** 2)
+
+            # left- and interval-censored: l = log(S(u) - S(v)), S(0) = 1
+            rows = kind >= 2
+            if np.any(rows):
+                lower = np.where(kind[rows] == 3, u[rows], 0.0)
+                upper = np.where(kind[rows] == 3, v[rows], u[rows])
+                a = self.__rowexp(s["pi"], T, np.r_[lower, upper])
+                m = lower.size
+                Sl, fl, f1l = np.sum(a[:m], axis=1), a[:m] @ t, a[:m] @ Tt
+                Su, fu, f1u = np.sum(a[m:], axis=1), a[m:] @ t, a[m:] @ Tt
+                D = Sl - Su
+                G = upper * fu - lower * fl
+                H = upper * fu + upper ** 2 * f1u - lower * fl - lower ** 2 * f1l
+                d1[rows] = G / D
+                d2[rows] = H / D - (G / D) ** 2
+
+        return d1, d2
+
+    def __censoredloglik(self, s: dict, eta: np.array, repeat: int) -> np.array:
+        """
+        Returns the log-likelihood contribution of every (repeated) row: the
+        log-density for an exact row, log S(u), log F(u) or log(S(u) - S(v))
+        for a right-, left- or interval-censored one.
+
+        Args:
+            s (dict): The parameters.
+            eta (ndarray): Linear predictor of each (repeated) row.
+            repeat (int): Number of repetitions of each row.
+
+        Returns:
+            ndarray: The contributions.
+        """
+
+        kind, u, v = self.__limits(eta, repeat)
+        out = np.empty(kind.size)
+
+        exact = kind == 0
+        if np.any(exact):
+            out[exact] = self.__logdensity(s, eta[exact], np.repeat(self.lo, repeat)[exact])
+
+        censored = ~exact
+        interval = kind[censored] == 3
+        a = self.__rowexp(s["pi"], s["T"], np.r_[u[censored], v[censored][interval]])
+        m = int(np.count_nonzero(censored))
+        S = np.sum(a[:m], axis=1)
+        prob = np.where(kind[censored] == 1, S, 1.0 - S)
+        prob[interval] = S[interval] - np.sum(a[m:], axis=1)
+        with np.errstate(divide="ignore", invalid="ignore"):
+            out[censored] = np.where(prob > 0.0, np.log(np.where(prob > 0.0, prob, 1.0)), -np.inf)
+
+        return out
+
+    def __censoredestep(self, s: dict, eta: np.array, repeat: int) -> tuple:
+        """
+        Performs the E-step with censored rows (design note, Sections 8.3 and
+        8.4). Exact rows use J(u), the upper right block of exp(Bu) for
+        B = [[T, t pi], [0, T]]; censored rows K(u), the same with e pi in
+        place of t pi, and M(u) = (-T)^(-1) (I - exp(Tu)). Every row gets the
+        matrix C whose diagonal gives the phase times and whose transpose,
+        against the generator, gives the jumps, with the vectors for the
+        initial and exit counts.
+
+        Args:
+            s (dict): The parameters.
+            eta (ndarray): Linear predictor of each (repeated) row.
+            repeat (int): Number of repetitions of each row.
+
+        Returns:
+            tuple: The log-likelihood of each row (ndarray) and a dictionary
+                in the form of __estep() plus 'absorbed'.
+        """
+
+        p = self.nphases
+        pi, T = s["pi"], s["T"]
+        kind, u, v = self.__limits(eta, repeat)
+        N = kind.size
+
+        den = np.zeros(N)
+        avec = np.zeros((N, p))
+        bvec = np.zeros((N, p))
+        C = np.zeros((N, p, p))
+        absorbed = np.where(kind == 1, 0.0, 1.0)
+
+        exact = kind == 0
+        if np.any(exact):
+            e = self.__estep(s, u[exact])
+            den[exact] = e["f0"]
+            avec[exact] = e["a"]
+            bvec[exact] = e["eTut"]
+            C[exact] = e["J"]
+
+        censored = ~exact
+        if np.any(censored):
+            interval = kind == 3
+            lower = np.where(interval, u, 0.0)[censored]
+            upper = np.where(interval, v, u)[censored]
+            block = np.block([[T, np.outer(np.ones(p), pi)],
+                              [np.zeros((p, p)), T]])
+            times = np.r_[upper, lower[interval[censored]]]
+            mats = self.__expm(block, times, nrows=p)
+            m = upper.size
+            eTh, Kh = mats[:m, :, :p], mats[:m, :, p:]
+            eTl = np.broadcast_to(np.eye(p), (m, p, p)).copy()
+            Kl = np.zeros((m, p, p))
+            eTl[interval[censored]] = mats[m:, :, :p]
+            Kl[interval[censored]] = mats[m:, :, p:]
+
+            right = kind[censored] == 1
+            g = np.linalg.solve(-T.T, pi)        # pi (-T)^(-1)
+            ones = np.ones(p)
+            # right-censored: C = K(u), B from exp(Tu) 1, no exit
+            # left and interval: C = 1 pi dM - dK with pi dM = g (exp(Tl) - exp(Th))
+            diffe = eTl - eTh
+            piM = np.einsum("k,mkl->ml", g, diffe)
+            Cc = piM[:, None, :] - (Kh - Kl)
+            Cc[right] = Kh[right]
+            bc = diffe @ ones
+            bc[right] = eTh[right] @ ones
+            ac = piM
+            ac[right] = 0.0
+            den[censored] = bc @ pi
+            bvec[censored] = bc
+            avec[censored] = ac
+            C[censored] = Cc
+
+        ok = den > 0.0
+        with np.errstate(divide="ignore", invalid="ignore"):
+            rows = np.where(ok, np.log(np.where(ok, den, 1.0)), -np.inf)
+        rows[exact] = rows[exact] + eta[exact]
+
+        return rows, dict(f0=den,
+                          invf=np.where(ok, 1.0 / np.where(ok, den, 1.0), 0.0),
+                          a=avec,
+                          eTut=bvec,
+                          J=C,
+                          absorbed=absorbed)
+
+    def __censoredexponential(self) -> tuple:
+        """
+        Returns the starting coefficients and rate from the one-phase model
+        with censoring, exponential regression on z = log(rate) + x'beta,
+        maximized by Newton's method with step halving; the problem is
+        concave (design note, Section 8.8). Without censoring it is the
+        quasi-likelihood start.
+
+        Args:
+            None
+
+        Returns:
+            tuple: The coefficients (ndarray) and the rate at x = 0 (float).
+        """
+
+        design = np.column_stack([np.ones(self.n), self.X])
+        kind, lo, hi = self.kind, self.lo, self.hi
+        finite = np.isfinite(self.bound) & (self.bound > 0.0)
+        c = np.zeros(self.d + 1)
+        c[0] = -np.log(np.mean(self.bound[finite]))
+
+        def parts(c):
+            z = design @ c
+            r = np.exp(z)
+            value = np.zeros(self.n)
+            g = np.zeros(self.n)
+            h = np.zeros(self.n)
+            with np.errstate(over="ignore", divide="ignore", invalid="ignore"):
+                rows = kind == 0
+                value[rows] = z[rows] - r[rows] * lo[rows]
+                g[rows] = 1.0 - r[rows] * lo[rows]
+                h[rows] = -r[rows] * lo[rows]
+                rows = kind == 1
+                value[rows] = -r[rows] * lo[rows]
+                g[rows] = -r[rows] * lo[rows]
+                h[rows] = -r[rows] * lo[rows]
+                rows = kind >= 2
+                a = np.where(kind[rows] == 3, r[rows] * lo[rows], 0.0)
+                b = np.where(kind[rows] == 3, r[rows] * hi[rows], r[rows] * lo[rows])
+                Sa, Sb = np.exp(-a), np.exp(-b)
+                D = Sa - Sb
+                G = b * Sb - a * Sa
+                H = b * Sb - b ** 2 * Sb - a * Sa + a ** 2 * Sa
+                value[rows] = np.log(D)
+                g[rows] = G / D
+                h[rows] = H / D - (G / D) ** 2
+            total = float(np.sum(value))
+            return (total if np.isfinite(total) else -np.inf), design.T @ g, (design * h[:, None]).T @ design
+
+        current, gradient, hessian = parts(c)
+        for _ in range(100):
+            try:
+                step = np.linalg.solve(-hessian, gradient)
+            except np.linalg.LinAlgError:
+                break
+            scale = 1.0
+            while True:
+                value, newgradient, newhessian = parts(c + scale * step)
+                if value >= current or scale < 1e-10:
+                    break
+                scale /= 2.0
+            if not value >= current:
+                break
+            c = c + scale * step
+            current, gradient, hessian = value, newgradient, newhessian
+            if np.max(np.abs(scale * step)) < 1e-12:
+                break
+
+        return c[1:], float(np.exp(c[0]))
 
     # ----------------------------------------------------------------------
     #   PRIVATE METHODS: THE CONDITIONAL M-STEPS
@@ -528,7 +813,7 @@ class _fitcphreg:
         """
 
         with np.errstate(over="ignore"):
-            u = np.max(np.exp(self.X @ s["beta"]) * self.obs) if self.d else np.max(self.obs)
+            u = np.max(np.exp(self.X @ s["beta"]) * self.bound) if self.d else np.max(self.bound)
             return float(np.max(np.abs(np.diag(s["T"]))) * u)
 
     def __squaremstep(self, s: dict, mapping, objective) -> tuple:
@@ -610,6 +895,8 @@ class _fitcphreg:
             float: The log-likelihood.
         """
 
+        if self.censored:
+            return float(np.sum(self.__censoredloglik(s, self.X @ s["beta"], 1)))
         return float(np.sum(self.__logdensity(s, self.X @ s["beta"], self.obs)))
 
     def __fixediteration(self, s: dict) -> tuple:
@@ -625,12 +912,16 @@ class _fitcphreg:
         """
 
         eta = self.X @ s["beta"]
-        u = np.exp(eta) * self.obs
+        if self.censored:
+            rows, e = self.__censoredestep(s, eta, 1)
+            loglik = float(np.sum(rows))
+        else:
+            u = np.exp(eta) * self.obs
 
-        e = self.__estep(s, u)
+            e = self.__estep(s, u)
 
-        with np.errstate(divide="ignore", invalid="ignore"):
-            loglik = float(np.sum(eta + np.log(e["f0"])))
+            with np.errstate(divide="ignore", invalid="ignore"):
+                loglik = float(np.sum(eta + np.log(e["f0"])))
         if not np.isfinite(loglik):
             return loglik, None
 
@@ -756,8 +1047,12 @@ class _fitcphreg:
             list: One parameter dictionary per start.
         """
 
-        beta, _ = self.__quasilikelihood(self.obs)
-        target = np.mean(np.exp(self.X @ beta) * self.obs)
+        if self.censored:
+            beta, rate = self.__censoredexponential()
+            target = 1.0 / rate
+        else:
+            beta, _ = self.__quasilikelihood(self.obs)
+            target = np.mean(np.exp(self.X @ beta) * self.obs)
 
         representations = []
         if self.__ischain():
@@ -804,7 +1099,7 @@ class _fitcphreg:
         if rule.confirmstart is not None:
             gain = rule.history[-1] - rule.history[rule.confirmstart]
             message = ("Algorithm terminated with iter==itermax while confirming "
-                       "convergence: after %d iterations the estimated distance to the "
+                       "convergence: After %d iterations the estimated distance to the "
                        "limit of the log-likelihood was %.3e, and the gain over the "
                        "confirmation block so far %.3e, against a tolerance of %.3e."
                        % (iteration, float(rule.eps), gain, float(self.tolerance)))
@@ -864,7 +1159,7 @@ class _fitcphreg:
             s = new
 
             if self.verbose and final and iteration % 25 == 0:
-                print("fixed effects: iter =", iteration, "  eps =", rule.eps,
+                print("Fixed effects: Iteration", iteration, "  eps =", rule.eps,
                       "  loglik =", loglik)
 
             if abandon:
@@ -947,7 +1242,7 @@ class _fitcphreg:
             else:
                 self.startstatus.append("degenerate" if unused else status)
             if self.verbose:
-                print("start", number + 1, ": loglik =", loglik, " status =", self.startstatus[-1])
+                print("Start %d: Loglik =" % (number + 1), loglik, " status =", self.startstatus[-1])
             if status in ("failed", "inferior") or not np.isfinite(loglik):
                 continue
             if unused:
@@ -1007,7 +1302,7 @@ class _fitcphreg:
         b = np.array(start, dtype=float)
 
         for _ in range(50):
-            d1, d2 = self.__derivs(s, base + b[self.groups], self.obs)
+            d1, d2 = self.__rowderivs(s, base + b[self.groups])
             gradient = np.add.reduceat(d1, self.starts) - b / variance
             hessian = np.add.reduceat(d2, self.starts) - 1.0 / variance
             hessian = np.where(hessian < 0.0, hessian, -1.0 / variance)
@@ -1017,7 +1312,7 @@ class _fitcphreg:
             if np.max(np.abs(step)) < 1e-10:
                 break
 
-        _, d2 = self.__derivs(s, base + b[self.groups], self.obs)
+        _, d2 = self.__rowderivs(s, base + b[self.groups])
         hessian = np.add.reduceat(d2, self.starts) - 1.0 / variance
         bad = ~(hessian < 0.0)
         hessian = np.where(bad, -1.0 / variance, hessian)
@@ -1054,7 +1349,10 @@ class _fitcphreg:
 
         R = nodes.shape[1]
         eta = (self.X @ s["beta"])[:, None] + nodes[self.groups]
-        rows = self.__logdensity(s, eta.ravel(), np.repeat(self.obs, R)).reshape(self.n, R)
+        if self.censored:
+            rows = self.__censoredloglik(s, eta.ravel(), R).reshape(self.n, R)
+        else:
+            rows = self.__logdensity(s, eta.ravel(), np.repeat(self.obs, R)).reshape(self.n, R)
         logintegrand = np.add.reduceat(rows, self.starts, axis=0) + self.__prior(nodes, s["sigma"])
         logintegral, weights = self.aghq.weights(logintegrand, scales)
 
@@ -1077,13 +1375,17 @@ class _fitcphreg:
         R = nodes.shape[1]
         nodesofrows = nodes[self.groups]
         eta = (self.X @ s["beta"])[:, None] + nodesofrows
-        u = np.exp(eta) * self.obs[:, None]
+        if self.censored:
+            rows, e = self.__censoredestep(s, eta.ravel(), R)
+            rows = rows.reshape(self.n, R)
+        else:
+            u = np.exp(eta) * self.obs[:, None]
 
-        e = self.__estep(s, u.ravel())
+            e = self.__estep(s, u.ravel())
 
-        # the node weights are the posterior of the node given the group's data
-        with np.errstate(divide="ignore", invalid="ignore"):
-            rows = eta + np.log(e["f0"].reshape(self.n, R))
+            # the node weights are the posterior of the node given the group's data
+            with np.errstate(divide="ignore", invalid="ignore"):
+                rows = eta + np.log(e["f0"].reshape(self.n, R))
         logintegrand = np.add.reduceat(rows, self.starts, axis=0) + self.__prior(nodes, s["sigma"])
         logintegral, weights = self.aghq.weights(logintegrand, scales)
         loglik = float(np.sum(logintegral))
@@ -1138,7 +1440,7 @@ class _fitcphreg:
             float: The derivative.
         """
 
-        d1, d2 = self.__derivs(s, self.X @ s["beta"], self.obs)
+        d1, d2 = self.__rowderivs(s, self.X @ s["beta"])
 
         return 0.5 * float(np.sum(np.add.reduceat(d1, self.starts) ** 2
                                   + np.add.reduceat(d2, self.starts)))
@@ -1159,7 +1461,7 @@ class _fitcphreg:
         self.boundary = True
         self.converged = converged
         warnings.warn(
-            "The estimated standard deviation of the random effect is zero: the "
+            "The estimated standard deviation of the random effect is zero: The "
             "likelihood does not increase as it moves away from zero, so the groups "
             "vary no more than the fixed effects explain. The fit is that of the "
             "model without random effect.", RuntimeWarning, stacklevel=3)
@@ -1239,8 +1541,8 @@ class _fitcphreg:
             sigmas.append(s["sigma"])
 
             if self.verbose and iteration % 25 == 0:
-                print("random effect: iter =", iteration, "  eps =", rule.eps,
-                      "  loglik =", loglik, "  sigma =", s["sigma"])
+                print("Random effect: Iteration", iteration, "  eps =", rule.eps,
+                      "  loglik =", loglik, "  std. dev. =", s["sigma"])
 
             # sigma heading for zero converges sublinearly: move to the boundary
             if (s["sigma"] < 1e-3 and len(sigmas) > 50 and s["sigma"] < sigmas[-51]):
@@ -1356,7 +1658,7 @@ class _fitcphreg:
         """
 
         s = self.state
-        _, d2 = self.__derivs(s, self.X @ s["beta"], self.obs)
+        _, d2 = self.__rowderivs(s, self.X @ s["beta"])
 
         return -(self.X * d2[:, None]).T @ self.X
 
@@ -1384,6 +1686,49 @@ class _fitcphreg:
             trial["sigma"] = float(np.exp(x[-1]))
             modes, scales, _ = self.__modes(trial, self.modes)
             return self.__frozenloglik(trial, self.aghq.nodes(modes, scales), scales)[0]
+
+        k = x0.size
+        h = 1e-4
+        hessian = np.zeros((k, k))
+        center = objective(x0)
+        for i in range(k):
+            ei = np.zeros(k)
+            ei[i] = h
+            hessian[i, i] = (objective(x0 + 2 * ei) - 2 * center
+                             + objective(x0 - 2 * ei)) / (4 * h * h)
+            for j in range(i + 1, k):
+                ej = np.zeros(k)
+                ej[j] = h
+                value = (objective(x0 + ei + ej) - objective(x0 + ei - ej)
+                         - objective(x0 - ei + ej) + objective(x0 - ei - ej)) / (4 * h * h)
+                hessian[i, j] = hessian[j, i] = value
+
+        return -hessian, m
+
+    def __fixedinformation(self) -> tuple:
+        """
+        Returns the observed information of the phase-type parameters and beta
+        of the fixed-effects model by central differences of its
+        log-likelihood. Used with censored rows, where the conditional
+        information is not valid (design note, Section 8.7).
+
+        Args:
+            None
+
+        Returns:
+            tuple: The information matrix (ndarray) and the number of phase-type
+                parameters, which come first (int).
+        """
+
+        s = self.state
+        rates, build = self.__rateparameters(s)
+        m = rates.size
+        x0 = np.r_[rates, np.asarray(s["beta"], dtype=float).reshape(-1)]
+
+        def objective(x):
+            trial = build(x[:m])
+            trial["beta"] = x[m:]
+            return self.__fixedloglik(trial)
 
         k = x0.size
         h = 1e-4
@@ -1469,7 +1814,9 @@ class _fitcphreg:
         kidentified = k - 1 if self.boundary else k
         self.covariance = np.full((k, k), np.nan)
         if kidentified and self.wantcovariance:
-            if self.groups is None or self.boundary:
+            if self.censored and (self.groups is None or self.boundary):
+                information = self.__profiled(*self.__fixedinformation())
+            elif self.groups is None or self.boundary:
                 information = self.__information()
             else:
                 information = self.__profiled(*self.__randominformation())
