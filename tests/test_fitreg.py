@@ -951,6 +951,17 @@ for term, index in (("w", [3]), ("g", [1, 2]), ("x:g", [5, 6])):
 if list(quiet(modelexact.getlrtest)[0]) != list(modelexact.getwaldtest()):
     sys.exit("Validation test failed at case 13: getlrtest does not test every effect of the formula by default.")
 
+# the runtime note: printed (without error) when the refits are expected to
+# take longer than lrnotice, and the tests are unchanged
+modelexact.lrnotice = -1.0
+noted, printed = quiet(modelexact.getlrtest, ["w", "g", "x:g"])
+modelexact.lrnotice = 10.0
+NOTE = "Note: The likelihood-ratio tests are being computed. This can take about "
+if not printed.startswith(NOTE) or not printed.rstrip().endswith(" seconds.") or "summary" in printed:
+    sys.exit("Validation test failed at case 13: the runtime note of getlrtest is '%s'." % printed.strip())
+if noted != lrtests:
+    sys.exit("Validation test failed at case 13: the runtime note changed the likelihood-ratio tests.")
+
 # zeros: the point mass contributes the same factor with and without an effect
 iszero = np.arange(NEXACT) % 10 == 3
 withzeros = DATAEXACT.assign(y=np.where(iszero, 0.0, DATAEXACT["y"]))

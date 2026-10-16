@@ -283,10 +283,8 @@ class fitreg:
         refits = sum(term not in self.__lrcache for term in effects) + 2 * nsim * len(effects)
         expected = refits * self.fittime
         if expected > self.lrnotice:
-            print("Note: The likelihood-ratio tests are being computed. This can take %s."
-                  "summary(effecttest='wald') gives Wald tests without refitting."
-                  % (refits, "" if refits == 1 else "s", self.__duration(self.fittime),
-                     "about " + self.__duration(expected)), flush=True)
+            print("Note: The likelihood-ratio tests are being computed. This can take about %s."
+                  % self.__duration(expected), flush=True)
 
         rng = np.random.default_rng(seed)
         out = {}
