@@ -1,6 +1,6 @@
 '''
 UNIT TEST FOR THE fitreg CLASS (phase-type regression from an R-style formula
-on a pandas DataFrame). Design note: phreg-fitting-algorithm.md. Statistical
+on a pandas DataFrame). Statistical
 validation (coverage over many replicates) is kept outside the repository.
 
 Data are simulated from the model: one-phase truths for the exact oracles,
@@ -1245,7 +1245,7 @@ def censoredkinds(lower, upper):
 def exponentialcensored(D, kind, lower, upper, response):
     """
     The one-phase censored MLE by Newton's method on (log rate, beta): the
-    log-likelihood is concave in z = D c (design note, Section 8.8). Returns
+    log-likelihood is concave in z = D c. Returns
     the estimates, the log-likelihood and the observed information.
     """
     lo = np.where(kind == 0, response, np.where(kind == 2, upper, lower))
@@ -1372,7 +1372,7 @@ if expected not in text.getvalue():
 # ------------------------------------------------------------------
 
 # censoring columns in which no row is censored give the uncensored fit,
-# identical to the last bit (design note, Section 8.14)
+# identical to the last bit
 plain, _, _ = quietfit(formula="y ~ x + g", data=DATA, **COMMON)
 nocensoring, _, _ = quietfit(formula="y ~ x + g", data=DATA.assign(lo=np.nan, hi=np.nan), censoring=("lo", "hi"), **COMMON)
 for getter in ("getcoef", "getstderr"):
@@ -1529,7 +1529,7 @@ for name, change in bad.items():
         sys.exit("Validation test failed at case 19: censoring with %s did not terminate." % name)
 
 # zeros with censored rows: a censored row is positive whatever its response,
-# and the point mass is the proportion of exact zeros, as in fit (design note, 8.13)
+# and the point mass is the proportion of exact zeros, as in fit
 zero = (kind == 0) & (np.arange(NEXACT) % 7 == 3)
 withzeros = DATACENSORED.assign(y=np.where(zero, 0.0, np.where(kind == 0, DATACENSORED["y"], 0.0)))
 modelzc, _, _ = quietfit(formula="y ~ x + g", data=withzeros, censoring=("lo", "hi"), **EXACT)

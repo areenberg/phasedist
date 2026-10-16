@@ -89,7 +89,7 @@ class _fitcphreg:
                 dictionaries with 'pi', 'T' and 'beta' on the scale of the design.
             covariance (bool, default=True): Whether to compute the covariance.
             censoring (ndarray, optional): The censoring limits [lower, upper] of
-                each row, NaN where there is none (design note, Section 8.13);
+                each row, NaN where there is none;
                 None if no row is censored.
         """
 
@@ -114,10 +114,10 @@ class _fitcphreg:
         # unused phases (share of the expected time) and their patience
         self.unusedshare = 1e-6
         self.unusedpatience = 20
-        # a start that cannot become the best is given up (design note, 5.3)
+        # a start that cannot become the best is given up
         self.hopelessiter = 1000
         self.hopelessgap = 1.0
-        # the node schedule of the random effect (design note, 6.4)
+        # the node schedule of the random effect
         self.minadapt = 30
         self.maxadapt = 1000
         self.adaptchange = 1e-3
@@ -175,9 +175,8 @@ class _fitcphreg:
         self.unif = _unif(tolerance=1e-14)
 
         # censored rows: kind 0 exact, 1 right, 2 left, 3 interval, with the
-        # lower limit lo (the observation of an exact row) and the upper hi
-        # (design note, Section 8). Without censored rows the fit takes the
-        # uncensored path unchanged.
+        # lower limit lo (the observation of an exact row) and the upper hi.
+        # Without censored rows the fit takes the uncensored path unchanged.
         self.censored = False
         self.bound = self.obs
         if self.censoring is not None:
@@ -389,7 +388,7 @@ class _fitcphreg:
         return out
 
     # ----------------------------------------------------------------------
-    #   PRIVATE METHODS: CENSORED ROWS (design note, Section 8)
+    #   PRIVATE METHODS: CENSORED ROWS
     # ----------------------------------------------------------------------
 
     def __limits(self, eta: np.array, repeat: int) -> tuple:
@@ -500,13 +499,12 @@ class _fitcphreg:
 
     def __censoredestep(self, s: dict, eta: np.array, repeat: int) -> tuple:
         """
-        Performs the E-step with censored rows (design note, Sections 8.3 and
-        8.4). Exact rows use J(u), the upper right block of exp(Bu) for
-        B = [[T, t pi], [0, T]]; censored rows K(u), the same with e pi in
-        place of t pi, and M(u) = (-T)^(-1) (I - exp(Tu)). Every row gets the
-        matrix C whose diagonal gives the phase times and whose transpose,
-        against the generator, gives the jumps, with the vectors for the
-        initial and exit counts.
+        Performs the E-step with censored rows. Exact rows use J(u), the
+        upper right block of exp(Bu) for B = [[T, t pi], [0, T]]; censored
+        rows K(u), the same with e pi in place of t pi, and M(u) = (-T)^(-1)
+        (I - exp(Tu)). Every row gets the matrix C whose diagonal gives the
+        phase times and whose transpose, against the generator, gives the
+        jumps, with the vectors for the initial and exit counts.
 
         Args:
             s (dict): The parameters.
@@ -588,7 +586,7 @@ class _fitcphreg:
         Returns the starting coefficients and rate from the one-phase model
         with censoring, exponential regression on z = log(rate) + x'beta,
         maximized by Newton's method with step halving; the problem is
-        concave (design note, Section 8.8). Without censoring it is the
+        concave. Without censoring it is the
         quasi-likelihood start.
 
         Args:
@@ -1483,7 +1481,7 @@ class _fitcphreg:
 
         s = dict(self.state)
 
-        # sigma = 0 when the likelihood does not increase away from it (design note, 6.6)
+        # sigma = 0 when the likelihood does not increase away from it
         self.boundaryscore = self.__boundaryscore(s)
         if not self.boundaryscore > 0.0:
             self.__atboundary(s, self.converged)
@@ -1710,7 +1708,7 @@ class _fitcphreg:
         Returns the observed information of the phase-type parameters and beta
         of the fixed-effects model by central differences of its
         log-likelihood. Used with censored rows, where the conditional
-        information is not valid (design note, Section 8.7).
+        information is not valid.
 
         Args:
             None
@@ -1809,7 +1807,7 @@ class _fitcphreg:
             # the posterior mean of each group's random effect
             self.ranef = np.sum(weights * nodes, axis=1)
 
-        # the covariance of (beta, log sigma) (design note, Section 9)
+        # the covariance of (beta, log sigma)
         k = self.d + (self.groups is not None)
         kidentified = k - 1 if self.boundary else k
         self.covariance = np.full((k, k), np.nan)

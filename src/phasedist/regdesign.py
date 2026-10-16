@@ -205,10 +205,9 @@ class _regdesign:
     continuous. In an interaction of a continuous x and a categorical w, the
     main effects may be left out: in 'x + x:w' w has treatment dummies, in
     'x:w' and 'w + x:w' one column per level, as in R. Every column is centred
-    and the continuous ones are scaled (design note, Section 3.1);
-    backtransform() returns to the scale of the data. Censoring limits are
-    read from two columns, lower and upper, as kind and limits of each row
-    (design note, Section 8.13).
+    and the continuous ones are scaled; backtransform() returns to the scale
+    of the data. Censoring limits are read from two columns, lower and
+    upper, as kind and limits of each row.
 
     Warning: This class reports unusable data by raising ValueError with a
     message meant for the user; the caller prints it.

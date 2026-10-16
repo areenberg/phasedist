@@ -152,7 +152,7 @@ class fitreg:
         """
         Return the standard errors of the regression coefficients, from the
         observed information on the centred design; with a random effect
-        the phase-type parameters are profiled out (design note, Section 9).
+        the phase-type parameters are profiled out.
 
         Returns:
             dict: Standard error of each coefficient.
@@ -779,7 +779,7 @@ class fitreg:
             return False
 
         # zeros are a point mass; the regression is fitted to the positive
-        # observations, censored ones included (design note, Section 8.13)
+        # observations, censored ones included
         zeros = self.design.y == 0.0
         self.nobs = self.design.n
         self.nzero = int(np.count_nonzero(zeros))
