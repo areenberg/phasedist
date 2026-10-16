@@ -1,0 +1,433 @@
+week,arrest,fin,age,race,wexp,mar,paro,prio
+20,1,no,27,black,no,not married,yes,3
+17,1,no,18,black,no,not married,yes,8
+25,1,no,19,other,yes,not married,yes,13
+52,0,yes,23,black,yes,married,yes,1
+52,0,no,19,other,yes,not married,yes,3
+52,0,no,24,black,yes,not married,no,2
+23,1,no,25,black,yes,married,yes,0
+52,0,yes,21,black,yes,not married,yes,4
+52,0,no,22,black,no,not married,no,6
+52,0,no,20,black,yes,not married,no,0
+52,0,yes,26,black,no,not married,yes,3
+52,0,no,40,black,yes,not married,no,2
+37,1,no,17,black,yes,not married,yes,5
+52,0,no,37,black,yes,not married,no,2
+25,1,no,20,black,no,not married,yes,3
+46,1,yes,22,black,yes,not married,yes,2
+28,1,no,19,black,no,not married,no,7
+52,0,no,20,black,no,not married,no,2
+52,0,no,25,black,no,not married,yes,12
+52,0,no,24,other,yes,not married,yes,1
+52,0,no,23,black,no,not married,yes,4
+52,0,yes,44,black,yes,married,yes,0
+24,1,yes,29,black,yes,not married,yes,2
+52,0,yes,28,other,yes,not married,yes,1
+52,0,yes,21,black,yes,not married,no,0
+52,0,yes,19,black,yes,not married,yes,2
+52,0,no,33,black,yes,not married,yes,1
+52,0,no,19,black,no,not married,no,2
+52,0,yes,19,black,no,not married,yes,3
+52,0,yes,23,black,yes,married,yes,9
+52,0,yes,23,black,no,not married,yes,3
+52,0,yes,19,black,no,not married,yes,1
+52,0,yes,42,black,yes,not married,no,0
+52,0,no,23,black,yes,married,no,2
+52,0,no,24,black,yes,not married,no,3
+50,1,yes,20,black,yes,not married,yes,2
+52,0,no,22,black,yes,not married,yes,5
+52,0,no,27,black,yes,not married,no,2
+52,0,yes,19,black,no,not married,no,4
+52,0,no,28,black,yes,not married,yes,3
+52,0,yes,33,black,yes,married,no,9
+52,0,no,24,black,yes,not married,yes,1
+10,1,no,21,black,no,not married,yes,14
+52,0,no,22,black,no,not married,yes,2
+52,0,yes,19,black,no,not married,yes,2
+52,0,yes,22,black,no,not married,no,2
+52,0,yes,22,black,no,not married,no,15
+20,1,yes,23,black,yes,not married,yes,5
+52,0,no,32,black,yes,married,yes,2
+52,0,yes,27,black,yes,not married,yes,0
+52,0,yes,36,black,yes,not married,no,0
+52,0,yes,22,black,yes,not married,yes,1
+52,0,yes,32,black,yes,not married,yes,1
+50,1,yes,19,black,yes,not married,no,10
+52,0,no,28,black,yes,married,yes,1
+52,0,no,32,other,yes,not married,no,3
+52,0,no,33,black,yes,married,yes,1
+52,0,no,26,black,no,not married,yes,1
+52,0,yes,20,black,yes,not married,yes,0
+52,0,yes,42,black,yes,not married,no,9
+6,1,no,19,black,no,not married,no,6
+52,0,no,22,black,yes,not married,no,2
+52,0,no,22,black,no,not married,yes,5
+52,0,no,36,black,no,not married,no,11
+52,1,no,23,black,yes,not married,no,2
+52,0,yes,27,black,yes,not married,yes,3
+52,0,yes,21,black,no,not married,yes,1
+52,0,yes,22,black,yes,not married,yes,2
+49,1,no,35,black,yes,not married,yes,3
+52,0,no,21,black,yes,not married,yes,4
+52,0,yes,25,black,yes,not married,yes,5
+52,0,no,18,black,no,not married,yes,0
+52,0,yes,26,black,yes,not married,yes,2
+52,0,no,30,black,yes,not married,no,4
+52,0,no,20,black,no,not married,yes,2
+52,0,yes,43,black,yes,not married,yes,1
+43,1,no,23,black,yes,married,yes,4
+52,0,no,42,other,yes,not married,no,2
+52,0,no,21,other,no,not married,no,2
+5,1,no,19,black,no,not married,no,3
+27,1,no,29,black,no,not married,no,4
+52,0,no,30,black,yes,not married,yes,3
+52,0,yes,21,other,yes,married,yes,10
+52,0,no,20,black,no,not married,yes,7
+22,1,yes,19,black,no,not married,yes,10
+52,0,yes,22,black,yes,not married,yes,1
+52,0,no,25,black,no,not married,yes,3
+18,1,no,22,black,no,not married,no,4
+52,0,yes,22,black,yes,not married,yes,4
+52,0,yes,24,black,no,not married,yes,2
+52,0,no,39,black,yes,married,yes,4
+52,0,no,21,black,yes,not married,yes,1
+52,0,yes,20,black,yes,not married,yes,2
+52,0,yes,24,black,no,not married,no,1
+52,0,no,25,black,yes,not married,yes,2
+24,1,yes,21,black,yes,not married,no,4
+52,0,yes,20,black,no,not married,yes,1
+52,0,yes,19,black,no,not married,yes,3
+52,0,yes,24,black,no,not married,no,2
+52,0,yes,24,black,yes,not married,yes,1
+2,1,no,44,black,yes,not married,yes,2
+26,1,no,32,black,yes,not married,no,2
+52,0,no,23,black,yes,not married,no,3
+49,1,yes,19,black,no,not married,yes,1
+52,0,no,20,black,no,not married,yes,1
+21,1,no,27,black,yes,not married,yes,0
+48,1,no,19,black,no,not married,no,6
+52,0,yes,21,black,yes,not married,no,1
+52,0,no,20,black,no,not married,yes,1
+52,0,no,25,black,no,not married,yes,3
+52,0,no,20,black,no,not married,yes,6
+52,0,yes,23,black,yes,not married,yes,3
+52,0,no,20,black,no,not married,no,2
+52,0,yes,30,black,yes,not married,no,1
+52,0,no,25,black,yes,married,yes,0
+52,0,no,22,black,yes,not married,yes,1
+52,0,no,24,black,yes,not married,yes,3
+52,0,yes,18,black,no,not married,no,4
+8,1,yes,40,black,yes,not married,yes,1
+52,0,no,22,black,no,not married,yes,1
+52,0,yes,23,black,no,not married,yes,6
+49,1,no,21,black,yes,not married,yes,1
+52,0,yes,24,other,yes,married,yes,2
+52,0,yes,24,black,no,not married,yes,14
+52,0,no,38,black,yes,not married,yes,2
+52,0,no,26,other,yes,not married,no,3
+52,0,yes,29,black,yes,not married,no,1
+52,0,no,21,black,no,not married,yes,8
+52,0,yes,21,black,yes,married,yes,2
+52,0,no,22,other,no,not married,yes,4
+8,1,no,23,black,no,not married,yes,5
+52,0,no,27,black,yes,not married,no,2
+52,0,yes,18,black,no,not married,yes,2
+13,1,no,23,black,no,not married,no,5
+52,0,yes,24,black,no,not married,yes,2
+52,0,yes,21,black,no,not married,no,3
+52,0,yes,20,black,no,not married,yes,4
+52,0,yes,27,black,yes,not married,no,4
+8,1,yes,20,black,no,not married,yes,11
+52,0,yes,29,black,yes,married,yes,5
+33,1,no,19,black,no,not married,no,10
+52,0,no,20,black,no,not married,no,8
+52,0,yes,18,black,no,not married,yes,0
+11,1,yes,19,black,no,not married,yes,2
+52,0,yes,24,black,yes,not married,yes,1
+52,0,no,28,other,yes,not married,yes,4
+52,0,yes,26,black,no,not married,no,4
+52,0,yes,17,black,no,not married,yes,0
+52,0,no,21,black,no,not married,yes,3
+37,1,no,34,black,yes,not married,no,2
+52,0,yes,26,black,yes,not married,no,1
+52,0,yes,43,black,yes,not married,yes,2
+52,0,no,20,black,no,not married,yes,0
+44,1,no,20,black,yes,not married,yes,1
+52,0,no,32,black,yes,not married,yes,1
+52,1,no,25,other,yes,not married,yes,1
+52,0,yes,22,black,no,not married,yes,1
+52,0,yes,31,other,yes,not married,yes,1
+52,0,yes,42,black,yes,married,yes,4
+52,0,yes,32,black,yes,not married,no,10
+52,0,yes,20,black,no,not married,no,8
+52,0,no,20,other,no,not married,no,1
+52,0,yes,36,black,no,not married,yes,8
+52,0,yes,34,black,yes,not married,yes,2
+52,0,yes,28,black,yes,married,yes,3
+52,0,yes,21,black,yes,not married,yes,2
+52,0,no,18,other,no,not married,yes,6
+52,0,yes,20,other,no,not married,yes,4
+52,0,no,17,other,no,not married,yes,3
+52,0,yes,44,black,no,not married,yes,3
+52,0,yes,30,black,yes,not married,yes,5
+52,0,yes,22,black,no,not married,no,11
+9,1,yes,30,black,no,not married,no,3
+17,1,no,23,black,no,not married,no,8
+52,0,yes,20,black,yes,not married,no,2
+52,0,no,19,black,no,not married,no,10
+52,0,yes,21,black,no,not married,yes,1
+52,0,yes,22,black,no,not married,yes,6
+52,0,yes,19,black,no,not married,yes,2
+52,0,yes,21,black,no,not married,no,10
+16,1,no,38,black,no,not married,yes,3
+52,0,yes,24,black,no,not married,no,7
+52,0,yes,39,black,yes,married,no,2
+3,1,no,30,black,no,not married,yes,3
+52,0,no,37,black,yes,not married,no,0
+52,0,yes,23,black,no,not married,yes,2
+52,0,no,21,other,no,not married,yes,1
+52,0,yes,31,black,yes,not married,yes,1
+52,0,yes,24,black,no,not married,no,13
+52,0,no,31,other,yes,married,yes,3
+52,0,no,24,black,no,not married,yes,2
+52,0,yes,24,black,yes,not married,yes,1
+52,0,yes,21,other,yes,not married,no,1
+52,0,yes,22,black,no,not married,no,2
+45,1,no,20,black,no,not married,yes,5
+52,0,yes,21,black,yes,not married,yes,0
+52,0,yes,24,black,yes,not married,yes,2
+52,0,no,25,black,yes,not married,yes,1
+52,0,no,19,black,no,not married,yes,1
+52,0,no,20,other,no,not married,no,2
+52,0,no,20,black,yes,not married,yes,4
+28,1,no,24,black,yes,not married,no,1
+52,0,yes,18,black,no,not married,no,4
+16,1,yes,28,black,no,not married,yes,5
+15,1,yes,19,black,no,not married,no,4
+52,0,no,19,black,yes,not married,no,1
+52,0,no,25,black,yes,married,no,0
+52,0,yes,19,other,no,not married,no,1
+52,0,yes,25,black,no,not married,no,2
+14,1,no,24,black,no,not married,no,0
+52,0,yes,20,black,yes,not married,yes,1
+52,0,yes,30,black,no,not married,yes,1
+52,0,no,29,black,yes,not married,yes,4
+52,0,no,28,other,yes,married,yes,4
+52,0,yes,36,black,no,not married,yes,1
+52,0,yes,23,black,yes,not married,no,7
+52,0,yes,23,black,no,not married,no,2
+52,0,no,24,black,yes,not married,yes,4
+52,0,no,29,black,yes,married,yes,1
+52,0,no,26,black,yes,married,yes,2
+52,0,no,39,other,yes,married,no,3
+52,0,yes,20,black,yes,not married,yes,1
+52,0,no,23,black,yes,not married,yes,3
+52,0,yes,21,black,yes,not married,yes,2
+52,0,yes,21,black,no,not married,yes,1
+7,1,yes,20,other,no,not married,yes,2
+52,0,yes,20,other,no,not married,yes,3
+52,0,yes,27,black,yes,not married,yes,2
+43,1,no,18,other,yes,not married,no,3
+46,1,yes,25,black,yes,not married,no,1
+40,1,yes,20,black,no,not married,no,6
+52,0,yes,20,black,yes,not married,no,5
+14,1,no,20,other,no,not married,no,7
+52,0,no,24,other,yes,married,no,11
+52,0,yes,23,black,no,not married,no,1
+8,1,no,28,black,yes,not married,no,4
+52,0,no,21,black,no,not married,no,2
+52,0,no,25,black,no,not married,no,1
+52,0,no,24,black,yes,not married,yes,1
+52,0,no,29,black,yes,married,no,3
+52,0,no,22,black,yes,married,yes,2
+25,1,no,28,black,no,not married,yes,18
+52,0,no,19,black,no,not married,yes,1
+52,0,no,20,black,yes,not married,yes,1
+17,1,no,20,black,no,not married,yes,5
+37,1,yes,22,black,yes,not married,yes,1
+52,0,no,20,black,no,not married,yes,8
+52,0,yes,21,black,no,not married,yes,2
+52,0,yes,21,black,yes,not married,yes,1
+32,1,no,19,black,no,not married,yes,3
+52,0,no,26,black,yes,not married,yes,1
+52,0,no,23,black,yes,married,yes,2
+52,0,yes,22,other,yes,not married,yes,4
+52,0,yes,24,black,yes,not married,no,8
+52,0,yes,40,black,no,not married,no,5
+52,0,yes,32,black,no,not married,no,2
+52,0,no,38,black,yes,not married,no,0
+52,0,no,26,black,yes,not married,yes,1
+12,1,yes,27,black,yes,not married,yes,0
+52,0,no,29,black,yes,married,yes,3
+18,1,no,20,black,yes,not married,yes,4
+52,0,no,22,black,no,not married,no,1
+52,0,no,22,other,no,not married,no,5
+14,1,yes,19,black,yes,not married,no,12
+52,0,no,22,black,yes,not married,no,1
+52,0,no,19,black,no,not married,no,3
+52,0,yes,32,black,yes,not married,no,1
+52,0,yes,25,black,yes,not married,yes,2
+38,1,no,21,black,no,not married,yes,2
+52,0,yes,36,black,yes,not married,yes,1
+24,1,no,40,black,yes,not married,no,2
+20,1,yes,20,black,no,not married,yes,1
+32,1,yes,19,black,no,not married,yes,0
+52,0,no,18,black,no,not married,yes,4
+52,0,yes,28,black,yes,not married,no,0
+52,0,yes,22,black,yes,not married,no,2
+52,0,yes,25,black,no,not married,yes,1
+52,0,yes,28,black,yes,not married,no,2
+52,0,yes,25,black,yes,not married,no,2
+52,0,yes,20,black,yes,not married,no,4
+52,0,yes,24,black,no,not married,no,5
+52,0,no,24,black,yes,not married,no,0
+52,0,yes,36,other,yes,not married,yes,2
+52,0,yes,34,black,yes,not married,no,1
+31,1,no,19,black,yes,not married,yes,5
+20,1,yes,23,black,no,not married,yes,1
+40,1,no,19,black,yes,not married,yes,3
+52,0,yes,40,black,yes,not married,no,2
+52,0,yes,31,black,yes,not married,no,2
+52,0,no,23,black,yes,married,yes,0
+52,0,no,42,black,no,not married,yes,2
+42,1,yes,26,black,yes,married,yes,1
+52,0,no,20,black,no,not married,yes,9
+26,1,no,27,black,yes,not married,yes,1
+52,0,yes,24,black,no,not married,no,5
+52,0,no,25,black,no,not married,no,2
+52,0,yes,22,black,yes,not married,yes,3
+52,0,yes,20,black,no,not married,yes,2
+52,0,yes,20,black,yes,not married,yes,2
+47,1,no,22,black,no,not married,yes,3
+52,0,no,18,black,yes,not married,yes,1
+52,0,no,20,black,yes,not married,yes,2
+40,1,no,20,black,yes,not married,yes,1
+52,0,no,22,black,yes,not married,yes,2
+52,0,yes,30,black,yes,married,no,2
+52,0,no,36,other,yes,not married,no,1
+52,0,no,25,other,yes,married,yes,5
+21,1,no,29,black,no,not married,yes,3
+52,0,no,19,black,yes,not married,yes,3
+52,0,yes,24,black,yes,not married,yes,2
+52,0,yes,21,black,no,not married,no,0
+52,0,yes,35,black,yes,not married,yes,6
+52,0,yes,19,other,yes,not married,no,4
+1,1,no,20,black,no,not married,no,0
+43,1,no,22,other,no,not married,no,3
+24,1,no,23,black,yes,not married,no,1
+11,1,no,19,black,no,not married,no,18
+52,0,no,18,black,no,not married,yes,3
+52,0,yes,38,other,yes,not married,yes,2
+52,0,yes,18,other,no,not married,yes,6
+52,0,no,22,black,yes,married,yes,1
+33,1,no,21,black,no,not married,yes,3
+52,0,no,21,black,yes,not married,yes,1
+46,1,yes,21,black,no,not married,yes,5
+36,1,yes,17,black,no,not married,yes,3
+52,0,yes,22,black,yes,not married,yes,1
+52,0,yes,23,black,yes,married,yes,0
+18,1,yes,19,black,no,not married,yes,4
+52,0,yes,21,black,yes,not married,no,1
+52,0,yes,35,black,yes,not married,no,5
+50,1,no,23,black,yes,not married,no,8
+52,0,yes,22,black,no,not married,no,2
+34,1,yes,25,black,no,not married,no,11
+52,0,yes,20,black,yes,not married,no,4
+35,1,yes,19,other,no,not married,no,1
+52,0,no,20,black,no,not married,no,1
+52,0,yes,41,other,yes,married,yes,3
+39,1,no,23,other,yes,not married,yes,4
+9,1,yes,26,black,yes,not married,no,0
+52,0,no,26,black,no,not married,no,2
+52,0,yes,38,black,yes,not married,yes,1
+52,0,no,27,black,yes,not married,yes,1
+34,1,yes,19,black,no,not married,yes,3
+52,0,no,25,black,yes,not married,no,1
+52,0,yes,30,black,yes,not married,no,2
+52,0,yes,42,black,yes,not married,no,1
+44,1,no,20,black,yes,not married,yes,2
+52,0,yes,23,black,yes,not married,yes,1
+52,0,no,21,black,no,not married,yes,3
+35,1,yes,20,black,yes,not married,no,3
+30,1,no,17,black,no,not married,no,1
+39,1,yes,26,black,no,married,no,5
+52,0,yes,24,black,yes,not married,yes,1
+52,0,no,37,black,yes,married,yes,1
+52,0,no,28,black,yes,married,yes,1
+52,0,no,33,black,yes,not married,yes,0
+19,1,yes,22,black,no,not married,yes,4
+52,0,no,25,black,yes,married,yes,2
+43,1,no,20,other,no,married,no,10
+52,0,no,20,black,no,not married,no,1
+48,1,yes,24,other,yes,not married,no,4
+37,1,yes,26,other,no,not married,no,11
+20,1,yes,26,black,yes,not married,yes,1
+52,0,no,25,other,yes,not married,yes,1
+52,0,no,26,black,yes,not married,yes,1
+36,1,yes,23,black,no,not married,no,3
+52,0,yes,28,black,no,not married,yes,4
+52,0,no,27,black,yes,not married,yes,0
+52,0,yes,23,black,no,not married,no,3
+52,0,no,17,black,no,not married,yes,7
+52,0,no,20,other,no,not married,yes,4
+52,0,yes,20,black,no,not married,yes,5
+52,0,yes,20,other,no,not married,yes,9
+30,1,yes,22,black,yes,not married,yes,2
+52,0,no,31,black,no,not married,yes,1
+52,0,no,43,black,yes,not married,no,1
+52,0,no,29,black,yes,not married,no,1
+52,0,yes,21,black,no,not married,no,0
+52,0,no,24,other,yes,not married,no,2
+52,0,yes,30,black,yes,married,no,3
+52,0,no,22,black,yes,not married,no,0
+52,0,yes,26,black,yes,married,no,1
+42,1,yes,20,black,yes,not married,no,0
+52,0,no,23,black,yes,not married,no,6
+52,0,no,25,black,yes,not married,yes,5
+52,0,yes,40,black,yes,not married,yes,2
+52,0,yes,30,black,yes,married,yes,0
+26,1,no,22,black,no,married,yes,2
+40,1,no,18,black,no,not married,yes,2
+52,0,no,18,black,no,not married,yes,0
+52,0,no,24,black,yes,not married,yes,2
+52,0,yes,25,black,yes,married,yes,2
+35,1,yes,19,black,no,not married,yes,2
+52,0,no,24,black,yes,not married,yes,2
+46,1,no,24,black,no,married,yes,2
+52,0,no,18,black,yes,not married,yes,3
+49,1,yes,18,black,yes,not married,yes,0
+52,0,no,23,black,yes,not married,no,0
+52,0,no,20,black,no,not married,yes,2
+49,1,yes,18,black,yes,not married,yes,1
+52,0,no,23,black,yes,not married,yes,2
+52,0,yes,20,black,no,not married,yes,1
+52,0,no,23,black,no,not married,no,5
+52,0,no,23,black,yes,not married,yes,1
+52,0,no,23,black,yes,married,yes,2
+35,1,no,20,black,yes,not married,yes,4
+52,0,yes,26,black,yes,married,no,4
+52,0,yes,30,black,no,not married,no,1
+52,0,yes,36,other,yes,not married,no,4
+52,0,yes,43,black,yes,not married,no,4
+27,1,no,20,other,yes,not married,no,1
+52,0,yes,24,black,yes,not married,yes,1
+52,0,no,22,black,yes,not married,no,1
+52,0,yes,20,black,no,married,no,1
+52,1,no,21,black,no,not married,no,0
+45,1,yes,18,black,no,not married,no,5
+4,1,no,18,black,yes,not married,no,1
+52,1,no,33,black,yes,not married,yes,2
+36,1,yes,19,black,no,not married,yes,2
+52,0,yes,21,other,yes,not married,yes,1
+52,0,yes,21,black,no,not married,yes,1
+8,1,yes,21,black,yes,not married,yes,4
+15,1,yes,22,black,no,not married,yes,3
+52,0,no,18,black,no,not married,yes,3
+19,1,no,18,black,no,not married,no,2
+52,0,no,24,black,yes,not married,yes,2
+12,1,yes,22,black,yes,married,yes,2
+52,0,yes,31,other,yes,not married,yes,3
+52,0,no,20,black,no,not married,yes,1
+52,0,yes,20,black,yes,married,yes,1
+52,0,no,29,black,yes,not married,yes,3
+52,0,yes,24,black,yes,not married,yes,1
