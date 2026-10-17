@@ -5,7 +5,7 @@ import numpy as np
 from phasedist.mcph import mcph
 from phasedist.rndcph import rndcph
 from phasedist.unif import _unif
-from phasedist.regtools import _stoprule, _aghq
+from phasedist.regtools import _stoprule, _aghq, _quadform
 
 
 class _fitcphreg:
@@ -33,8 +33,14 @@ class _fitcphreg:
         Bladt, M., & Nielsen, B. F. (2017). Matrix-Exponential Distributions in Applied Probability.
         Springer. https://doi.org/10.1007/978-1-4939-7049-0
 
+        Commenges, D., & Andersen, P. K. (1995). Score test of homogeneity for survival
+        data. Lifetime Data Analysis, 1(2), 145-156. https://doi.org/10.1007/BF00985764
+
         Gardner, C. B. (2024). Multivariate Phase-type Distributions in Stochastic Modelling.
         PhD thesis, Technical University of Denmark.
+
+        Lin, X. (1997). Variance component testing in generalised linear models with
+        random effects. Biometrika, 84(2), 309-326. https://doi.org/10.1093/biomet/84.2.309
 
         Meng, X.-L., & Rubin, D. B. (1993). Maximum likelihood estimation via the ECM
         algorithm. Biometrika, 80(2), 267-278. https://doi.org/10.1093/biomet/80.2.267
@@ -205,6 +211,7 @@ class _fitcphreg:
         self.degenerate = False
         self.boundary = False
         self.boundaryscore = None
+        self.sigmascore = None
         self.readapts = 0
         self.iterations = 0
         self.loglikelihood = -np.inf
@@ -1443,6 +1450,72 @@ class _fitcphreg:
         return 0.5 * float(np.sum(np.add.reduceat(d1, self.starts) ** 2
                                   + np.add.reduceat(d2, self.starts)))
 
+    def __sigmascore(self, s: dict) -> dict:
+        """
+        Returns the score test of sigma = 0 at the fixed-effects fit s, see
+        Commenges and Andersen (1995) and Lin (1997). The rows' scores in eta
+        are standardized by their standard deviation, pooled within each kind
+        of row (exact, right-, left- and interval-censored), and the statistic
+        is T = 1/2 sum_j sum_{i != k in j} e_i e_k, the within-group cross
+        products of the standardized scores e. Under sigma = 0 the scores are
+        independent with mean zero, apart from the constraints that the
+        estimated scale and beta put on them, A' D^(1/2) e = 0 with A = [1, X].
+        The p-value is exact for normal scores: with the pooled variance
+        estimated from the same scores, T exceeds its observed value when
+        sum_j S_j^2 / sum_i e_i^2 does (S_j the group sums), and that ratio
+        is a quadratic form whose tail is a weighted sum of chi-square
+        variables, so the few-groups case is covered.
+
+        Args:
+            s (dict): The fixed-effects fit.
+
+        Returns:
+            dict: 'statistic' (T centred and scaled to unit variance under
+                sigma = 0) and 'pvalue'.
+        """
+
+        n = self.n
+        a, _ = self.__rowderivs(s, self.X @ s["beta"])
+        kind = self.kind if self.censored else np.zeros(n, dtype=int)
+
+        # the variance of a row's score, pooled within its kind, with the
+        # degrees of freedom of the scale and beta taken off
+        A = np.column_stack([np.ones(n), self.X])
+        rank = int(np.linalg.matrix_rank(A))
+        d = np.empty(n)
+        for k in np.unique(kind):
+            rows = kind == k
+            d[rows] = np.mean(a[rows] ** 2)
+        d *= n / max(n - rank, 1)
+        e = a / np.sqrt(d)
+
+        # the group sums and the statistic
+        sums = np.add.reduceat(e, self.starts)
+        squares = float(np.sum(e ** 2))
+        T = 0.5 * (float(np.sum(sums ** 2)) - squares)
+
+        # Z'(I - H) Z for H the projection on D^(1/2) A, Z the group indicators:
+        # the scores' covariance is I - H, so the quadratic form e' Z Z' e - c e' e
+        # has the weights mu_k - c (mu the eigenvalues of Z'(I - H) Z) and -c
+        # with the remaining n - rank - J degrees of freedom
+        W = np.sqrt(d)[:, None] * A
+        K = np.linalg.pinv(W.T @ W)
+        groupW = np.add.reduceat(W, self.starts, axis=0)
+        sizes = np.diff(np.r_[self.starts, n]).astype(float)
+        mu = np.linalg.eigvalsh(np.diag(sizes) - groupW @ K @ groupW.T)
+        rest = max(n - rank - self.ngroups, 0)
+        if not np.any(sizes > 1):
+            return dict(statistic=np.nan, pvalue=np.nan)
+
+        ratio = float(np.sum(sums ** 2)) / squares
+        pvalue = _quadform(np.r_[mu - ratio, -ratio], np.r_[np.ones(mu.size), rest]).sf(0.0)
+
+        # T standardized by its moments under sigma = 0, with the weights
+        # (mu_k - 1) / 2 and -1/2
+        moments = _quadform(np.r_[0.5 * (mu - 1.0), -0.5], np.r_[np.ones(mu.size), rest])
+
+        return dict(statistic=(T - moments.mean) / np.sqrt(moments.var), pvalue=pvalue)
+
     def __atboundary(self, s: dict, converged: bool) -> None:
         """
         Ends the fit at sigma = 0 with the fixed-effects parameters s.
@@ -1480,6 +1553,9 @@ class _fitcphreg:
         """
 
         s = dict(self.state)
+
+        # the score test of sigma = 0, at the fixed-effects fit
+        self.sigmascore = self.__sigmascore(s)
 
         # sigma = 0 when the likelihood does not increase away from it
         self.boundaryscore = self.__boundaryscore(s)

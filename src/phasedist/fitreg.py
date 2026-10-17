@@ -31,7 +31,9 @@ class fitreg:
     from the covariates).
     
     The fixed effects of the formula are tested by likelihood-ratio tests (getlrtest,
-    summary), and the individual coefficients by Wald tests (coeftest).
+    summary), and the individual coefficients by Wald tests (coeftest). The random
+    effect is tested by a score test (getsigmatest, summary), see Commenges and
+    Andersen (1995) and Lin (1997).
 
     The data are imported as a pandas DataFrame. A column with the 'category' dtype is
     categorical, and a numeric column is continuous.
@@ -43,6 +45,17 @@ class fitreg:
     References:
         Bladt, M. (2022). Phase-type distributions for claim severity regression modeling.
         ASTIN Bulletin, 52(2), 417-448. https://doi.org/10.1017/asb.2021.40
+
+        Commenges, D., & Andersen, P. K. (1995). Score test of homogeneity for survival
+        data. Lifetime Data Analysis, 1(2), 145-156. https://doi.org/10.1007/BF00985764
+
+        Lin, X. (1997). Variance component testing in generalised linear models with
+        random effects. Biometrika, 84(2), 309-326. https://doi.org/10.1093/biomet/84.2.309
+
+        Self, S. G., & Liang, K.-Y. (1987). Asymptotic properties of maximum likelihood
+        estimators and likelihood ratio tests under nonstandard conditions. Journal of
+        the American Statistical Association, 82(398), 605-610.
+        https://doi.org/10.1080/01621459.1987.10478472
     """
 
     def __init__(
@@ -342,6 +355,36 @@ class fitreg:
         """
         return self.sigma
 
+    def getsigmatest(self, method: str = "score") -> dict:
+        """
+        Return the test of the hypothesis that the random effect std. dev. is
+        zero. The default is a score test computed from the fit without random
+        effect: the products of the rows' scores within each group, referred to
+        their distribution under the hypothesis (a weighted sum of chi-square
+        variables), so the test holds its level also with few groups, see
+        Commenges and Andersen (1995) and Lin (1997). The likelihood-ratio test
+        ("lrt") is referred to 0.5 chi2(0) + 0.5 chi2(1), see Self and Liang
+        (1987), and is conservative with few groups.
+
+        Args:
+            method (str, default="score"): "score" or "lrt".
+
+        Returns:
+            dict: 'method', 'statistic' (the score statistic standardized to
+                mean 0 and variance 1, or the likelihood-ratio statistic) and
+                'pvalue'; None without a random effect or with an invalid method.
+        """
+        if method not in ("score", "lrt"):
+            print("Error: The test of the random effect must be 'score' or 'lrt'.")
+            return None
+        if self.sigma is None:
+            return None
+        if method == "lrt":
+            statistic, pvalue = self.__sigmatest()
+        else:
+            statistic, pvalue = self.d.sigmascore["statistic"], self.d.sigmascore["pvalue"]
+        return dict(method=method, statistic=float(statistic), pvalue=float(pvalue))
+
     def getranef(self) -> dict:
         """
         Return the predicted random effect of each group, its conditional
@@ -579,15 +622,15 @@ class fitreg:
 
         # the random effect and the point mass
         if self.sigma is not None:
-            statistic, pvalue = self.__sigmatest()
+            test = self.getsigmatest()
             if self.boundary:
                 print("Random effect (1|%s): Std. dev. = 0 (at the boundary, i.e. groups vary no more "
                       "than the fixed effects explain)" % self.design.group)
             else:
                 print("Random effect (1|%s): Std. dev. = %.4f (std. err. %.4f)"
                       % (self.design.group, self.sigma, self.sigmastderr))
-            print("  Likelihood-ratio test of std. dev. = 0: LR stat %.2f, p-value %s (against 0.5 chi2(0) + 0.5 chi2(1))"
-                  % (statistic, self.__ptext(pvalue)))
+            print("  Score test of std. dev. = 0: z = %.2f, p-value %s"
+                  % (test["statistic"], self.__ptext(test["pvalue"])))
         if self.nzero:
             print("Probability of observations being zero: p = %.4f (std. err. %.4f)"
                   % (self.zeroprob, np.sqrt(self.zeroprob * (1.0 - self.zeroprob) / self.nobs)))

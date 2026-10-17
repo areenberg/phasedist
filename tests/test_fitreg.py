@@ -38,6 +38,9 @@ Sub-tests:
              independent expm evaluation.
     Case 18: Censoring with a random effect: quadrature likelihood.
     Case 19: Censoring refusals, zeros, simulated p-values, plot.
+    Case 20: The score test of the random effect against a hand computation
+             with dense matrices, uncensored and censored; the
+             likelihood-ratio alternative; refusals.
 
 References:
     Bladt, M. (2022). Phase-type distributions for claim severity regression
@@ -71,6 +74,7 @@ sys.path.insert(
 from phasedist.fitreg import fitreg
 from phasedist.dist import dist
 from phasedist.regdesign import _regformula, _regdesign
+from phasedist.regtools import _quadform
 
 try:
     import pandas as pd
@@ -93,6 +97,8 @@ TOLOPT = 1e-5        # against a numerical optimizer (case 2; measured 1.2e-7)
 TOLRUN = 1e-4        # two runs differing by rounding (case 6; measured 2.3e-6)
 
 STEP = 1e-4          # finite-difference step of the oracles' Hessians
+TOLSCORE = 1e-8      # score test of sigma = 0 against dense matrices, relative (measured 1e-14
+                     # for z; the p-values to the integral's accuracy, 1e-11 absolute)
 TOLSE = 1e-4         # standard errors, relative: the class takes them from a
                      # finite-difference Hessian (measured 3.3e-7 or better)
 
@@ -143,7 +149,7 @@ EXACTBETA = dict(x=0.6, gb=-0.4, gc=0.5, w=0.3, hq=0.3, xgb=0.4, xgc=-0.3, xw=0.
 EXACTSIGMA = 0.8
 
 # every public method of fitreg, checked against the class
-COVEREDMETHODS = {"getcoef", "getstderr", "coeftest", "getwaldtest", "getlrtest", "getsigma", "getzeroprob",
+COVEREDMETHODS = {"getcoef", "getstderr", "coeftest", "getwaldtest", "getlrtest", "getsigma", "getsigmatest", "getzeroprob",
                   "getranef", "getinitdist", "getphasegen", "getexitrates",
                   "getloglik", "getaic", "getbic", "getdist", "getdensity",
                   "getcumprob", "summary", "plot"}
@@ -834,21 +840,32 @@ reachedbest = int(startline[0].split("of which")[1].split()[0])
 if started != len(modelexact.d.startstatus) or not 1 <= reachedbest <= started:
     sys.exit("Validation test failed at case 11: summary reports %d starts with %d at the best, for %d starts." % (started, reachedbest, len(modelexact.d.startstatus)))
 
-# the likelihood-ratio test of the random effect: twice the gain over the
-# fit without (1|u), against 0.5 chi2(0) + 0.5 chi2(1); none at the boundary
+# the likelihood-ratio test of the random effect (getsigmatest('lrt')):
+# twice the gain over the fit without (1|u), against 0.5 chi2(0) + 0.5 chi2(1);
+# none at the boundary
 modelnorandom, _, _ = quietfit(formula="y ~ x", data=DATARANDOMEXACT, **EXACT)
 hand = 2.0 * (modelrandomexact.getloglik() - modelnorandom.getloglik())
-statistic, pvalue = modelrandomexact._fitreg__sigmatest()
-if abs(statistic - hand) > TOLOPT * max(1.0, hand) or abs(pvalue / (0.5 * chi2.sf(hand, 1)) - 1.0) > TOLOPT * max(1.0, hand):
+test = modelrandomexact.getsigmatest("lrt")
+statistic, pvalue = test["statistic"], test["pvalue"]
+if test["method"] != "lrt" or abs(statistic - hand) > TOLOPT * max(1.0, hand) or abs(pvalue / (0.5 * chi2.sf(hand, 1)) - 1.0) > TOLOPT * max(1.0, hand):
     sys.exit("Validation test failed at case 11: the test of sigma = 0 has statistic %.8f and p-value %.3e, against %.8f and %.3e from the fit without the random effect." % (statistic, pvalue, hand, 0.5 * chi2.sf(hand, 1)))
-text = summarytext(modelrandomexact, effecttest=None)
-sigmaline = [line for line in text.splitlines() if "Likelihood-ratio test of std. dev. = 0" in line]
-if len(sigmaline) != 1 or abs(float(sigmaline[0].split("LR stat")[1].split(",")[0]) - hand) > 0.005:
-    sys.exit("Validation test failed at case 11: summary does not report the likelihood-ratio test of sigma = 0.")
-statistic, pvalue = modelzero._fitreg__sigmatest()
-text = summarytext(modelzero, effecttest=None)
-if statistic != 0.0 or pvalue != 1.0 or "LR stat 0.00, p-value 1.000" not in text or "at the boundary" not in text:
-    sys.exit("Validation test failed at case 11: at the boundary sigma = 0 the test of sigma = 0 is not LR 0 with p-value 1.")
+test = modelzero.getsigmatest("lrt")
+if test["statistic"] != 0.0 or test["pvalue"] != 1.0:
+    sys.exit("Validation test failed at case 11: at the boundary sigma = 0 the likelihood-ratio test of sigma = 0 is not 0 with p-value 1.")
+# the summary prints the score test, the default of getsigmatest (case 20),
+# also at the boundary
+for name, fitted in (("the random-effect fit", modelrandomexact), ("the boundary fit", modelzero)):
+    score = fitted.getsigmatest()
+    text = summarytext(fitted, effecttest=None)
+    sigmaline = [line for line in text.splitlines() if "Score test of std. dev. = 0: z = " in line]
+    if score["method"] != "score" or len(sigmaline) != 1 or \
+            abs(float(sigmaline[0].split("z = ")[1].split(",")[0]) - score["statistic"]) > 0.005 or \
+            sigmaline[0].split("p-value ")[1].strip() != ("<0.001" if score["pvalue"] < 0.001 else "%.3f" % score["pvalue"]):
+        sys.exit("Validation test failed at case 11: the summary of %s does not report the score test of sigma = 0." % name)
+    if "Likelihood-ratio test of std. dev." in text:
+        sys.exit("Validation test failed at case 11: the summary of %s still reports the likelihood-ratio test of sigma = 0." % name)
+if "at the boundary" not in summarytext(modelzero, effecttest=None):
+    sys.exit("Validation test failed at case 11: the summary of the boundary fit does not say sigma = 0 is at the boundary.")
 
 buffer = io.StringIO()
 with contextlib.redirect_stdout(buffer):
@@ -1629,6 +1646,96 @@ try:
 finally:
     if os.path.exists(plotfile):
         os.remove(plotfile)
+
+
+# ------------------------------------------------------------------
+# CASE 20: The score test of the random effect
+# ------------------------------------------------------------------
+
+
+def scoretestbyhand(score, kinds, X, groupcodes):
+    """
+    The score test of sigma = 0 with dense matrices, from the rows' scores in
+    eta at the fit without random effect: the scores standardized by their
+    variance pooled within each kind of row (times n / (n - rank [1, X])),
+    e = D^(-1/2) l'; their covariance I - H, H the projection on D^(1/2) A,
+    A = [1, X]; the p-value P(e' S e / e' e >= c) for the observed ratio c, S
+    the same-group indicator (diagonal included), from the eigenvalues of
+    (I - H)(S - c I)(I - H); and T = e' (S - I) e / 2 standardized by the
+    eigenvalues of (I - H)(S - I)(I - H) / 2. Returns the standardized
+    statistic and the p-value.
+    """
+    n = score.size
+    A = np.column_stack([np.ones(n), X])
+    d = np.empty(n)
+    for k in np.unique(kinds):
+        d[kinds == k] = np.mean(score[kinds == k] ** 2)
+    d *= n / (n - np.linalg.matrix_rank(A))
+    e = score / np.sqrt(d)
+    S = (groupcodes[:, None] == groupcodes[None, :]).astype(float)
+    B = np.sqrt(d)[:, None] * A
+    L = np.eye(n) - B @ np.linalg.inv(B.T @ B) @ B.T
+    c = float(e @ S @ e) / float(e @ e)
+    pvalue = _quadform(np.linalg.eigvalsh(L @ (S - c * np.eye(n)) @ L), np.ones(n)).sf(0.0)
+    moments = _quadform(np.linalg.eigvalsh(L @ (0.5 * (S - np.eye(n))) @ L), np.ones(n))
+    T = 0.5 * float(e @ (S - np.eye(n)) @ e)
+    return (T - moments.mean) / np.sqrt(moments.var), pvalue
+
+
+# uncensored: for one phase the score of a row is 1 - lambda exp(x beta) y;
+# on the data of case 2 (sigma = 0.8) and on the same design without group
+# effect, where the p-value is moderate
+yre0 = np.random.default_rng([SEED, 20]).exponential(size=xre.size) / (EXACTRATE * np.exp(EXACTBETA["x"] * xre))
+for label, response0, fitted in (("the data of case 2", yre, modelrandomexact),
+                                 ("data without group effect", yre0,
+                                  quietfit(formula="y ~ x + (1|u)", data=DATARANDOMEXACT.assign(y=yre0), **EXACT)[0])):
+    nogroups, _, _ = quietfit(formula="y ~ x", data=DATARANDOMEXACT.assign(y=response0), **EXACT)
+    rate = -nogroups.getphasegen()[0, 0]
+    scores = 1.0 - rate * np.exp(nogroups.getcoef()["x"] * xre) * response0
+    hand = scoretestbyhand(scores, np.zeros(xre.size), (xre - xre.mean())[:, None], groupsexact)
+    test = fitted.getsigmatest()
+    if test["method"] != "score" or abs(test["statistic"] - hand[0]) > TOLSCORE * max(1.0, abs(hand[0])) or \
+            abs(test["pvalue"] - hand[1]) > TOLSCORE * max(hand[1], 1e-3):
+        sys.exit("Validation test failed at case 20: on %s the score test is z = %.8f, p = %.8e, against %.8f, %.8e by hand." % (label, test["statistic"], test["pvalue"], hand[0], hand[1]))
+    if label == "data without group effect" and not 0.01 < hand[1] < 0.99:
+        sys.exit("Validation test failed at case 20: the data without group effect give the p-value %.4f, not a moderate one." % hand[1])
+# it comes from the fit without random effect, so it exists at the boundary
+test = modelzero.getsigmatest()
+if not (np.isfinite(test["statistic"]) and 0.0 < test["pvalue"] < 1.0):
+    sys.exit("Validation test failed at case 20: the score test of the boundary fit is z = %s, p = %s." % (test["statistic"], test["pvalue"]))
+
+# censored: the scores of right-, left- and interval-censored rows, with r
+# the rate times exp(x beta), and the variance pooled within each kind
+censoredrandom = DATARANDOMEXACT.assign(y=response, lo=lower, hi=upper)
+modelcensnorandom, _, _ = quietfit(formula="y ~ x", data=censoredrandom, censoring=("lo", "hi"), **EXACT)
+r = -modelcensnorandom.getphasegen()[0, 0] * np.exp(modelcensnorandom.getcoef()["x"] * xre)
+scores = np.empty(xre.size)
+e = kindre == 0
+scores[e] = 1.0 - r[e] * lore[e]
+e = kindre == 1
+scores[e] = -r[e] * lore[e]
+e = kindre == 2
+scores[e] = r[e] * lore[e] * np.exp(-r[e] * lore[e]) / -np.expm1(-r[e] * lore[e])
+e = kindre == 3
+sl, su = np.exp(-r[e] * lore[e]), np.exp(-r[e] * upper[e])
+scores[e] = (r[e] * upper[e] * su - r[e] * lore[e] * sl) / (sl - su)
+hand = scoretestbyhand(scores, kindre, (xre - xre.mean())[:, None], groupsexact)
+test = modelrandomcens.getsigmatest()
+if abs(test["statistic"] - hand[0]) > TOLSCORE * max(1.0, abs(hand[0])) or abs(test["pvalue"] - hand[1]) > TOLSCORE * max(hand[1], 1e-3):
+    sys.exit("Validation test failed at case 20: with censoring the score test is z = %.8f, p = %.8e, against %.8f, %.8e by hand." % (test["statistic"], test["pvalue"], hand[0], hand[1]))
+# pooling within kinds matters here (the hand computation with one pooled
+# variance must differ), or the check above has no power (measured: z 7.77
+# against 7.87)
+pooled = scoretestbyhand(scores, np.zeros(xre.size), (xre - xre.mean())[:, None], groupsexact)
+if abs(pooled[0] - hand[0]) < 100 * TOLOPT:
+    sys.exit("Validation test failed at case 20: the censored data do not separate the variances pooled within kinds from one pooled variance.")
+
+# no random effect, or an unknown method: None, with an error for the method
+if quiet(modelexact.getsigmatest)[0] is not None:
+    sys.exit("Validation test failed at case 20: getsigmatest of a model without random effect is not None.")
+result, printed = quiet(modelrandomexact.getsigmatest, "wald")
+if result is not None or "Error" not in printed:
+    sys.exit("Validation test failed at case 20: getsigmatest accepted an unknown method.")
 
 
 print("fitreg: All tests passed.")

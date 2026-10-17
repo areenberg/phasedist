@@ -1,5 +1,6 @@
 import numpy as np
 from numpy.polynomial.hermite import hermgauss
+from scipy.integrate import quad
 
 
 class _stoprule:
@@ -200,3 +201,90 @@ class _aghq:
             weights = np.exp(c - logintegral[:, None])
 
         return logintegral, weights
+
+
+class _quadform:
+    """
+    The distribution of a weighted sum of independent chi-square variables,
+    Q = sum_k w_k chi2(h_k), with weights of either sign, by numerical
+    inversion of its characteristic function, see Imhof (1961).
+
+    Warning: This class does not contain any input checks.
+
+    References:
+        Imhof, J. P. (1961). Computing the distribution of quadratic forms in normal
+        variables. Biometrika, 48(3/4), 419-426. https://doi.org/10.2307/2332763
+    """
+
+    def __init__(self, weights: np.array, dofs: np.array) -> None:
+        """
+        Initializes the distribution.
+
+        Args:
+            weights (ndarray): The weights w_k.
+            dofs (ndarray): The degrees of freedom h_k of each weight.
+        """
+
+        weights = np.asarray(weights, dtype=float).reshape(-1)
+        dofs = np.asarray(dofs, dtype=float).reshape(-1)
+        scale = np.max(np.abs(weights)) if weights.size else 0.0
+        keep = np.abs(weights) > 1e-12 * scale
+        self.weights = weights[keep]
+        self.dofs = dofs[keep]
+        self.mean = float(np.sum(self.dofs * self.weights))
+        self.var = float(2.0 * np.sum(self.dofs * self.weights ** 2))
+
+        return None
+
+    def sf(self, x: float) -> float:
+        """
+        Returns P(Q > x).
+
+        Args:
+            x (float): The point.
+
+        Returns:
+            float: The upper tail probability; NaN if every weight is zero.
+        """
+
+        if not self.weights.size:
+            return np.nan
+        w, h = self.weights, self.dofs
+        omega = 0.5 * x
+
+        # Imhof's integrand sin(phi(u) - omega u) / (u rho(u)), with
+        # phi(u) = sum h arctan(w u) / 2 and rho(u) = prod (1 + w^2 u^2)^(h/4)
+        def phi(u):
+            return 0.5 * np.sum(h * np.arctan(w * u))
+
+        def rho(u):
+            # log(1 + (w u)^2) without overflow at large u
+            return np.exp(0.25 * np.sum(h * np.logaddexp(0.0, 2.0 * np.log(np.abs(w) * u))))
+
+        def integrand(u):
+            if u == 0.0:
+                return 0.5 * (self.mean - x)
+            return np.sin(phi(u) - omega * u) / (u * rho(u))
+
+        # the integrand decays as u^(-1 - sum h / 2) and oscillates with
+        # frequency omega: it is integrated directly up to the larger of the
+        # scale of the weights and 1 / omega, and beyond that as two Fourier
+        # integrals of smooth amplitudes
+        edge = 1.0 / np.max(np.abs(w))
+        head, _ = quad(integrand, 0.0, edge, limit=200, epsabs=1e-12, epsrel=1e-10)
+        if omega == 0.0:
+            tail, _ = quad(integrand, edge, np.inf, limit=1000, epsabs=1e-12, epsrel=1e-10)
+        else:
+            frequency = abs(omega)
+            sign = np.sign(omega)
+            start = max(edge, 1.0 / frequency)
+            if start > edge:
+                # on a logarithmic scale, where the slow decay is smooth
+                head += quad(lambda t: integrand(np.exp(t)) * np.exp(t), np.log(edge), np.log(start),
+                             limit=1000, epsabs=1e-12, epsrel=1e-10)[0]
+            tail = (quad(lambda u: np.sin(phi(u)) / (u * rho(u)), start, np.inf, weight="cos", wvar=frequency,
+                         limlst=200)[0]
+                    - sign * quad(lambda u: np.cos(phi(u)) / (u * rho(u)), start, np.inf, weight="sin", wvar=frequency,
+                                  limlst=200)[0])
+
+        return float(np.clip(0.5 + (head + tail) / np.pi, 0.0, 1.0))
