@@ -14,7 +14,9 @@ Sub-tests:
              a quadrature likelihood, standard errors included.
     Case 3:  Interactions: '*' expansion, x:z = z:x, refusal of incomplete
              three-way interactions, order invariance, design columns.
-    Case 4:  A three-phase fit recovers the effects.
+    Case 4:  A three-phase fit recovers the effects; its standard errors are
+             those of the information with the phase-type parameters
+             profiled out (an independent expm likelihood).
     Case 5:  Variable types from the dtypes; reference level; refusals.
     Case 6:  Shifting a covariate leaves the fit unchanged.
     Case 7:  Random effect on three-phase data; sigma = 0 at the boundary.
@@ -91,7 +93,8 @@ TOLOPT = 1e-5        # against a numerical optimizer (case 2; measured 1.2e-7)
 TOLRUN = 1e-4        # two runs differing by rounding (case 6; measured 2.3e-6)
 
 STEP = 1e-4          # finite-difference step of the oracles' Hessians
-TOLSE = 1e-4         # standard errors, relative (measured 1e-6 or better)
+TOLSE = 1e-4         # standard errors, relative: the class takes them from a
+                     # finite-difference Hessian (measured 3.3e-7 or better)
 
 SEED = 0
 NOBS = 300           # observations of the multi-phase fixed-effects data
@@ -298,7 +301,7 @@ if abs(modelexact.getloglik() - loglik) > TOLEXACT * abs(loglik):
 EXACTCOVARIANCE = np.linalg.inv((design * u[:, None]).T @ design)[1:, 1:]
 stderr = np.sqrt(np.diag(EXACTCOVARIANCE))
 reported = np.array([modelexact.getstderr()[name] for name in HANDNAMES])
-if np.max(np.abs(reported / stderr - 1.0)) > TOLEXACT:
+if np.max(np.abs(reported / stderr - 1.0)) > TOLSE:
     sys.exit("Validation test failed at case 1: the standard errors differ from the observed information of exponential regression by a factor of up to %.3e." % np.max(np.abs(reported / stderr - 1.0)))
 
 
@@ -399,13 +402,15 @@ def byparts(values):
 
 if abs(modelreordered.getloglik() - modelexact.getloglik()) > TOLEXACT * abs(modelexact.getloglik()):
     sys.exit("Validation test failed at case 3: writing the interactions in another order changed the log-likelihood.")
-for getter in ("getcoef", "getstderr", "_getwaldcoeftest"):
+# (the standard errors come from a finite-difference Hessian, whose rounding
+# depends on the order of the columns)
+for getter, tolerance in (("getcoef", TOLEXACT), ("getstderr", TOLSE), ("_getwaldcoeftest", TOLSE)):
     original, reordered = byparts(getattr(modelexact, getter)()), byparts(getattr(modelreordered, getter)())
-    if set(original) != set(reordered) or max(abs(original[k] - reordered[k]) for k in original) > TOLEXACT:
+    if set(original) != set(reordered) or max(abs(original[k] - reordered[k]) for k in original) > tolerance:
         sys.exit("Validation test failed at case 3: writing the interactions in another order changed %s." % getter)
 original = byparts(modelexact.getwaldtest())
 reordered = byparts(modelreordered.getwaldtest())
-if set(original) != set(reordered) or max(abs(original[k][0] - reordered[k][0]) for k in original) > TOLEXACT * 100:
+if set(original) != set(reordered) or max(abs(original[k][0] / reordered[k][0] - 1.0) for k in original) > TOLSE:
     sys.exit("Validation test failed at case 3: writing the interactions in another order changed the effect tests.")
 
 # the design of case 1 is the hand-built one, column by column
@@ -437,6 +442,61 @@ for name, truth in TRUEBETA.items():
         sys.exit("Validation test failed at case 4: the coefficient of %s is %.3f, against a true value of %.3f and a standard error of %.3f." % (name, coef[name], truth, model.getstderr()[name]))
 if model.getsigma() is not None or model.getranef() is not None:
     sys.exit("Validation test failed at case 4: a model without random effect reports a sigma or random effects.")
+
+
+def coxianloglik(v, y, X, nexit, offmask):
+    """
+    Log-likelihood of PH(e_1, exp(x'beta) T) by scipy's expm, for v = (log
+    exit rates, log off-diagonal rates, beta); the initial phase is the first.
+    """
+    p = offmask.shape[0]
+    t = np.exp(v[:p]) if nexit == p else None
+    T = np.zeros((p, p))
+    T[offmask] = np.exp(v[p:p + int(offmask.sum())])
+    np.fill_diagonal(T, -(T.sum(axis=1) + t))
+    beta = v[p + int(offmask.sum()):]
+    scale = np.exp(X @ beta)
+    alive = expm(T[None, :, :] * (scale * y)[:, None, None])[:, 0, :]
+    return float(np.sum(np.log(scale * (alive @ t))))
+
+
+def fdhessian(function, x0, h):
+    """Central-difference Hessian of a function of a vector."""
+    k = x0.size
+    H = np.zeros((k, k))
+    centre = function(x0)
+    for i in range(k):
+        ei = np.zeros(k)
+        ei[i] = h
+        H[i, i] = (function(x0 + 2 * ei) - 2 * centre + function(x0 - 2 * ei)) / (4 * h * h)
+        for j in range(i + 1, k):
+            ej = np.zeros(k)
+            ej[j] = h
+            H[i, j] = H[j, i] = (function(x0 + ei + ej) - function(x0 + ei - ej)
+                                 - function(x0 - ei + ej) + function(x0 - ei - ej)) / (4 * h * h)
+    return H
+
+
+# standard errors: the observed information of the engine's parameters (on
+# the centred, scaled design), with the phase-type rates profiled out. The
+# fitted Coxian must start in phase 1 and use every exit rate, as the oracle assumes.
+engine = model.d
+pifit, Tfit, tfit = np.asarray(engine.pi, dtype=float), np.asarray(engine.phgen, dtype=float), np.asarray(engine.exitrates, dtype=float)
+offmask = (Tfit > 0.0) & ~np.eye(Tfit.shape[0], dtype=bool)
+if abs(pifit[0] - 1.0) > TOL or not np.all(tfit > 0.0):
+    sys.exit("Validation test failed at case 4: the fitted Coxian (pi %s, exit rates %s) is not of the form the oracle assumes." % (pifit, tfit))
+v0 = np.r_[np.log(tfit), np.log(Tfit[offmask]), np.asarray(engine.beta, dtype=float)]
+m = tfit.size + int(offmask.sum())
+H = -fdhessian(lambda v: coxianloglik(v, model.design.y, model.design.Xtilde, tfit.size, offmask), v0, STEP)
+A, B, C = H[m:, m:], H[m:, :m], H[:m, :m]
+oracle = np.sqrt(np.diag(np.linalg.inv(A - B @ np.linalg.solve(C, B.T)))) / model.design.scale
+reported = np.array([model.getstderr()[name] for name in coef])
+if np.max(np.abs(reported / oracle - 1.0)) > TOLSE:
+    sys.exit("Validation test failed at case 4: the standard errors are %s, against %s from the profiled information." % (reported, oracle))
+# the information with (pi, T) held fixed must differ, or the check has no power
+conditional = np.sqrt(np.diag(np.linalg.inv(A))) / model.design.scale
+if np.max(np.abs(conditional / oracle - 1.0)) < 10 * TOLSE:
+    sys.exit("Validation test failed at case 4: the data do not separate the profiled from the conditional information.")
 
 
 # ------------------------------------------------------------------
@@ -721,7 +781,7 @@ for term, index in (("g", [1, 2]), ("x:g", [5, 6]), ("g:h", [8, 9])):
     b = np.array([modelexact.getcoef()[HANDNAMES[k]] for k in index])
     hand = float(b @ np.linalg.solve(EXACTCOVARIANCE[np.ix_(index, index)], b))
     statistic, df, p = tests[term]
-    if df != 2 or abs(statistic / hand - 1.0) > TOLEXACT or abs(p - chi2.sf(hand, 2)) > TOLEXACT:
+    if df != 2 or abs(statistic / hand - 1.0) > TOLSE or abs(p - chi2.sf(statistic, 2)) > TOL:
         sys.exit("Validation test failed at case 11: the Wald test of %s is %.6f, against %.6f by hand." % (term, statistic, hand))
 # effect table: LRT by default, Wald on request, none with effecttest=None
 def termrows(text, header):
@@ -1127,7 +1187,7 @@ def slopesoracle(X, response, model, names, label):
         sys.exit("Validation test failed at case 14: the log-likelihood of %s is %.10f, against %.10f by hand." % (label, model.getloglik(), loglik))
     stderr = np.sqrt(np.diag(np.linalg.inv((full * u[:, None]).T @ full)))[1:]
     reported = np.array([model.getstderr()[name] for name in names])
-    if np.max(np.abs(reported / stderr - 1.0)) > TOLEXACT:
+    if np.max(np.abs(reported / stderr - 1.0)) > TOLSE:
         sys.exit("Validation test failed at case 14: the standard errors of %s differ from those of exponential regression by a factor of up to %.3e." % (label, np.max(np.abs(reported / stderr - 1.0))))
     return estimates
 

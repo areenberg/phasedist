@@ -1643,23 +1643,6 @@ class _fitcphreg:
 
         return values, build
 
-    def __information(self) -> np.array:
-        """
-        Returns the observed information of beta with (pi, T) held at the fit,
-        -X' diag(l'') X on the centred design.
-
-        Args:
-            None
-
-        Returns:
-            ndarray: The information matrix.
-        """
-
-        s = self.state
-        _, d2 = self.__rowderivs(s, self.X @ s["beta"])
-
-        return -(self.X * d2[:, None]).T @ self.X
-
     def __randominformation(self) -> tuple:
         """
         Returns the observed information of the phase-type parameters, beta and
@@ -1707,8 +1690,7 @@ class _fitcphreg:
         """
         Returns the observed information of the phase-type parameters and beta
         of the fixed-effects model by central differences of its
-        log-likelihood. Used with censored rows, where the conditional
-        information is not valid.
+        log-likelihood.
 
         Args:
             None
@@ -1812,10 +1794,8 @@ class _fitcphreg:
         kidentified = k - 1 if self.boundary else k
         self.covariance = np.full((k, k), np.nan)
         if kidentified and self.wantcovariance:
-            if self.censored and (self.groups is None or self.boundary):
+            if self.groups is None or self.boundary:
                 information = self.__profiled(*self.__fixedinformation())
-            elif self.groups is None or self.boundary:
-                information = self.__information()
             else:
                 information = self.__profiled(*self.__randominformation())
             if np.all(np.isfinite(information)) and np.all(np.linalg.eigvalsh(information) > 0.0):

@@ -151,8 +151,8 @@ class fitreg:
     def getstderr(self) -> dict:
         """
         Return the standard errors of the regression coefficients, from the
-        observed information on the centred design; with a random effect
-        the phase-type parameters are profiled out.
+        observed information on the centred design with the phase-type
+        parameters profiled out.
 
         Returns:
             dict: Standard error of each coefficient.
