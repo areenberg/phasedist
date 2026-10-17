@@ -9,10 +9,10 @@ the published numbers are those printed in the vignette of the R package
 ivreg, which documents this regression as Card's Table 2(1). The experience
 terms are printed there only in another form and are not compared.
 
-Application of fitreg from PhaseDist: The wage is positive and the model
-is multiplicative, log(wage) = x'b + error. fitreg fits log(wage) =
--x'beta + log(U) with a phase-type U, so -beta is comparable to the
-published coefficients.
+Application of fitreg from PhaseDist: fitreg models the wage as
+Y | x ~ PH(pi, exp(x'beta) T), so log E(Y | x) = log(mu0) - x'beta, with mu0
+the mean at x = 0. Thus -beta is the change in the log mean wage per unit of
+a covariate, comparable to the published coefficients of log(wage).
 
 Run from the repository root:  python validation/card_1995.py
 
@@ -54,7 +54,7 @@ coef = model.getcoef()
 stderr = model.getstderr()
 
 # Compare
-print("Card (1995), Table 2(1): published OLS vs fitreg (8-phase Coxian)")
+print("Card (1995), Table 2(1): Published OLS vs fitreg (8-phase Coxian)")
 print("fitreg reports -beta, which is comparable to the published coefficients.")
 print()
 print(f"{'':10s} {'published':>19s}   {'fitreg':>19s}")

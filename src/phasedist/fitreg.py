@@ -242,7 +242,7 @@ class fitreg:
 
     def getlrtest(self, effects=None, nsim: int = 0, seed: int = None, confidence: float = 0.95) -> dict:
         """
-        Return the likelihood-ratio test of each fixed effect: the
+        Return the likelihood-ratio test of each fixed effect: The
         model is refitted without the effect's columns, and
         D = 2 (loglik - loglik without the effect) is referred to a chi-square
         distribution. With nsim > 0 the reference distribution is also
@@ -318,7 +318,7 @@ class fitreg:
                     continue
                 full = self.d.loglikelihood
                 if reduced.loglikelihood > full + 1e-6:
-                    # the fit is at a local maximum: refit it from the smaller model
+                    # The fit is at a local maximum: Refit it from the smaller model
                     start = self.__startfrom(reduced)
                     start["beta"] = self.__insert(start["beta"], keep, self.design.d)
                     refit = self.__engine(self.__lrobs, X, self.restarts, self.seed, [start])
@@ -357,22 +357,18 @@ class fitreg:
 
     def getsigmatest(self, method: str = "score") -> dict:
         """
-        Return the test of the hypothesis that the random effect std. dev. is
-        zero. The default is a score test computed from the fit without random
-        effect: the products of the rows' scores within each group, referred to
-        their distribution under the hypothesis (a weighted sum of chi-square
-        variables), so the test holds its level also with few groups, see
-        Commenges and Andersen (1995) and Lin (1997). The likelihood-ratio test
-        ("lrt") is referred to 0.5 chi2(0) + 0.5 chi2(1), see Self and Liang
-        (1987), and is conservative with few groups.
+        Return the test of random effect std. dev. = 0. The default is a score
+        test, which holds its level also with few groups, see Commenges and
+        Andersen (1995) and Lin (1997). The likelihood-ratio test ("lrt") is
+        referred to 0.5 chi2(0) + 0.5 chi2(1), see Self and Liang (1987), and is
+        conservative with few groups.
 
         Args:
             method (str, default="score"): "score" or "lrt".
 
         Returns:
-            dict: 'method', 'statistic' (the score statistic standardized to
-                mean 0 and variance 1, or the likelihood-ratio statistic) and
-                'pvalue'; None without a random effect or with an invalid method.
+            dict: 'method', 'statistic' (standardized score, or likelihood
+                ratio) and 'pvalue'; None without a random effect.
         """
         if method not in ("score", "lrt"):
             print("Error: The test of the random effect must be 'score' or 'lrt'.")
@@ -420,7 +416,7 @@ class fitreg:
 
     def getphasegen(self) -> np.array:
         """
-        Return the baseline phase-type generator: continuous covariates zero,
+        Return the baseline phase-type generator: Continuous covariates zero,
         categorical covariates at their reference levels, random effect zero.
 
         Returns:
@@ -563,7 +559,7 @@ class fitreg:
             print("Error: The seed can only be specified as an integer.")
             return None
 
-        # the likelihood-ratio tests first: they refit the model, which can take
+        # The likelihood-ratio tests first: They refit the model, which can take
         # a while, and getlrtest says so before it starts
         effects = list(self.design.termcolumns)
         if effects and effecttest == "lrt":

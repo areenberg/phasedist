@@ -5,10 +5,10 @@ Study: Hedonic house prices in 506 Boston census tracts. The log median home
 value is regressed on 13 tract characteristics, among them air pollution
 (NOX squared). The variables are built below as in the paper.
 
-Application of fitreg from PhaseDist: The home value is positive and the model
-is multiplicative, log(value) = x'b + error. fitreg fits log(value) =
--x'beta + log(U) with a phase-type U, so -beta is comparable to the published
-coefficients.
+Application of fitreg from PhaseDist: fitreg models the home value as
+Y | x ~ PH(pi, exp(x'beta) T), so log E(Y | x) = log(mu0) - x'beta, with mu0
+the mean at x = 0. Thus -beta is the change in the log mean value per unit of
+a covariate, comparable to the published coefficients of log(value).
 
 Run from the repository root:  python validation/harrison_rubinfeld_1978.py
 (runtime is about 15 minutes)
@@ -79,7 +79,7 @@ coef = model.getcoef()
 stderr = model.getstderr()
 
 # Compare
-print("Harrison and Rubinfeld (1978), Table VII eq. 1: published OLS vs fitreg (30-phase generalized Erlang)")
+print("Harrison and Rubinfeld (1978), Table VII eq. 1: Published OLS vs fitreg (30-phase generalized Erlang)")
 print("fitreg reports -beta, which is comparable to the published coefficients.")
 print()
 print(f"{'':10s} {'published':>20s}   {'fitreg':>20s}")

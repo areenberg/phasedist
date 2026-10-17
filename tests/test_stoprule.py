@@ -47,20 +47,20 @@ stopped = None
 for k in range(5000):
     done = rule.update(geometric(k))
     if k < WINDOW + 1 and rule.eps != np.inf:
-        sys.exit("Validation test failed at case 1: the estimate is finite after %d steps." % (k + 1))
+        sys.exit("Validation test failed at case 1: The estimate is finite after %d steps." % (k + 1))
     if k >= WINDOW + 1 and abs(rule.eps - GAP * RATE ** k) > TOL * GAP:
-        sys.exit("Validation test failed at case 1: the estimate %.3e differs from the remaining gain %.3e." % (rule.eps, GAP * RATE ** k))
+        sys.exit("Validation test failed at case 1: The estimate %.3e differs from the remaining gain %.3e." % (rule.eps, GAP * RATE ** k))
     if done:
         stopped = k
         break
 if stopped is None or LIMIT - geometric(stopped) > TOLERANCE:
-    sys.exit("Validation test failed at case 1: the rule stopped at %s, %.3e from the limit." % (stopped, LIMIT - geometric(stopped or 0)))
+    sys.exit("Validation test failed at case 1: The rule stopped at %s, %.3e from the limit." % (stopped, LIMIT - geometric(stopped or 0)))
 # it fired where the remaining gain first fell below the tolerance, and
 # stopped one confirmation block later
 first = int(np.ceil(np.log(TOLERANCE / GAP) / np.log(RATE)))
 block = max(200, int(np.ceil(0.25 * (first + 1))))
 if stopped != first + block:
-    sys.exit("Validation test failed at case 1: the rule stopped at step %d, not %d (fired at %d, block %d)." % (stopped, first + block, first, block))
+    sys.exit("Validation test failed at case 1: The rule stopped at step %d, not %d (fired at %d, block %d)." % (stopped, first + block, first, block))
 
 
 # ------------------------------------------------------------------
@@ -68,7 +68,7 @@ if stopped != first + block:
 # ------------------------------------------------------------------
 
 # fast to within 4e-7 of a plateau, a plateau of 1e-12 steps, then a slow
-# phase that gains 0.3 more: the plateau fires the estimate, and only the
+# phase that gains 0.3 more: The plateau fires the estimate, and only the
 # confirmation block (which ends inside the slow phase) keeps the rule from
 # stopping 0.3 short
 FAST, PLATEAU = 150, 60
@@ -95,23 +95,23 @@ for k in range(20000):
         stopped = k
         break
 if fired is None or fired > FAST + PLATEAU:
-    sys.exit("Validation test failed at case 2: the estimate did not fire on the plateau (fired at %s)." % fired)
+    sys.exit("Validation test failed at case 2: The estimate did not fire on the plateau (fired at %s)." % fired)
 if stopped is None or trace(20000) - trace(stopped) > TOLERANCE:
-    sys.exit("Validation test failed at case 2: the rule stopped at %s, %.3e short of the limit." % (stopped, trace(20000) - trace(stopped or 0)))
+    sys.exit("Validation test failed at case 2: The rule stopped at %s, %.3e short of the limit." % (stopped, trace(20000) - trace(stopped or 0)))
 
 
 # ------------------------------------------------------------------
 # CASE 3: Iterations, decreases, rate one, reset
 # ------------------------------------------------------------------
 
-# the block is counted in iterations: steps of two iterations each
+# the block is counted in iterations: Steps of two iterations each
 rule = _stoprule(tolerance=TOLERANCE, window=WINDOW)
 for k in range(5000):
     rule.update(geometric(k), iterations=2)
     if rule.confirmstart is not None:
         done = 2 * (k + 1)
         if rule.confirmend != done + max(200, int(np.ceil(0.25 * done))):
-            sys.exit("Validation test failed at case 3: the confirmation block is not counted in iterations.")
+            sys.exit("Validation test failed at case 3: The confirmation block is not counted in iterations.")
         break
 
 # a decrease gives the (negative) step itself; a constant step ratio of one
@@ -121,12 +121,12 @@ for k in range(WINDOW + 1):
     rule.update(float(k))
 rule.update(WINDOW - 0.5)
 if rule.eps != -0.5:
-    sys.exit("Validation test failed at case 3: after a decrease the estimate is %s, not the step -0.5." % rule.eps)
+    sys.exit("Validation test failed at case 3: After a decrease the estimate is %s, not the step -0.5." % rule.eps)
 rule = _stoprule(tolerance=TOLERANCE, window=WINDOW)
 for k in range(WINDOW + 3):
     rule.update(float(k))
 if rule.eps != np.inf:
-    sys.exit("Validation test failed at case 3: with a rate of one the estimate is %s, not infinite." % rule.eps)
+    sys.exit("Validation test failed at case 3: With a rate of one the estimate is %s, not infinite." % rule.eps)
 
 # reset forgets everything
 rule.reset()
@@ -134,7 +134,7 @@ if rule.history or rule.eps != np.inf or rule.confirmstart is not None or rule.c
     sys.exit("Validation test failed at case 3: reset() kept part of the history.")
 rule.update(1.0)
 if rule.eps != np.inf:
-    sys.exit("Validation test failed at case 3: after reset() the estimate is finite at once.")
+    sys.exit("Validation test failed at case 3: After reset() the estimate is finite at once.")
 
 
 print("_stoprule: All tests passed.")

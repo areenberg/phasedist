@@ -38,7 +38,7 @@ class _regformula:
         self.variables = []
         self.group = None
 
-        # a variable name: a letter (any alphabet) or an underscore, then letters,
+        # A variable name: A letter (any alphabet) or an underscore, then letters,
         # digits, underscores or dots; any other name is written in backticks, as in R
         self.namepattern = re.compile(r"^[^\W\d][\w.]*$")
         # a name in backticks is replaced by a placeholder while the formula is parsed
@@ -151,7 +151,7 @@ class _regformula:
             else:
                 found.append((tuple(names), term))
 
-        # every effect once: a repeated effect, written twice or also added by
+        # Every effect once: A repeated effect, written twice or also added by
         # a '*', means the formula is not what was intended (x + y + x*y was
         # probably meant as x + y + x:y); sorted by degree
         terms = []
@@ -197,12 +197,12 @@ class _regformula:
 
 class _regdesign:
     """
-    Builds the design of a phase-type regression from a pandas DataFrame: the
+    Builds the design of a phase-type regression from a pandas DataFrame: The
     response, the design matrix of the fixed effects, and the group codes of a
     random effect. A column with the 'category' dtype is coded by treatment
     dummies against its first category with observations; a numeric column is
     continuous. In an interaction of a continuous x and a categorical w, the
-    main effects may be left out: in 'x + x:w' w has treatment dummies, in
+    main effects may be left out: In 'x + x:w' w has treatment dummies, in
     'x:w' and 'w + x:w' one column per level, as in R. Every column is centred
     and the continuous ones are scaled; backtransform() returns to the scale
     of the data. Censoring limits are read from two columns, lower and
@@ -358,7 +358,7 @@ class _regdesign:
     def __censoring(self) -> None:
         """
         Reads the lower and upper censoring limits and sets the kind of each
-        row: both missing exact, only lower right-censored (Y > lower), only
+        row: Both missing exact, only lower right-censored (Y > lower), only
         upper left-censored (Y <= upper), both interval-censored
         (lower < Y <= upper). An infinite upper limit counts as missing.
 
@@ -405,7 +405,7 @@ class _regdesign:
 
     def __response(self, column) -> np.array:
         """
-        Returns the response with censoring: needed and finite in exact rows,
+        Returns the response with censoring: Needed and finite in exact rows,
         ignored (NaN) in censored rows.
 
         Args:
@@ -485,7 +485,7 @@ class _regdesign:
 
     def __products(self, bases: dict, fullbases: dict) -> np.array:
         """
-        Returns the design matrix: for every effect, the products of the columns of
+        Returns the design matrix: For every effect, the products of the columns of
         its variables.
 
         Args:
@@ -513,7 +513,7 @@ class _regdesign:
 
     def __codings(self) -> dict:
         """
-        Returns how each variable of each effect is coded: a categorical
+        Returns how each variable of each effect is coded: A categorical
         variable by treatment dummies ("contrast") if the effect without it is
         in the model, else by one column per level ("full"), as in R; a
         continuous variable by its values ("numeric"). Only an interaction of
@@ -566,7 +566,7 @@ class _regdesign:
         column = self.__column(self.response)
         if self.__iscategorical(column):
             raise ValueError("The response '%s' must be numeric, not categorical." % self.response)
-        # the censoring of each row: kind 0 exact, 1 right, 2 left, 3 interval,
+        # The censoring of each row: Kind 0 exact, 1 right, 2 left, 3 interval,
         # and the limits [lower, upper], NaN where there is none
         self.kind = None
         self.limits = None

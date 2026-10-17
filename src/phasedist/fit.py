@@ -578,7 +578,7 @@ class fit:
         # zero. The fitted vector is pi; initpi is the start and is spent
         self.d.pi = self.d.pi * (1 - fraczero)
 
-        # The atom makes the model a mixture: an observation is zero with
+        # The atom makes the model a mixture: An observation is zero with
         # probability p, and otherwise phase-type. Its log-likelihood is
         # therefore the phase-type one over the kept observations, which
         # carry a factor 1-p each, plus the zeros' own term. The estimate of

@@ -3,7 +3,7 @@ UNIT TEST FOR THE _aghq CLASS (adaptive Gauss-Hermite quadrature of fitreg).
 
 Sub-tests:
     Case 1: The nodes are mode + sqrt(2) scale x for the Gauss-Hermite points x.
-    Case 2: Exactness: a Gaussian integrand times a polynomial of degree up to
+    Case 2: Exactness: A Gaussian integrand times a polynomial of degree up to
             2R - 1 is integrated exactly; the node weights sum to one and are
             the posterior probabilities of the nodes.
     Case 3: A non-Gaussian integrand (an exponential likelihood times a normal
@@ -41,7 +41,7 @@ for R in (1, 3, 7):
     nodes = rule.nodes(MODES, SCALES)
     if nodes.shape != (MODES.size, R) or \
             np.max(np.abs(nodes - (MODES[:, None] + np.sqrt(2.0) * SCALES[:, None] * points[None, :]))) > TOL:
-        sys.exit("Validation test failed at case 1: the nodes of %d points are wrong." % R)
+        sys.exit("Validation test failed at case 1: The nodes of %d points are wrong." % R)
 
 
 # ------------------------------------------------------------------
@@ -59,18 +59,18 @@ for R in (3, 5, 9):
     logintegrand = np.log(1.0 + d ** 2 + d ** 4) - d ** 2 / (2.0 * SCALES[:, None] ** 2) + c[:, None]
     logintegral, weights = rule.weights(logintegrand, SCALES)
     if np.max(np.abs(logintegral - exact)) > TOL:
-        sys.exit("Validation test failed at case 2: with %d nodes the log-integral is off by %.3e." % (R, np.max(np.abs(logintegral - exact))))
+        sys.exit("Validation test failed at case 2: With %d nodes the log-integral is off by %.3e." % (R, np.max(np.abs(logintegral - exact))))
     posterior = np.exp(logintegrand + np.log(hermgauss(R)[1]) + hermgauss(R)[0] ** 2
                        + np.log(np.sqrt(2.0) * SCALES)[:, None] - logintegral[:, None])
     if np.max(np.abs(weights.sum(axis=1) - 1.0)) > TOL or np.max(np.abs(weights - posterior)) > TOL:
-        sys.exit("Validation test failed at case 2: the node weights do not sum to one or are not the posterior.")
+        sys.exit("Validation test failed at case 2: The node weights do not sum to one or are not the posterior.")
 # with fewer nodes the degree-4 polynomial is not integrated exactly
 rule = _aghq(2)
 nodes = rule.nodes(MODES, SCALES)
 d = nodes - MODES[:, None]
 logintegral, _ = rule.weights(np.log(1.0 + d ** 2 + d ** 4) - d ** 2 / (2.0 * SCALES[:, None] ** 2) + c[:, None], SCALES)
 if np.min(np.abs(logintegral - exact)) < 1e-3:
-    sys.exit("Validation test failed at case 2: two nodes integrated a degree-4 polynomial exactly.")
+    sys.exit("Validation test failed at case 2: Two nodes integrated a degree-4 polynomial exactly.")
 
 
 # ------------------------------------------------------------------
@@ -103,12 +103,12 @@ for R in (5, 11, 21, 31):
     errors.append(abs(value[0] - reference))
 # the error falls with the number of nodes (measured 2e-4, 8e-7, 1e-10, 2e-13)
 if errors[-1] > TOLQUAD or not all(a > b for a, b in zip(errors, errors[1:])):
-    sys.exit("Validation test failed at case 3: the errors against quad for 5, 11, 21 and 31 nodes are %s." % errors)
+    sys.exit("Validation test failed at case 3: The errors against quad for 5, 11, 21 and 31 nodes are %s." % errors)
 
 # the same integrand shifted far down stays finite in logarithms
 value, weights = rule.weights(logintegrand(nodes) - 1e4, np.array([scale]))
 if not np.isfinite(value[0]) or abs(value[0] - (reference - 1e4)) > TOLQUAD * 1e4 or abs(weights.sum() - 1.0) > TOL:
-    sys.exit("Validation test failed at case 3: a tiny integrand did not stay finite in logarithms.")
+    sys.exit("Validation test failed at case 3: A tiny integrand did not stay finite in logarithms.")
 
 
 print("_aghq: All tests passed.")

@@ -45,7 +45,7 @@ class edph:
         Returns the block matrix behind the J-matrix, where
         J(y;pi,T) = sum_{k=0}^{y-2} T^(y-2-k) t pi T^k,
         via the discrete analogue of Theorem A.2.1 (Van Loan) for matrix powers
-        (Theorem A.2.2, p. 714): for the block matrix [[T, t*pi],[0, T]], its
+        (Theorem A.2.2, p. 714): For the block matrix [[T, t*pi],[0, T]], its
         (y-1)-th power has top-left block T^(y-1) and top-right block J(y;pi,T).
         Used in the uncensored N_ij formula (13.14). Requires y >= 1 (for y=1
         this correctly reduces to the zero matrix, since J(1;pi,T) is an empty sum).
@@ -69,7 +69,7 @@ class edph:
         """
         Returns the block matrix behind the M-matrix, where M(y) = sum_{k=0}^{y-1} T^k.
 
-        Via Theorem A.2.2 with block matrix [[T, I],[0, I]]: its y-th power has
+        Via Theorem A.2.2 with block matrix [[T, I],[0, I]]: Its y-th power has
         top-left block T^y and top-right block M(y) (since the (2,2) block must
         be the identity -- not the zero matrix as in the continuous case --
         so that its k-th power stays I for every k, giving a constant factor of
@@ -386,7 +386,7 @@ class edph:
                     or censoring.shape[0] < obs.size):
                 raise ValueError("The censoring array must have two columns and at least one row per observation.")
 
-            # zero is admissible: it is the lower limit of a left-censored
+            # Zero is admissible: It is the lower limit of a left-censored
             # interval
             known = censoring[np.isfinite(censoring)]
 

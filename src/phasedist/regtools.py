@@ -93,7 +93,7 @@ class _stoprule:
             if gain <= self.tolerance:
                 self.converged = True
                 return True
-            # a premature stop: apply the rule again from here
+            # A premature stop: Apply the rule again from here
             self.confirmstart = None
             self.confirmend = None
 
@@ -205,9 +205,8 @@ class _aghq:
 
 class _quadform:
     """
-    The distribution of a weighted sum of independent chi-square variables,
-    Q = sum_k w_k chi2(h_k), with weights of either sign, by numerical
-    inversion of its characteristic function, see Imhof (1961).
+    The tail of Q = sum_k w_k chi2(h_k), weights of either sign, by Imhof's
+    (1961) inversion of its characteristic function.
 
     Warning: This class does not contain any input checks.
 
@@ -252,13 +251,10 @@ class _quadform:
         w, h = self.weights, self.dofs
         omega = 0.5 * x
 
-        # Imhof's integrand sin(phi(u) - omega u) / (u rho(u)), with
-        # phi(u) = sum h arctan(w u) / 2 and rho(u) = prod (1 + w^2 u^2)^(h/4)
         def phi(u):
             return 0.5 * np.sum(h * np.arctan(w * u))
 
         def rho(u):
-            # log(1 + (w u)^2) without overflow at large u
             return np.exp(0.25 * np.sum(h * np.logaddexp(0.0, 2.0 * np.log(np.abs(w) * u))))
 
         def integrand(u):
@@ -266,10 +262,7 @@ class _quadform:
                 return 0.5 * (self.mean - x)
             return np.sin(phi(u) - omega * u) / (u * rho(u))
 
-        # the integrand decays as u^(-1 - sum h / 2) and oscillates with
-        # frequency omega: it is integrated directly up to the larger of the
-        # scale of the weights and 1 / omega, and beyond that as two Fourier
-        # integrals of smooth amplitudes
+        # Directly up to max(1 / max|w|, 1 / omega), then as Fourier integrals
         edge = 1.0 / np.max(np.abs(w))
         head, _ = quad(integrand, 0.0, edge, limit=200, epsabs=1e-12, epsrel=1e-10)
         if omega == 0.0:
@@ -279,7 +272,6 @@ class _quadform:
             sign = np.sign(omega)
             start = max(edge, 1.0 / frequency)
             if start > edge:
-                # on a logarithmic scale, where the slow decay is smooth
                 head += quad(lambda t: integrand(np.exp(t)) * np.exp(t), np.log(edge), np.log(start),
                              limit=1000, epsabs=1e-12, epsrel=1e-10)[0]
             tail = (quad(lambda u: np.sin(phi(u)) / (u * rho(u)), start, np.inf, weight="cos", wvar=frequency,

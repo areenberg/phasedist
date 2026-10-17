@@ -1,5 +1,5 @@
 """
-Comparison with a published Cox regression: recidivism of released prisoners
+Comparison with a published Cox regression: Recidivism of released prisoners
 (Rossi, Berk and Lenihan, 1980), as analysed by Fox and Weisberg (2018).
 
 Study: 432 men released from Maryland state prisons were followed for one
@@ -8,15 +8,14 @@ not arrested and are right-censored at week 52. Fox and Weisberg fit a Cox
 model with financial aid (fin), age, race, work experience (wexp), marital
 status (mar), parole (paro) and the number of prior convictions (prio).
 
-Application of fitreg from PhaseDist: The time to arrest is positive and
-right-censored. fitreg models it as Y | x ~ PH(pi, exp(x'beta) T). A positive
-beta means a higher hazard (a shorter time), as in the Cox model, but beta acts
-on the time scale, not on the hazard. The two coincide for a Weibull baseline,
-where the Cox coefficient is the shape times beta. In general the hazard-scale
-counterpart of beta is kappa * beta, where kappa = d log h(y | x) / d eta is
-averaged over the observed arrest times (kappa is 1 for an exponential
-baseline and the shape for a Weibull). The signs and z values compare
-directly.
+Application of fitreg from PhaseDist: fitreg models the right-censored
+time to arrest as Y | x ~ PH(pi, exp(x'beta) T), so
+log E(Y | x) = log(mu0) - x'beta, with mu0 the mean at x = 0: A positive beta
+shortens the mean time, as a positive Cox coefficient raises the hazard. The
+Cox coefficient acts on the hazard; its counterpart is kappa * beta, with
+kappa = d log h(y | x) / d eta averaged over the observed arrest times (1 for
+an exponential baseline, the shape for a Weibull). The signs and z values
+compare directly.
 
 Run from the repository root:  python validation/rossi_1980.py
 
@@ -52,7 +51,7 @@ data = pd.DataFrame({
     "upper": np.nan,
 })
 
-# Published Cox regression (Fox and Weisberg 2018): coefficient, standard error
+# Published Cox regression (Fox and Weisberg 2018): Coefficient, standard error
 published = {
     "fin": (-0.3794, 0.1914),
     "age": (-0.0574, 0.0220),
@@ -76,7 +75,7 @@ model = fitreg(
 coef = model.getcoef()
 stderr = model.getstderr()
 
-# kappa: the slope of log(u * baseline hazard(u)) in log(u), averaged over the
+# kappa: The slope of log(u * baseline hazard(u)) in log(u), averaged over the
 # transformed arrest times u = exp(x'beta) * week
 baseline = model.getdist()
 
@@ -92,7 +91,7 @@ step = 1.001
 kappa = np.mean([(log_u_hazard(u * step) - log_u_hazard(u / step)) / (2 * np.log(step)) for u in times])
 
 # Compare
-print("Rossi et al. (1980) recidivism: published Cox regression vs fitreg (2-phase Coxian)")
+print("Rossi et al. (1980) recidivism: Published Cox regression vs fitreg (2-phase Coxian)")
 print("Both coefficients are positive for a higher hazard; kappa * beta is fitreg on the hazard scale.")
 print()
 print(f"{'':6s} {'published Cox':>27s}   {'fitreg':>27s}   {'fitreg':>10s}")

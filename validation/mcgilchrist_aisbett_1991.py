@@ -1,27 +1,26 @@
 """
-Comparison with a published random-effect survival model: recurrence of
+Comparison with a published random-effect survival model: Recurrence of
 infections at the catheter insertion point of kidney patients on portable
 dialysis, McGilchrist and Aisbett (1991), as analysed in the Stata manual
 entry for mestreg (Examples 1 and 2).
 
 Study: 38 patients, each with the times to two recurrences of infection
 (76 times, 18 of them right-censored when the catheter was removed for
-other reasons). Covariates: age, and female (sex 2 in the R data). The
+other reasons). Covariates: Age, and female (sex 2 in the R data). The
 published model is a parametric survival model with a normal random
 intercept per patient: Weibull on the accelerated failure time scale
 (mestreg ..., distribution(weibull) time), and the same with a gamma
 distribution. The data are survival::kidney from R (the same data as
 Stata's catheter.dta).
 
-Application of fitreg from PhaseDist: fitreg models Y | x, b ~ PH(pi, exp(x'beta + b) T),
-so log Y = -x'beta - b + log U: An accelerated failure time model with a
-normal random intercept and a phase-type error. The AFT coefficients of
-mestreg compare with -beta, and var(_cons[patient]) with the square of the
-random effect std. dev. The base distributions differ (Weibull or gamma against
-phase-type), so the variance of the random effect, which trades off against
-the spread of the base distribution when every patient has two times, is
-the quantity most sensitive to that choice. The number of phases is chosen
-by AIC.
+Application of fitreg from PhaseDist: fitreg models
+Y | x, b ~ PH(pi, exp(x'beta + b) T), so
+log E(Y | x, b) = log(mu0) - x'beta - b, with mu0 the mean at x = 0 and
+b = 0. The AFT coefficients of mestreg describe log time in the same way and
+compare with -beta, and var(_cons[patient]) with the squared random effect
+std. dev. With two times per patient that variance trades off against the
+spread of the base distribution (Weibull or gamma against phase-type), so it
+depends most on that choice. The number of phases is chosen by AIC.
 
 Run from the repository root:  python validation/mcgilchrist_aisbett_1991.py
 

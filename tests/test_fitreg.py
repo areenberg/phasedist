@@ -3,12 +3,12 @@ UNIT TEST FOR THE fitreg CLASS (phase-type regression from an R-style formula
 on a pandas DataFrame). Statistical
 validation (coverage over many replicates) is kept outside the repository.
 
-Data are simulated from the model: one-phase truths for the exact oracles,
+Data are simulated from the model: One-phase truths for the exact oracles,
 and a three-phase Coxian with distinct rates, built from its raw rates
 without the class, for the smoke tests.
 
 Sub-tests:
-    Case 1:  One phase equals a log-link Gamma GLM (statsmodels): coefficients,
+    Case 1:  One phase equals a log-link Gamma GLM (statsmodels): Coefficients,
              rate, log-likelihood; standard errors equal the exact information.
     Case 2:  One phase with a random effect equals a direct maximization of
              a quadrature likelihood, standard errors included.
@@ -26,17 +26,17 @@ Sub-tests:
     Case 11: summary, plot, AIC/BIC, Wald intervals and tests, coeftest,
              verbose.
     Case 12: Zeros are a point mass; the summary notes the assumption.
-    Case 13: getlrtest: exact statistics, zeros, random effect, simulated
+    Case 13: getlrtest: Exact statistics, zeros, random effect, simulated
              p-values and their simulators (statistical tests).
     Case 14: A slope of x per level of g ('x:g', 'x + x:g'): Gamma GLM,
              reference-level invariance, origin dependence, refusals.
     Case 15: Right-censoring, one phase: Poisson GLM; full-information
              standard errors; likelihood-ratio test.
-    Case 16: All kinds of censoring, one phase: concave direct maximization.
+    Case 16: All kinds of censoring, one phase: Concave direct maximization.
     Case 17: Empty censoring columns give the uncensored fit bit for bit;
              three-phase censored fit; the engine's censored rows against an
              independent expm evaluation.
-    Case 18: Censoring with a random effect: quadrature likelihood.
+    Case 18: Censoring with a random effect: Quadrature likelihood.
     Case 19: Censoring refusals, zeros, simulated p-values, plot.
     Case 20: The score test of the random effect against a hand computation
              with dense matrices, uncensored and censored; the
@@ -56,7 +56,7 @@ import warnings
 import numpy as np
 import matplotlib
 
-# no display needed: case 11 only writes the figure to file
+# no display needed: Case 11 only writes the figure to file
 matplotlib.use("Agg")
 
 from scipy.optimize import minimize
@@ -80,7 +80,7 @@ try:
     import pandas as pd
     import statsmodels.api as sm
 except ImportError:
-    sys.exit("Validation test failed at initialization: the test needs pandas and statsmodels, which are test dependencies.")
+    sys.exit("Validation test failed at initialization: The test needs pandas and statsmodels, which are test dependencies.")
 
 
 # ------------------------------------------------------------------
@@ -99,7 +99,7 @@ TOLRUN = 1e-4        # two runs differing by rounding (case 6; measured 2.3e-6)
 STEP = 1e-4          # finite-difference step of the oracles' Hessians
 TOLSCORE = 1e-8      # score test of sigma = 0 against dense matrices, relative (measured 1e-14
                      # for z; the p-values to the integral's accuracy, 1e-11 absolute)
-TOLSE = 1e-4         # standard errors, relative: the class takes them from a
+TOLSE = 1e-4         # standard errors, relative: The class takes them from a
                      # finite-difference Hessian (measured 3.3e-7 or better)
 
 SEED = 0
@@ -111,7 +111,7 @@ NGROUPSEXACT = 20    # groups of the one-phase random-effect data of case 2
 GROUPSIZEEXACT = 6
 SHIFT = 10.0         # shift of the continuous covariate in case 6
 
-# Case 13: the chi-square p-value (accurate for one phase) must lie in the
+# Case 13: The chi-square p-value (accurate for one phase) must lie in the
 # Clopper-Pearson interval of the simulated one; NCHECKSLR statistical checks
 # share the level ALPHALR (Bonferroni).
 NLR = 200
@@ -123,25 +123,25 @@ NREPLR = 400
 ALPHALR = 0.01
 NCHECKSLR = 5
 
-# Case 14: distinct slopes per level; shifting x by ORIGINSHIFT changed the
+# Case 14: Distinct slopes per level; shifting x by ORIGINSHIFT changed the
 # log-likelihood by 77.6-137.1 over seeds 0-29 (threshold ORIGINGAP).
 SLOPES = {"a": 0.3, "b": -0.5, "c": 0.8}
 SLOPEMEAN = 1.0
 ORIGINSHIFT = -3.0
 ORIGINGAP = 10.0
 
-# Cases 15-19: limits independent of the times: a uniform right-censoring
+# Cases 15-19: Limits independent of the times: A uniform right-censoring
 # limit, or inspections on CENSGRID (exact, right, inspected: CENSSCHEME).
 CENSRIGHT = (0.5, 6.0)
 CENSGRID = np.array([0.0, 0.5, 1.0, 2.0, 4.0, np.inf])
 CENSSCHEME = (0.4, 0.3, 0.3)
 
-# The multi-phase truth: distinct rates, so the phases are not exchangeable
+# The multi-phase truth: Distinct rates, so the phases are not exchangeable
 TRUERATES = np.array([3.0, 1.0, 0.4])
 TRUECONTINUE = np.array([0.6, 0.5])
 TRUEBETA = {"x": 0.8, "g[B]": -0.6, "g[C]": 0.7}
 
-TRUESIGMA = 1.0      # within-group correlation of log Y about 0.3: identifiable
+TRUESIGMA = 1.0      # within-group correlation of log Y about 0.3: Identifiable
 
 # The one-phase truths of cases 1 and 2
 EXACTRATE = 0.5
@@ -155,10 +155,10 @@ COVEREDMETHODS = {"getcoef", "getstderr", "coeftest", "getwaldtest", "getlrtest"
                   "getcumprob", "summary", "plot"}
 publicmethods = {name for name in dir(fitreg) if not name.startswith("_")}
 if publicmethods != COVEREDMETHODS:
-    sys.exit("Validation test failed at initialization: the public methods of fitreg are %s, but the test covers %s." % (sorted(publicmethods), sorted(COVEREDMETHODS)))
+    sys.exit("Validation test failed at initialization: The public methods of fitreg are %s, but the test covers %s." % (sorted(publicmethods), sorted(COVEREDMETHODS)))
 
 if len(set(TRUERATES)) != TRUERATES.size:
-    sys.exit("Validation test failed at initialization: the true rates must stay apart, so that the truth is not exchangeable between phases.")
+    sys.exit("Validation test failed at initialization: The true rates must stay apart, so that the truth is not exchangeable between phases.")
 
 
 # ------------------------------------------------------------------
@@ -215,7 +215,7 @@ def categorical(values, categories=None):
 
 rng = np.random.default_rng(SEED)
 
-# The one-phase data of case 1: two continuous and two categorical
+# The one-phase data of case 1: Two continuous and two categorical
 # covariates, with interactions between all kinds
 xe = rng.normal(size=NEXACT)
 we = rng.uniform(-1.0, 1.0, size=NEXACT)
@@ -238,7 +238,7 @@ intercepts = rng.normal(scale=EXACTSIGMA, size=NGROUPSEXACT)
 yre = rng.exponential(size=groupsexact.size) / (EXACTRATE * np.exp(EXACTBETA["x"] * xre + intercepts[groupsexact]))
 DATARANDOMEXACT = pd.DataFrame({"y": yre, "x": xre, "u": categorical(groupsexact)})
 
-# The multi-phase fixed-effects data: a continuous covariate and a
+# The multi-phase fixed-effects data: A continuous covariate and a
 # three-level categorical
 x = rng.normal(size=NOBS)
 g = rng.choice(["A", "B", "C"], size=NOBS)
@@ -253,7 +253,7 @@ groupintercepts = rng.normal(scale=TRUESIGMA, size=NGROUPS)
 yr = simulatecoxian(groups.size, rng) * np.exp(-(TRUEBETA["x"] * xr + groupintercepts[groups]))
 DATARANDOM = pd.DataFrame({"y": yr, "x": xr, "group": categorical(groups)})
 
-# Case 7 boundary data: rows dealt to groups by their baseline times, so the
+# Case 7 boundary data: Rows dealt to groups by their baseline times, so the
 # groups vary less than chance and sigma-hat is exactly zero
 uz = simulatecoxian(groups.size, rng)
 yz = uz * np.exp(-TRUEBETA["x"] * xr)
@@ -264,13 +264,13 @@ DATANOINTERCEPT = pd.DataFrame({"y": yz, "x": xr, "group": categorical(dealt)})
 
 for frame in (DATAEXACT, DATARANDOMEXACT, DATA, DATARANDOM, DATANOINTERCEPT):
     if not np.all(frame["y"].values > 0):
-        sys.exit("Validation test failed at initialization: the simulated responses are not all positive.")
+        sys.exit("Validation test failed at initialization: The simulated responses are not all positive.")
 if set(g) != {"A", "B", "C"} or set(ge) != {"a", "b", "c"} or set(he) != {"p", "q"}:
-    sys.exit("Validation test failed at initialization: a simulated categorical covariate does not contain all its levels.")
+    sys.exit("Validation test failed at initialization: A simulated categorical covariate does not contain all its levels.")
 # every combination of the interacted factors of case 1 must occur, or the
 # design would be rank deficient for a reason that is not under test
 if len(set(zip(ge, he))) != 6:
-    sys.exit("Validation test failed at initialization: an interaction cell of case 1 is empty.")
+    sys.exit("Validation test failed at initialization: An interaction cell of case 1 is empty.")
 
 COMMON = dict(nphases=3, dtype="coxian", restarts=1, seed=SEED, tolerance=TOLFIT)
 EXACT = dict(nphases=1, restarts=1, seed=SEED, tolerance=TOLTIGHT)
@@ -284,31 +284,31 @@ modelexact, _, _ = quietfit(formula=FORMULAEXACT, data=DATAEXACT, **EXACT)
 coefexact = modelexact.getcoef()
 
 if list(coefexact) != HANDNAMES:
-    sys.exit("Validation test failed at case 1: the coefficients are named %s, not %s." % (list(coefexact), HANDNAMES))
+    sys.exit("Validation test failed at case 1: The coefficients are named %s, not %s." % (list(coefexact), HANDNAMES))
 
-# the oracle: a log-link Gamma GLM, whose estimating equations for the
+# the oracle: A log-link Gamma GLM, whose estimating equations for the
 # coefficients are those of exponential regression whatever the dispersion
 design = np.column_stack([np.ones(NEXACT), HANDX])
 glm = sm.GLM(ye, design, family=sm.families.Gamma(link=sm.families.links.Log())).fit(tol=1e-14, maxiter=1000)
 estimates = np.array([coefexact[name] for name in HANDNAMES])
 
 if np.max(np.abs(estimates + glm.params[1:])) > TOLEXACT:
-    sys.exit("Validation test failed at case 1: the coefficients differ from minus those of the Gamma GLM by %.3e." % np.max(np.abs(estimates + glm.params[1:])))
+    sys.exit("Validation test failed at case 1: The coefficients differ from minus those of the Gamma GLM by %.3e." % np.max(np.abs(estimates + glm.params[1:])))
 rate = -modelexact.getphasegen()[0, 0]
 if abs(rate / np.exp(-glm.params[0]) - 1.0) > TOLEXACT:
-    sys.exit("Validation test failed at case 1: the baseline rate is %.10f, against exp(-intercept) = %.10f." % (rate, np.exp(-glm.params[0])))
+    sys.exit("Validation test failed at case 1: The baseline rate is %.10f, against exp(-intercept) = %.10f." % (rate, np.exp(-glm.params[0])))
 
 # the exact log-likelihood and observed information of exponential regression
 u = rate * np.exp(HANDX @ estimates) * ye
 loglik = np.sum(np.log(rate) + HANDX @ estimates - u)
 if abs(modelexact.getloglik() - loglik) > TOLEXACT * abs(loglik):
-    sys.exit("Validation test failed at case 1: the log-likelihood is %.10f, against %.10f by hand." % (modelexact.getloglik(), loglik))
-# kept for the tests of case 11: the exact covariance of the coefficients
+    sys.exit("Validation test failed at case 1: The log-likelihood is %.10f, against %.10f by hand." % (modelexact.getloglik(), loglik))
+# kept for the tests of case 11: The exact covariance of the coefficients
 EXACTCOVARIANCE = np.linalg.inv((design * u[:, None]).T @ design)[1:, 1:]
 stderr = np.sqrt(np.diag(EXACTCOVARIANCE))
 reported = np.array([modelexact.getstderr()[name] for name in HANDNAMES])
 if np.max(np.abs(reported / stderr - 1.0)) > TOLSE:
-    sys.exit("Validation test failed at case 1: the standard errors differ from the observed information of exponential regression by a factor of up to %.3e." % np.max(np.abs(reported / stderr - 1.0)))
+    sys.exit("Validation test failed at case 1: The standard errors differ from the observed information of exponential regression by a factor of up to %.3e." % np.max(np.abs(reported / stderr - 1.0)))
 
 
 # ------------------------------------------------------------------
@@ -346,11 +346,11 @@ oracle = minimize(randomnegloglik, np.array([0.0, 0.0, np.log(0.5)]), method="Ne
 fitted = np.array([np.log(-modelrandomexact.getphasegen()[0, 0]), modelrandomexact.getcoef()["x"],
                    np.log(modelrandomexact.getsigma())])
 if np.max(np.abs(fitted - oracle.x)) > TOLOPT:
-    sys.exit("Validation test failed at case 2: the random-effect estimates differ from a direct maximization of the quadrature likelihood by %.3e." % np.max(np.abs(fitted - oracle.x)))
+    sys.exit("Validation test failed at case 2: The random-effect estimates differ from a direct maximization of the quadrature likelihood by %.3e." % np.max(np.abs(fitted - oracle.x)))
 if abs(modelrandomexact.getloglik() + oracle.fun) > TOLOPT:
-    sys.exit("Validation test failed at case 2: the marginal log-likelihood is %.8f, against %.8f by quadrature." % (modelrandomexact.getloglik(), -oracle.fun))
+    sys.exit("Validation test failed at case 2: The marginal log-likelihood is %.8f, against %.8f by quadrature." % (modelrandomexact.getloglik(), -oracle.fun))
 
-# standard errors: the inverse Hessian of the oracle, rate included
+# standard errors: The inverse Hessian of the oracle, rate included
 hessian = np.zeros((3, 3))
 for i in range(3):
     ei = np.zeros(3)
@@ -364,7 +364,7 @@ for i in range(3):
 oraclestderr = np.sqrt(np.diag(np.linalg.inv(-hessian)))[1:]
 reported = np.array([modelrandomexact.getstderr()["x"], modelrandomexact.sigmastderr / modelrandomexact.getsigma()])
 if np.max(np.abs(reported / oraclestderr - 1.0)) > TOLSE:
-    sys.exit("Validation test failed at case 2: the standard errors of the coefficient and log(sigma) are %s, against %s from the oracle's information." % (reported, oraclestderr))
+    sys.exit("Validation test failed at case 2: The standard errors of the coefficient and log(sigma) are %s, against %s from the oracle's information." % (reported, oraclestderr))
 
 
 # ------------------------------------------------------------------
@@ -376,13 +376,13 @@ expected = [("x",), ("w",), ("g",), ("x", "w"), ("x", "g"), ("w", "g"), ("x", "w
 if parsed.terms != expected or parsed.group != "u":
     sys.exit("Validation test failed at case 3: 'x*w*g' was parsed as %s, not as every main effect and interaction once." % parsed.terms)
 # an interaction of three variables needs all its lower-order effects (those
-# of two variables are checked by the design, which knows the types: case 14)
+# of two variables are checked by the design, which knows the types: Case 14)
 try:
     _regformula("y ~ x + w + g + x:w + x:g + x:w:g")
-    sys.exit("Validation test failed at case 3: an interaction without its lower-order effect was accepted.")
+    sys.exit("Validation test failed at case 3: An interaction without its lower-order effect was accepted.")
 except ValueError as error:
     if "x*w*g" not in str(error) or "'w:g'" not in str(error):
-        sys.exit("Validation test failed at case 3: the refusal of an incomplete interaction does not say what is missing and how to write it.")
+        sys.exit("Validation test failed at case 3: The refusal of an incomplete interaction does not say what is missing and how to write it.")
 
 # x:z and z:x are one effect, named in the order of first appearance; an
 # effect given twice is refused (test_regformula covers the details)
@@ -407,27 +407,27 @@ def byparts(values):
 
 
 if abs(modelreordered.getloglik() - modelexact.getloglik()) > TOLEXACT * abs(modelexact.getloglik()):
-    sys.exit("Validation test failed at case 3: writing the interactions in another order changed the log-likelihood.")
+    sys.exit("Validation test failed at case 3: Writing the interactions in another order changed the log-likelihood.")
 # (the standard errors come from a finite-difference Hessian, whose rounding
 # depends on the order of the columns)
 for getter, tolerance in (("getcoef", TOLEXACT), ("getstderr", TOLSE), ("_getwaldcoeftest", TOLSE)):
     original, reordered = byparts(getattr(modelexact, getter)()), byparts(getattr(modelreordered, getter)())
     if set(original) != set(reordered) or max(abs(original[k] - reordered[k]) for k in original) > tolerance:
-        sys.exit("Validation test failed at case 3: writing the interactions in another order changed %s." % getter)
+        sys.exit("Validation test failed at case 3: Writing the interactions in another order changed %s." % getter)
 original = byparts(modelexact.getwaldtest())
 reordered = byparts(modelreordered.getwaldtest())
 if set(original) != set(reordered) or max(abs(original[k][0] / reordered[k][0] - 1.0) for k in original) > TOLSE:
-    sys.exit("Validation test failed at case 3: writing the interactions in another order changed the effect tests.")
+    sys.exit("Validation test failed at case 3: Writing the interactions in another order changed the effect tests.")
 
 # the design of case 1 is the hand-built one, column by column
 if np.max(np.abs(modelexact.design.X - HANDX)) > TOL:
-    sys.exit("Validation test failed at case 3: the design matrix with interactions differs from the hand-built one.")
+    sys.exit("Validation test failed at case 3: The design matrix with interactions differs from the hand-built one.")
 
 # a prediction row is the products of the covariate values
 row = modelexact.design.row({"x": 2.0, "w": -0.5, "g": "c", "h": "q"})
 handrow = np.array([2.0, 0.0, 1.0, -0.5, 1.0, 0.0, 2.0, -1.0, 0.0, 1.0])
 if np.max(np.abs(row - handrow)) > TOL:
-    sys.exit("Validation test failed at case 3: the prediction row with interactions is %s, not %s." % (row, handrow))
+    sys.exit("Validation test failed at case 3: The prediction row with interactions is %s, not %s." % (row, handrow))
 
 
 # ------------------------------------------------------------------
@@ -438,16 +438,16 @@ model, _, _ = quietfit(formula="y ~ x + g", data=DATA, **COMMON)
 coef = model.getcoef()
 
 if list(coef) != ["x", "g[B]", "g[C]"]:
-    sys.exit("Validation test failed at case 4: the coefficients are named %s, not after the variable and the non-reference levels." % list(coef))
+    sys.exit("Validation test failed at case 4: The coefficients are named %s, not after the variable and the non-reference levels." % list(coef))
 if not all(np.isfinite(v) for v in coef.values()) or not all(np.isfinite(v) and v > 0 for v in model.getstderr().values()):
-    sys.exit("Validation test failed at case 4: a coefficient or standard error is not finite and positive.")
+    sys.exit("Validation test failed at case 4: A coefficient or standard error is not finite and positive.")
 if not model.converged or not np.isfinite(model.getloglik()):
-    sys.exit("Validation test failed at case 4: the fit did not converge to a finite log-likelihood.")
+    sys.exit("Validation test failed at case 4: The fit did not converge to a finite log-likelihood.")
 for name, truth in TRUEBETA.items():
     if abs(coef[name] - truth) > 4.0 * model.getstderr()[name]:
-        sys.exit("Validation test failed at case 4: the coefficient of %s is %.3f, against a true value of %.3f and a standard error of %.3f." % (name, coef[name], truth, model.getstderr()[name]))
+        sys.exit("Validation test failed at case 4: The coefficient of %s is %.3f, against a true value of %.3f and a standard error of %.3f." % (name, coef[name], truth, model.getstderr()[name]))
 if model.getsigma() is not None or model.getranef() is not None:
-    sys.exit("Validation test failed at case 4: a model without random effect reports a sigma or random effects.")
+    sys.exit("Validation test failed at case 4: A model without random effect reports a sigma or random effects.")
 
 
 def coxianloglik(v, y, X, nexit, offmask):
@@ -483,14 +483,14 @@ def fdhessian(function, x0, h):
     return H
 
 
-# standard errors: the observed information of the engine's parameters (on
+# standard errors: The observed information of the engine's parameters (on
 # the centred, scaled design), with the phase-type rates profiled out. The
 # fitted Coxian must start in phase 1 and use every exit rate, as the oracle assumes.
 engine = model.d
 pifit, Tfit, tfit = np.asarray(engine.pi, dtype=float), np.asarray(engine.phgen, dtype=float), np.asarray(engine.exitrates, dtype=float)
 offmask = (Tfit > 0.0) & ~np.eye(Tfit.shape[0], dtype=bool)
 if abs(pifit[0] - 1.0) > TOL or not np.all(tfit > 0.0):
-    sys.exit("Validation test failed at case 4: the fitted Coxian (pi %s, exit rates %s) is not of the form the oracle assumes." % (pifit, tfit))
+    sys.exit("Validation test failed at case 4: The fitted Coxian (pi %s, exit rates %s) is not of the form the oracle assumes." % (pifit, tfit))
 v0 = np.r_[np.log(tfit), np.log(Tfit[offmask]), np.asarray(engine.beta, dtype=float)]
 m = tfit.size + int(offmask.sum())
 H = -fdhessian(lambda v: coxianloglik(v, model.design.y, model.design.Xtilde, tfit.size, offmask), v0, STEP)
@@ -498,11 +498,11 @@ A, B, C = H[m:, m:], H[m:, :m], H[:m, :m]
 oracle = np.sqrt(np.diag(np.linalg.inv(A - B @ np.linalg.solve(C, B.T)))) / model.design.scale
 reported = np.array([model.getstderr()[name] for name in coef])
 if np.max(np.abs(reported / oracle - 1.0)) > TOLSE:
-    sys.exit("Validation test failed at case 4: the standard errors are %s, against %s from the profiled information." % (reported, oracle))
+    sys.exit("Validation test failed at case 4: The standard errors are %s, against %s from the profiled information." % (reported, oracle))
 # the information with (pi, T) held fixed must differ, or the check has no power
 conditional = np.sqrt(np.diag(np.linalg.inv(A))) / model.design.scale
 if np.max(np.abs(conditional / oracle - 1.0)) < 10 * TOLSE:
-    sys.exit("Validation test failed at case 4: the data do not separate the profiled from the conditional information.")
+    sys.exit("Validation test failed at case 4: The data do not separate the profiled from the conditional information.")
 
 
 # ------------------------------------------------------------------
@@ -514,24 +514,24 @@ modelpq, _, _ = quietfit(formula="y ~ x + h", data=DATAEXACT, **EXACT)
 modelqp, _, _ = quietfit(formula="y ~ x + h",
                          data=DATAEXACT.assign(h=DATAEXACT["h"].cat.reorder_categories(["q", "p"])), **EXACT)
 if list(modelpq.getcoef()) != ["x", "h[q]"] or list(modelqp.getcoef()) != ["x", "h[p]"]:
-    sys.exit("Validation test failed at case 5: the reference level is not the first category.")
+    sys.exit("Validation test failed at case 5: The reference level is not the first category.")
 if abs(modelqp.getcoef()["h[p]"] + modelpq.getcoef()["h[q]"]) > TOLEXACT or \
         abs(modelqp.getcoef()["x"] - modelpq.getcoef()["x"]) > TOLEXACT or \
         abs(modelqp.getloglik() - modelpq.getloglik()) > TOLEXACT * abs(modelpq.getloglik()):
-    sys.exit("Validation test failed at case 5: changing the reference level changed the fit.")
+    sys.exit("Validation test failed at case 5: Changing the reference level changed the fit.")
 # the baseline is now the other level, so the rate absorbs the coefficient
 if abs(np.log(modelqp.getphasegen()[0, 0] / modelpq.getphasegen()[0, 0]) - modelpq.getcoef()["h[q]"]) > TOLEXACT:
-    sys.exit("Validation test failed at case 5: the baseline rate did not move to the new reference level.")
+    sys.exit("Validation test failed at case 5: The baseline rate did not move to the new reference level.")
 
 # unused categories are ignored; integer codes as categories give the same design
 TERMS = [("x",), ("g",)]
 designused = _regdesign(DATA, "y", TERMS)
 designunused = _regdesign(DATA.assign(g=DATA["g"].cat.add_categories(["Z"])), "y", TERMS)
 if designunused.columns != designused.columns or np.max(np.abs(designunused.X - designused.X)) > 0.0:
-    sys.exit("Validation test failed at case 5: an unused category changed the design.")
+    sys.exit("Validation test failed at case 5: An unused category changed the design.")
 designcodes = _regdesign(DATA.assign(g=categorical(DATA["g"].cat.codes.values)), "y", TERMS)
 if designcodes.columns != ["x", "g[1]", "g[2]"] or np.max(np.abs(designcodes.X - designused.X)) > 0.0:
-    sys.exit("Validation test failed at case 5: integer codes with the category dtype are not read as the same categorical variable.")
+    sys.exit("Validation test failed at case 5: Integer codes with the category dtype are not read as the same categorical variable.")
 
 # any other type must be converted first
 # (pandas 1.5 with numpy 1.24 warns inside astype(str) of a categorical)
@@ -556,15 +556,15 @@ for name, arguments in refused.items():
 modelshift, _, _ = quietfit(formula="y ~ x + g", data=DATA.assign(x=DATA["x"] + SHIFT), **COMMON)
 
 if np.max(np.abs(modelshift.design.Xtilde - model.design.Xtilde)) > TOL:
-    sys.exit("Validation test failed at case 6: shifting a covariate changed the centred design.")
+    sys.exit("Validation test failed at case 6: Shifting a covariate changed the centred design.")
 if abs(modelshift.getloglik() - model.getloglik()) > TOLRUN:
-    sys.exit("Validation test failed at case 6: shifting a covariate changed the log-likelihood by %.3e." % abs(modelshift.getloglik() - model.getloglik()))
+    sys.exit("Validation test failed at case 6: Shifting a covariate changed the log-likelihood by %.3e." % abs(modelshift.getloglik() - model.getloglik()))
 if max(abs(modelshift.getcoef()[k] - coef[k]) for k in coef) > TOLRUN:
-    sys.exit("Validation test failed at case 6: shifting a covariate changed the coefficients by %.3e." % max(abs(modelshift.getcoef()[k] - coef[k]) for k in coef))
+    sys.exit("Validation test failed at case 6: Shifting a covariate changed the coefficients by %.3e." % max(abs(modelshift.getcoef()[k] - coef[k]) for k in coef))
 # the shifted model at x = SHIFT is the original at x = 0 (compared as distributions)
 for v in np.quantile(DATA["y"], [0.1, 0.5, 0.9]):
     if abs(modelshift.getcumprob(v, {"x": SHIFT, "g": "A"}) - model.getcumprob(v, {"x": 0.0, "g": "A"})) > TOLRUN:
-        sys.exit("Validation test failed at case 6: the shifted model at x = %g is not the original model at x = 0." % SHIFT)
+        sys.exit("Validation test failed at case 6: The shifted model at x = %g is not the original model at x = 0." % SHIFT)
 
 
 # ------------------------------------------------------------------
@@ -580,30 +580,30 @@ if abs(sigma - TRUESIGMA) > 4.0 * modelrandom.sigmastderr:
     sys.exit("Validation test failed at case 7: sigma is %.3f, against a true value of %.3f and a standard error of %.3f." % (sigma, TRUESIGMA, modelrandom.sigmastderr))
 ranef = modelrandom.getranef()
 if ranef is None or sorted(ranef) != list(range(NGROUPS)) or not all(np.isfinite(v) for v in ranef.values()):
-    sys.exit("Validation test failed at case 7: not every group has a finite predicted intercept.")
+    sys.exit("Validation test failed at case 7: Not every group has a finite predicted intercept.")
 if np.corrcoef([ranef[k] for k in range(NGROUPS)], groupintercepts)[0, 1] < 0.5:
-    sys.exit("Validation test failed at case 7: the predicted intercepts are hardly related to the true ones.")
+    sys.exit("Validation test failed at case 7: The predicted intercepts are hardly related to the true ones.")
 if abs(modelrandom.getcoef()["x"] - TRUEBETA["x"]) > 4.0 * modelrandom.getstderr()["x"]:
-    sys.exit("Validation test failed at case 7: the coefficient of x is not recovered.")
+    sys.exit("Validation test failed at case 7: The coefficient of x is not recovered.")
 
-# at the boundary: the fit without random effect, zero intercepts, a warning,
+# at the boundary: The fit without random effect, zero intercepts, a warning,
 # no standard error for sigma
 modelzero, _, caughtzero = quietfit(formula="y ~ x + (1|group)", data=DATANOINTERCEPT, **COMMON)
 modelnogroup, _, _ = quietfit(formula="y ~ x", data=DATANOINTERCEPT, **COMMON)
 if not modelzero.boundary or modelzero.getsigma() != 0.0:
     sys.exit("Validation test failed at case 7: sigma is %.3g, not zero at the boundary." % modelzero.getsigma())
 if not any("standard deviation of the random effect is zero" in str(w.message) for w in caughtzero):
-    sys.exit("Validation test failed at case 7: the boundary was reached without a warning.")
+    sys.exit("Validation test failed at case 7: The boundary was reached without a warning.")
 if modelzero.sigmastderr is None or np.isfinite(modelzero.sigmastderr):
-    sys.exit("Validation test failed at case 7: a standard error is reported for sigma at the boundary.")
+    sys.exit("Validation test failed at case 7: A standard error is reported for sigma at the boundary.")
 # (the class orders the observations by group, so the two fits see the data
 # in a different order and agree to TOLRUN rather than to rounding)
 if abs(modelzero.getloglik() - modelnogroup.getloglik()) > TOLRUN or \
         abs(modelzero.getcoef()["x"] - modelnogroup.getcoef()["x"]) > TOLRUN or \
         abs(modelzero.getstderr()["x"] - modelnogroup.getstderr()["x"]) > TOLRUN:
-    sys.exit("Validation test failed at case 7: the fit at the boundary is not that of the model without random effect.")
+    sys.exit("Validation test failed at case 7: The fit at the boundary is not that of the model without random effect.")
 if any(v != 0.0 for v in modelzero.getranef().values()):
-    sys.exit("Validation test failed at case 7: a predicted intercept is not zero at the boundary.")
+    sys.exit("Validation test failed at case 7: A predicted intercept is not zero at the boundary.")
 # one parameter more than the model without random effect, as in lme4
 if modelzero.nparam != modelnogroup.nparam + 1:
     sys.exit("Validation test failed at case 7: sigma is not counted as a parameter at the boundary.")
@@ -630,7 +630,7 @@ for v in np.quantile(y, [0.1, 0.5, 0.9]):
     h = 1e-5 * v
     numeric = (model.getcumprob(v + h, covariates) - model.getcumprob(v - h, covariates)) / (2.0 * h)
     if abs(numeric - model.getdensity(v, covariates)) > 1e-6 * max(1.0, numeric):
-        sys.exit("Validation test failed at case 8: the density is not the derivative of the CDF.")
+        sys.exit("Validation test failed at case 8: The density is not the derivative of the CDF.")
 
 # with interactions the linear predictor is the sum over every column
 values = {"x": 2.0, "w": -0.5, "g": "c", "h": "q"}
@@ -638,13 +638,13 @@ etahand = float(handrow @ np.array([modelexact.getcoef()[name] for name in HANDN
 rate = -modelexact.getphasegen()[0, 0]
 for v in (0.3, 1.0, 3.0):
     if abs(modelexact.getcumprob(v, values) - (1.0 - np.exp(-rate * np.exp(etahand) * v))) > 1e-12:
-        sys.exit("Validation test failed at case 8: the CDF with interactions is not the exponential with rate exp(x'beta) times the baseline.")
+        sys.exit("Validation test failed at case 8: The CDF with interactions is not the exponential with rate exp(x'beta) times the baseline.")
 
 label = 3
 withgroup = modelrandom.getdist({"x": 0.0}, group=label)
 expectedgen = np.exp(modelrandom.getranef()[label]) * modelrandom.getphasegen()
 if np.max(np.abs(withgroup.getphasegen() - expectedgen)) > TOL * np.max(np.abs(expectedgen)):
-    sys.exit("Validation test failed at case 8: a group's predicted intercept does not enter the linear predictor.")
+    sys.exit("Validation test failed at case 8: A group's predicted intercept does not enter the linear predictor.")
 
 buffer = io.StringIO()
 with contextlib.redirect_stdout(buffer):
@@ -652,7 +652,7 @@ with contextlib.redirect_stdout(buffer):
            model.getdist({"x": 0.5, "g": "C", "w": 1.0}), model.getdist(group=1),
            modelrandom.getdist(group=NGROUPS + 5)]
 if any(b is not None for b in bad) or buffer.getvalue().count("Error") != len(bad):
-    sys.exit("Validation test failed at case 8: a missing variable, an unknown level, an unknown variable, a group in a model without groups or an unknown group was not refused.")
+    sys.exit("Validation test failed at case 8: A missing variable, an unknown level, an unknown variable, a group in a model without groups or an unknown group was not refused.")
 
 
 # ------------------------------------------------------------------
@@ -712,17 +712,17 @@ for name, arguments in infeasible.items():
     if not terminates(**arguments):
         sys.exit("Validation test failed at case 10: %s did not terminate." % name)
 
-# two random effects: refused, with a message saying that one is supported
+# two random effects: Refused, with a message saying that one is supported
 buffer = io.StringIO()
 with contextlib.redirect_stdout(buffer):
     try:
         fitreg(formula="y ~ x + (1|group) + (1|g)", data=DATARANDOM.assign(g=categorical(np.arange(groups.size) % 7)))
-        sys.exit("Validation test failed at case 10: two random effects were accepted.")
+        sys.exit("Validation test failed at case 10: Two random effects were accepted.")
     except SystemExit as stop:
         if stop.code != 1:
             raise
 if "supports one random effect" not in buffer.getvalue() or "(1|group), (1|g)" not in buffer.getvalue():
-    sys.exit("Validation test failed at case 10: the refusal of two random effects does not say that one is supported.")
+    sys.exit("Validation test failed at case 10: The refusal of two random effects does not say that one is supported.")
 
 # arguments of earlier versions are gone, so passing one is an error
 removed = {"categorical": ["g"], "reference": {"g": "B"}, "inhomogeneity": "weibull"}
@@ -731,7 +731,7 @@ for name, value in removed.items():
         terminates(formula="y ~ x + g", data=DATA, **{name: value})
     except TypeError:
         continue
-    sys.exit("Validation test failed at case 10: the removed argument %s was accepted." % name)
+    sys.exit("Validation test failed at case 10: The removed argument %s was accepted." % name)
 
 
 # ------------------------------------------------------------------
@@ -759,36 +759,36 @@ finally:
 k = (model.getaic() - (-2.0 * model.getloglik())) / 2.0
 if abs(k - round(k)) > TOL or abs(model.getbic() - (-2.0 * model.getloglik() + round(k) * np.log(NOBS))) > TOL:
     sys.exit("Validation test failed at case 11: AIC and BIC do not use the same parameter count.")
-# one phase: the rate and the coefficients, nothing else
+# one phase: The rate and the coefficients, nothing else
 if (modelexact.getaic() + 2.0 * modelexact.getloglik()) / 2.0 != 1 + len(HANDNAMES):
-    sys.exit("Validation test failed at case 11: the one-phase model does not count one rate plus its coefficients.")
+    sys.exit("Validation test failed at case 11: The one-phase model does not count one rate plus its coefficients.")
 
 intervals = model._getwaldconfint(0.9)
 z = norm.ppf(0.95)
 for name in coef:
     lower, upper = intervals[name]
     if abs(lower - (coef[name] - z * model.getstderr()[name])) > TOL or abs(upper - (coef[name] + z * model.getstderr()[name])) > TOL:
-        sys.exit("Validation test failed at case 11: the confidence interval of %s is not the Wald interval." % name)
+        sys.exit("Validation test failed at case 11: The confidence interval of %s is not the Wald interval." % name)
 
-# p-values: two-sided Wald tests of each coefficient
+# p-values: Two-sided Wald tests of each coefficient
 for name, p in model._getwaldcoeftest().items():
     if abs(p - 2.0 * norm.sf(abs(coef[name] / model.getstderr()[name]))) > TOL:
-        sys.exit("Validation test failed at case 11: the p-value of %s is not that of the Wald test." % name)
-# an effect with one coefficient: the square of its z value, with the same p-value
+        sys.exit("Validation test failed at case 11: The p-value of %s is not that of the Wald test." % name)
+# an effect with one coefficient: The square of its z value, with the same p-value
 statistic, df, p = model.getwaldtest()["x"]
 if df != 1 or abs(statistic - (coef["x"] / model.getstderr()["x"]) ** 2) > TOL * statistic or abs(p - model._getwaldcoeftest()["x"]) > TOL:
-    sys.exit("Validation test failed at case 11: the Wald test of a one-coefficient effect is not the square of its z value.")
+    sys.exit("Validation test failed at case 11: The Wald test of a one-coefficient effect is not the square of its z value.")
 # effects with several coefficients, against the exact covariance of the
-# one-phase model of case 1: the levels of g, and the interaction x:g
+# one-phase model of case 1: The levels of g, and the interaction x:g
 tests = modelexact.getwaldtest()
 if list(tests) != ["x", "g", "w", "h", "x:g", "x:w", "g:h"]:
-    sys.exit("Validation test failed at case 11: the effect tests are %s, not one per effect of the formula." % list(tests))
+    sys.exit("Validation test failed at case 11: The effect tests are %s, not one per effect of the formula." % list(tests))
 for term, index in (("g", [1, 2]), ("x:g", [5, 6]), ("g:h", [8, 9])):
     b = np.array([modelexact.getcoef()[HANDNAMES[k]] for k in index])
     hand = float(b @ np.linalg.solve(EXACTCOVARIANCE[np.ix_(index, index)], b))
     statistic, df, p = tests[term]
     if df != 2 or abs(statistic / hand - 1.0) > TOLSE or abs(p - chi2.sf(statistic, 2)) > TOL:
-        sys.exit("Validation test failed at case 11: the Wald test of %s is %.6f, against %.6f by hand." % (term, statistic, hand))
+        sys.exit("Validation test failed at case 11: The Wald test of %s is %.6f, against %.6f by hand." % (term, statistic, hand))
 # effect table: LRT by default, Wald on request, none with effecttest=None
 def termrows(text, header):
     """Returns the rows of the effect table under the given header, as {effect: fields}."""
@@ -820,7 +820,7 @@ rows = termrows(text, LRHEADER)
 if rows is None or list(rows) != ALLTERMS or WALDHEADER in text or "Pr(>|z|)" in text:
     sys.exit("Validation test failed at case 11: summary does not report likelihood-ratio tests of every effect, and only those, by default.")
 # no individual coefficients in the summary (they are in coeftest), but the
-# fit: deviance = -2 log-likelihood, the parameter count by kind, the starts
+# fit: Deviance = -2 log-likelihood, the parameter count by kind, the starts
 if any(line.split()[:1] == [name] for line in text.splitlines() for name in HANDNAMES if "[" in name):
     sys.exit("Validation test failed at case 11: summary reports individual coefficients.")
 fitline = [line for line in text.splitlines() if line.startswith("Log-likelihood:")]
@@ -848,10 +848,10 @@ hand = 2.0 * (modelrandomexact.getloglik() - modelnorandom.getloglik())
 test = modelrandomexact.getsigmatest("lrt")
 statistic, pvalue = test["statistic"], test["pvalue"]
 if test["method"] != "lrt" or abs(statistic - hand) > TOLOPT * max(1.0, hand) or abs(pvalue / (0.5 * chi2.sf(hand, 1)) - 1.0) > TOLOPT * max(1.0, hand):
-    sys.exit("Validation test failed at case 11: the test of sigma = 0 has statistic %.8f and p-value %.3e, against %.8f and %.3e from the fit without the random effect." % (statistic, pvalue, hand, 0.5 * chi2.sf(hand, 1)))
+    sys.exit("Validation test failed at case 11: The test of sigma = 0 has statistic %.8f and p-value %.3e, against %.8f and %.3e from the fit without the random effect." % (statistic, pvalue, hand, 0.5 * chi2.sf(hand, 1)))
 test = modelzero.getsigmatest("lrt")
 if test["statistic"] != 0.0 or test["pvalue"] != 1.0:
-    sys.exit("Validation test failed at case 11: at the boundary sigma = 0 the likelihood-ratio test of sigma = 0 is not 0 with p-value 1.")
+    sys.exit("Validation test failed at case 11: At the boundary sigma = 0 the likelihood-ratio test of sigma = 0 is not 0 with p-value 1.")
 # the summary prints the score test, the default of getsigmatest (case 20),
 # also at the boundary
 for name, fitted in (("the random-effect fit", modelrandomexact), ("the boundary fit", modelzero)):
@@ -861,18 +861,18 @@ for name, fitted in (("the random-effect fit", modelrandomexact), ("the boundary
     if score["method"] != "score" or len(sigmaline) != 1 or \
             abs(float(sigmaline[0].split("z = ")[1].split(",")[0]) - score["statistic"]) > 0.005 or \
             sigmaline[0].split("p-value ")[1].strip() != ("<0.001" if score["pvalue"] < 0.001 else "%.3f" % score["pvalue"]):
-        sys.exit("Validation test failed at case 11: the summary of %s does not report the score test of sigma = 0." % name)
+        sys.exit("Validation test failed at case 11: The summary of %s does not report the score test of sigma = 0." % name)
     if "Likelihood-ratio test of std. dev." in text:
-        sys.exit("Validation test failed at case 11: the summary of %s still reports the likelihood-ratio test of sigma = 0." % name)
+        sys.exit("Validation test failed at case 11: The summary of %s still reports the likelihood-ratio test of sigma = 0." % name)
 if "at the boundary" not in summarytext(modelzero, effecttest=None):
-    sys.exit("Validation test failed at case 11: the summary of the boundary fit does not say sigma = 0 is at the boundary.")
+    sys.exit("Validation test failed at case 11: The summary of the boundary fit does not say sigma = 0 is at the boundary.")
 
 buffer = io.StringIO()
 with contextlib.redirect_stdout(buffer):
     lrexact = modelexact.getlrtest()
 for term, fields in rows.items():
     if abs(float(fields[0]) - lrexact[term]["statistic"]) > 0.005 or int(fields[1]) != lrexact[term]["df"]:
-        sys.exit("Validation test failed at case 11: the summary's likelihood-ratio test of %s is not that of getlrtest." % term)
+        sys.exit("Validation test failed at case 11: The summary's likelihood-ratio test of %s is not that of getlrtest." % term)
 rows = termrows(summarytext(modelexact, effecttest="wald"), WALDHEADER)
 if rows is None or list(rows) != ALLTERMS or any(abs(float(f[0]) - tests[t][0]) > 0.005 for t, f in rows.items()):
     sys.exit("Validation test failed at case 11: summary(effecttest='wald') does not report the Wald tests of the effects.")
@@ -884,7 +884,7 @@ for arguments in (dict(effecttest="score"), dict(nsim=-1), dict(nsim=2, effectte
     if "Error" not in text or "Formula" in text:
         sys.exit("Validation test failed at case 11: summary accepted the arguments %s." % arguments)
 
-# coeftest: the Wald test, standard error and interval of every coefficient,
+# coeftest: The Wald test, standard error and interval of every coefficient,
 # returned and printed
 buffer = io.StringIO()
 with contextlib.redirect_stdout(buffer):
@@ -931,26 +931,26 @@ p0 = iszero.mean()
 n0, npositive = int(iszero.sum()), int((~iszero).sum())
 
 if modelzeros.getzeroprob() != p0 or modelexact.getzeroprob() != 0.0:
-    sys.exit("Validation test failed at case 12: the probability of a zero is %s, not the proportion of zeros %s." % (modelzeros.getzeroprob(), p0))
+    sys.exit("Validation test failed at case 12: The probability of a zero is %s, not the proportion of zeros %s." % (modelzeros.getzeroprob(), p0))
 if max(abs(modelzeros.getcoef()[k] - modelpositive.getcoef()[k]) for k in HANDNAMES) > TOL or \
         max(abs(modelzeros.getstderr()[k] - modelpositive.getstderr()[k]) for k in HANDNAMES) > TOL:
-    sys.exit("Validation test failed at case 12: the regression is not the fit to the positive observations.")
+    sys.exit("Validation test failed at case 12: The regression is not the fit to the positive observations.")
 loglik = modelpositive.getloglik() + n0 * np.log(p0) + npositive * np.log(1.0 - p0)
 if abs(modelzeros.getloglik() - loglik) > TOL * abs(loglik):
-    sys.exit("Validation test failed at case 12: the log-likelihood %.10f leaves out the point mass (%.10f)." % (modelzeros.getloglik(), loglik))
+    sys.exit("Validation test failed at case 12: The log-likelihood %.10f leaves out the point mass (%.10f)." % (modelzeros.getloglik(), loglik))
 k = modelpositive.nparam + 1
 if modelzeros.nparam != k or abs(modelzeros.getaic() - (-2.0 * loglik + 2.0 * k)) > TOL * abs(loglik) or \
         abs(modelzeros.getbic() - (-2.0 * loglik + k * np.log(NEXACT))) > TOL * abs(loglik):
-    sys.exit("Validation test failed at case 12: the point mass is not counted as a parameter, or BIC does not use every observation.")
+    sys.exit("Validation test failed at case 12: The point mass is not counted as a parameter, or BIC does not use every observation.")
 if abs(np.sum(modelzeros.getinitdist()) - (1.0 - p0)) > TOL:
-    sys.exit("Validation test failed at case 12: the initial distribution does not leave the point mass at zero.")
+    sys.exit("Validation test failed at case 12: The initial distribution does not leave the point mass at zero.")
 point = {"x": 0.5, "w": 0.2, "g": "b", "h": "q"}
 if modelzeros.getcumprob(-1.0, point) != 0.0 or abs(modelzeros.getcumprob(0.0, point) - p0) > TOL:
-    sys.exit("Validation test failed at case 12: the CDF is not 0 below zero and p at zero.")
+    sys.exit("Validation test failed at case 12: The CDF is not 0 below zero and p at zero.")
 for v in (0.2, 1.0, 4.0):
     if abs(modelzeros.getcumprob(v, point) - (p0 + (1.0 - p0) * modelpositive.getcumprob(v, point))) > TOL or \
             abs(modelzeros.getdensity(v, point) - (1.0 - p0) * modelpositive.getdensity(v, point)) > TOL:
-        sys.exit("Validation test failed at case 12: the CDF or density is not the mixture with the point mass.")
+        sys.exit("Validation test failed at case 12: The CDF or density is not the mixture with the point mass.")
 buffer = io.StringIO()
 with contextlib.redirect_stdout(buffer):
     modelzeros.summary(effecttest=None)
@@ -977,12 +977,12 @@ modelpositive, _, _ = quietfit(formula="y ~ x + (1|u)", data=randomzeros[~iszero
 p0 = iszero.mean()
 loglik = modelpositive.getloglik() + iszero.sum() * np.log(p0) + (~iszero).sum() * np.log(1.0 - p0)
 if abs(modelzeros.getloglik() - loglik) > TOL * abs(loglik) or abs(modelzeros.getsigma() - modelpositive.getsigma()) > TOL:
-    sys.exit("Validation test failed at case 12: with a random effect the zeros are not a point mass beside the fit to the positive observations.")
+    sys.exit("Validation test failed at case 12: With a random effect the zeros are not a point mass beside the fit to the positive observations.")
 buffer = io.StringIO()
 with contextlib.redirect_stdout(buffer):
     modelzeros.summary(effecttest=None)
 if "Probability of observations being zero: p = %.4f" % p0 not in buffer.getvalue() or ZERONOTE not in buffer.getvalue():
-    sys.exit("Validation test failed at case 12: with a random effect the summary does not report the point mass at zero, or does not note that its probability is assumed constant.")
+    sys.exit("Validation test failed at case 12: With a random effect the summary does not report the point mass at zero, or does not note that its probability is assumed constant.")
 
 
 # ------------------------------------------------------------------
@@ -1011,7 +1011,7 @@ def quiet(function, *arguments, **keywords):
     return result, buffer.getvalue()
 
 
-# exact: the columns of an effect are dropped, whether or not the effect is part of
+# exact: The columns of an effect are dropped, whether or not the effect is part of
 # an interaction (w is part of x:w, g of x:g and g:h)
 lrtests, printed = quiet(modelexact.getlrtest, ["w", "g", "x:g"])
 if printed != "":
@@ -1022,48 +1022,48 @@ for term, index in (("w", [3]), ("g", [1, 2]), ("x:g", [5, 6])):
     hand = 2.0 * (fullloglik - exponentialloglik(HANDX[:, keep], ye))
     test = lrtests[term]
     if test["df"] != len(index) or abs(test["statistic"] - hand) > TOLEXACT * max(1.0, hand):
-        sys.exit("Validation test failed at case 13: the likelihood-ratio statistic of %s is %.10f (%d df), against %.10f (%d df) by hand." % (term, test["statistic"], test["df"], hand, len(index)))
+        sys.exit("Validation test failed at case 13: The likelihood-ratio statistic of %s is %.10f (%d df), against %.10f (%d df) by hand." % (term, test["statistic"], test["df"], hand, len(index)))
     if abs(test["pvalue"] - chi2.sf(test["statistic"], test["df"])) > TOL or "simpvalue" in test:
-        sys.exit("Validation test failed at case 13: the p-value of %s is not the chi-square tail, or a simulated p-value was reported without simulations." % term)
+        sys.exit("Validation test failed at case 13: The p-value of %s is not the chi-square tail, or a simulated p-value was reported without simulations." % term)
 if list(quiet(modelexact.getlrtest)[0]) != list(modelexact.getwaldtest()):
     sys.exit("Validation test failed at case 13: getlrtest does not test every effect of the formula by default.")
 
-# the runtime note: printed (without error) when the refits are expected to
+# the runtime note: Printed (without error) when the refits are expected to
 # take longer than lrnotice, and the tests are unchanged
 modelexact.lrnotice = -1.0
 noted, printed = quiet(modelexact.getlrtest, ["w", "g", "x:g"])
 modelexact.lrnotice = 10.0
 NOTE = "Note: The likelihood-ratio tests are being computed. This can take about "
 if not printed.startswith(NOTE) or not printed.rstrip().endswith(" seconds.") or "summary" in printed:
-    sys.exit("Validation test failed at case 13: the runtime note of getlrtest is '%s'." % printed.strip())
+    sys.exit("Validation test failed at case 13: The runtime note of getlrtest is '%s'." % printed.strip())
 if noted != lrtests:
-    sys.exit("Validation test failed at case 13: the runtime note changed the likelihood-ratio tests.")
+    sys.exit("Validation test failed at case 13: The runtime note changed the likelihood-ratio tests.")
 
-# zeros: the point mass contributes the same factor with and without an effect
+# zeros: The point mass contributes the same factor with and without an effect
 iszero = np.arange(NEXACT) % 10 == 3
 withzeros = DATAEXACT.assign(y=np.where(iszero, 0.0, DATAEXACT["y"]))
 modelzeros, _, _ = quietfit(formula=FORMULAEXACT, data=withzeros, **EXACT)
 modelpositive, _, _ = quietfit(formula=FORMULAEXACT, data=withzeros[~iszero], **EXACT)
-# (getlrtest must print nothing: the point mass must not enter the statistic)
+# (getlrtest must print nothing: The point mass must not enter the statistic)
 (zerotest, printed), (positivetest, _) = quiet(modelzeros.getlrtest, "x:w"), quiet(modelpositive.getlrtest, "x:w")
 zerotest, positivetest = zerotest["x:w"], positivetest["x:w"]
 if printed != "":
-    sys.exit("Validation test failed at case 13: with zeros getlrtest printed '%s'." % printed.strip())
+    sys.exit("Validation test failed at case 13: With zeros getlrtest printed '%s'." % printed.strip())
 if abs(zerotest["statistic"] - positivetest["statistic"]) > TOL * max(1.0, positivetest["statistic"]):
-    sys.exit("Validation test failed at case 13: the likelihood-ratio statistic changes with the zeros (%.10f against %.10f without them)." % (zerotest["statistic"], positivetest["statistic"]))
+    sys.exit("Validation test failed at case 13: The likelihood-ratio statistic changes with the zeros (%.10f against %.10f without them)." % (zerotest["statistic"], positivetest["statistic"]))
 
-# a random effect, and a model left without covariates: the statistic of
+# a random effect, and a model left without covariates: The statistic of
 # x is twice the gain in the marginal log-likelihood over the fit of y ~ (1|u)
 modelonly, _, _ = quietfit(formula="y ~ (1|u)", data=DATARANDOMEXACT, quadnodes=15, **EXACT)
 hand = 2.0 * (modelrandomexact.getloglik() - modelonly.getloglik())
 test = quiet(modelrandomexact.getlrtest, "x")[0]["x"]
 if abs(test["statistic"] - hand) > TOLOPT * max(1.0, hand):
-    sys.exit("Validation test failed at case 13: with a random effect the statistic of x is %.8f, against %.8f from the fit without x." % (test["statistic"], hand))
+    sys.exit("Validation test failed at case 13: With a random effect the statistic of x is %.8f, against %.8f from the fit without x." % (test["statistic"], hand))
 
-# three phases: the model without an effect never ends above the full model
+# three phases: The model without an effect never ends above the full model
 for term, test in quiet(model.getlrtest)[0].items():
     if not test["statistic"] >= 0.0 or not 0.0 <= test["pvalue"] <= 1.0:
-        sys.exit("Validation test failed at case 13: the three-phase test of %s has statistic %s and p-value %s." % (term, test["statistic"], test["pvalue"]))
+        sys.exit("Validation test failed at case 13: The three-phase test of %s has statistic %s and p-value %s." % (term, test["statistic"], test["pvalue"]))
 
 # the simulated p-value, on one-phase data with a moderate effect of w
 lrrng = np.random.default_rng([SEED, 13])
@@ -1079,34 +1079,34 @@ if test["nsim"] != NSIMLR:
     sys.exit("Validation test failed at case 13: %d of %d simulated data sets were fitted." % (test["nsim"], NSIMLR))
 k = test["simpvalue"] * (NSIMLR + 1) - 1
 if abs(k - round(k)) > 1e-9 or not 0 <= round(k) <= NSIMLR:
-    sys.exit("Validation test failed at case 13: the simulated p-value %.6f is not (1 + k) / (nsim + 1)." % test["simpvalue"])
+    sys.exit("Validation test failed at case 13: The simulated p-value %.6f is not (1 + k) / (nsim + 1)." % test["simpvalue"])
 k = int(round(k))
 lower = 0.0 if k == 0 else beta_dist.ppf(levellr / 2.0, k, NSIMLR - k + 1)
 upper = 1.0 if k == NSIMLR else beta_dist.ppf(1.0 - levellr / 2.0, k + 1, NSIMLR - k)
 if abs(test["siminterval"][0] - lower) > TOL or abs(test["siminterval"][1] - upper) > TOL:
-    sys.exit("Validation test failed at case 13: the Monte Carlo interval is not the Clopper-Pearson interval at the requested level.")
+    sys.exit("Validation test failed at case 13: The Monte Carlo interval is not the Clopper-Pearson interval at the requested level.")
 if not lower <= test["pvalue"] <= upper:
-    sys.exit("Validation test failed at case 13: the chi-square p-value %.4f of w lies outside the Monte Carlo interval [%.4f, %.4f] of the simulated p-value." % (test["pvalue"], lower, upper))
+    sys.exit("Validation test failed at case 13: The chi-square p-value %.4f of w lies outside the Monte Carlo interval [%.4f, %.4f] of the simulated p-value." % (test["pvalue"], lower, upper))
 again = quiet(modellr.getlrtest, "w", nsim=3, seed=SEED + 1)[0]["w"]
 twice = quiet(modellr.getlrtest, "w", nsim=3, seed=SEED + 1)[0]["w"]
 if again["simpvalue"] != twice["simpvalue"] or again["statistic"] != test["statistic"]:
-    sys.exit("Validation test failed at case 13: the simulated p-value is not reproducible with its seed.")
+    sys.exit("Validation test failed at case 13: The simulated p-value is not reproducible with its seed.")
 
-# Clopper-Pearson by hand: closed forms at k = 0 and k = m, tables in between
+# Clopper-Pearson by hand: Closed forms at k = 0 and k = m, tables in between
 for k, m, level in ((0, 20, 0.9), (20, 20, 0.9), (3, 20, 0.95), (7, 11, 0.99)):
     lower, upper = fitreg._fitreg__clopperpearson(k, m, level)
     a = 1.0 - level
     handlower = 0.0 if k == 0 else (a / 2.0) ** (1.0 / m) if k == m else beta_dist.ppf(a / 2.0, k, m - k + 1)
     handupper = 1.0 if k == m else 1.0 - (a / 2.0) ** (1.0 / m) if k == 0 else beta_dist.ppf(1.0 - a / 2.0, k + 1, m - k)
     if abs(lower - handlower) > TOL or abs(upper - handupper) > TOL:
-        sys.exit("Validation test failed at case 13: the Clopper-Pearson interval for %d of %d at %.2f is (%.6f, %.6f), against (%.6f, %.6f)." % (k, m, level, lower, upper, handlower, handupper))
+        sys.exit("Validation test failed at case 13: The Clopper-Pearson interval for %d of %d at %.2f is (%.6f, %.6f), against (%.6f, %.6f)." % (k, m, level, lower, upper, handlower, handupper))
 # a binomial count inside: k = 3 of 20 at 95% is (0.0321, 0.3789) by the
 # tables of the exact interval
 lower, upper = fitreg._fitreg__clopperpearson(3, 20, 0.95)
 if abs(lower - 0.0321) > 5e-5 or abs(upper - 0.3789) > 5e-5:
-    sys.exit("Validation test failed at case 13: the Clopper-Pearson interval for 3 of 20 is (%.4f, %.4f), not (0.0321, 0.3789)." % (lower, upper))
+    sys.exit("Validation test failed at case 13: The Clopper-Pearson interval for 3 of 20 is (%.4f, %.4f), not (0.0321, 0.3789)." % (lower, upper))
 
-# the absorption-time simulator: mean (t interval) and distribution (chi-square)
+# the absorption-time simulator: Mean (t interval) and distribution (chi-square)
 truet = -np.diag(TRUERATES)
 for i in range(TRUERATES.size - 1):
     truet[i, i + 1] = TRUECONTINUE[i] * TRUERATES[i]
@@ -1115,7 +1115,7 @@ draws = fitreg._fitreg__simulateph(truepi, truet, NDRAWS, np.random.default_rng(
 truemean = float(truepi @ np.linalg.solve(-truet, np.ones(TRUERATES.size)))
 half = t_dist.ppf(1.0 - levellr / 2.0, NDRAWS - 1) * np.std(draws, ddof=1) / np.sqrt(NDRAWS)
 if abs(np.mean(draws) - truemean) > half:
-    sys.exit("Validation test failed at case 13: the simulated absorption times have mean %.4f, against %.4f (half-width %.4f)." % (np.mean(draws), truemean, half))
+    sys.exit("Validation test failed at case 13: The simulated absorption times have mean %.4f, against %.4f (half-width %.4f)." % (np.mean(draws), truemean, half))
 truecdf = lambda v: 1.0 - truepi @ expm(truet * v) @ np.ones(TRUERATES.size)
 edges = [0.0]
 for q in np.arange(1, NBINSLR) / NBINSLR:
@@ -1127,10 +1127,10 @@ for q in np.arange(1, NBINSLR) / NBINSLR:
 counts = np.histogram(draws, bins=np.r_[edges, np.inf])[0]
 expected = NDRAWS / NBINSLR
 if expected < 5 or NBINSLR - 1 < 2:
-    sys.exit("Validation test failed at case 13: the chi-square test of the simulator has too few expected counts or degrees of freedom.")
+    sys.exit("Validation test failed at case 13: The chi-square test of the simulator has too few expected counts or degrees of freedom.")
 statistic = float(np.sum((counts - expected) ** 2 / expected))
 if statistic > chi2.ppf(1.0 - levellr, NBINSLR - 1):
-    sys.exit("Validation test failed at case 13: the simulated absorption times do not follow the Coxian (chi-square %.2f on %d df)." % (statistic, NBINSLR - 1))
+    sys.exit("Validation test failed at case 13: The simulated absorption times do not follow the Coxian (chi-square %.2f on %d df)." % (statistic, NBINSLR - 1))
 
 # the response simulator: z = log(y) + eta0 has mean -gamma - log(RATE), and its
 # group means variance SIGMA^2 + (pi^2/6)/(group size)
@@ -1150,7 +1150,7 @@ for label, values, theory in (("mean of log(y) + eta", means, -np.euler_gamma - 
                               ("variance of the group means", variances, simsigma ** 2 + (np.pi ** 2 / 6.0) / GROUPSIZEEXACT)):
     half = t_dist.ppf(1.0 - levellr / 2.0, NREPLR - 1) * np.std(values, ddof=1) / np.sqrt(NREPLR)
     if abs(np.mean(values) - theory) > half:
-        sys.exit("Validation test failed at case 13: the simulated responses have %s %.4f, against %.4f (half-width %.4f)." % (label, np.mean(values), theory, half))
+        sys.exit("Validation test failed at case 13: The simulated responses have %s %.4f, against %.4f (half-width %.4f)." % (label, np.mean(values), theory, half))
 
 # the simulated p-value in the summary is that of getlrtest with the same seed
 modelsummary, _, _ = quietfit(formula="y ~ x + g", data=DATAEXACT, nphases=1, restarts=1, seed=SEED, tolerance=TOLFIT)
@@ -1158,7 +1158,7 @@ rows = termrows(summarytext(modelsummary, nsim=3, seed=SEED), LRHEADER)
 direct = quiet(modelsummary.getlrtest, "g", nsim=3, seed=SEED)[0]["g"]
 if rows is None or len(rows["g"]) != 6 or abs(float(rows["g"][3]) - direct["simpvalue"]) > 5e-5 or \
         abs(float(rows["g"][4]) - direct["siminterval"][0]) > 5e-5 or abs(float(rows["g"][5]) - direct["siminterval"][1]) > 5e-5:
-    sys.exit("Validation test failed at case 13: the summary's simulated p-value is not that of getlrtest with the same seed.")
+    sys.exit("Validation test failed at case 13: The summary's simulated p-value is not that of getlrtest with the same seed.")
 
 # bad arguments are refused with a message and no result
 for arguments in (dict(effects="z"), dict(effects=["x", 3]), dict(effects=5), dict(nsim=-1), dict(nsim=2.5),
@@ -1176,7 +1176,7 @@ sloperng = np.random.default_rng([SEED, 14])
 xs = SLOPEMEAN + sloperng.normal(size=NEXACT)
 gs = sloperng.choice(["a", "b", "c"], size=NEXACT)
 if set(gs) != set(SLOPES):
-    sys.exit("Validation test failed at case 14: the simulated g does not contain all its levels.")
+    sys.exit("Validation test failed at case 14: The simulated g does not contain all its levels.")
 levelcols = np.column_stack([(gs == level) * 1.0 for level in ("a", "b", "c")])
 ys = sloperng.exponential(size=NEXACT) / (EXACTRATE * np.exp(xs * (levelcols @ np.array([SLOPES[k] for k in "abc"]))))
 DATASLOPES = pd.DataFrame({"y": ys, "x": xs, "g": categorical(gs)})
@@ -1185,27 +1185,27 @@ DATASLOPES = pd.DataFrame({"y": ys, "x": xs, "g": categorical(gs)})
 def slopesoracle(X, response, model, names, label):
     """
     Checks a one-phase fit against exponential regression on the hand-built
-    columns X: the coefficients are minus those of a log-link Gamma GLM, and
+    columns X: The coefficients are minus those of a log-link Gamma GLM, and
     the log-likelihood and standard errors are those of exponential
     regression at the estimates.
     """
     coef = model.getcoef()
     if list(coef) != names:
-        sys.exit("Validation test failed at case 14: the coefficients of %s are named %s, not %s." % (label, list(coef), names))
+        sys.exit("Validation test failed at case 14: The coefficients of %s are named %s, not %s." % (label, list(coef), names))
     full = np.column_stack([np.ones(response.size), X])
     oracle = sm.GLM(response, full, family=sm.families.Gamma(link=sm.families.links.Log())).fit(tol=1e-14, maxiter=1000)
     estimates = np.array([coef[name] for name in names])
     if np.max(np.abs(estimates + oracle.params[1:])) > TOLEXACT:
-        sys.exit("Validation test failed at case 14: the coefficients of %s differ from minus those of the Gamma GLM by %.3e." % (label, np.max(np.abs(estimates + oracle.params[1:]))))
+        sys.exit("Validation test failed at case 14: The coefficients of %s differ from minus those of the Gamma GLM by %.3e." % (label, np.max(np.abs(estimates + oracle.params[1:]))))
     rate = -model.getphasegen()[0, 0]
     u = rate * np.exp(X @ estimates) * response
     loglik = np.sum(np.log(rate) + X @ estimates - u)
     if abs(model.getloglik() - loglik) > TOLEXACT * abs(loglik):
-        sys.exit("Validation test failed at case 14: the log-likelihood of %s is %.10f, against %.10f by hand." % (label, model.getloglik(), loglik))
+        sys.exit("Validation test failed at case 14: The log-likelihood of %s is %.10f, against %.10f by hand." % (label, model.getloglik(), loglik))
     stderr = np.sqrt(np.diag(np.linalg.inv((full * u[:, None]).T @ full)))[1:]
     reported = np.array([model.getstderr()[name] for name in names])
     if np.max(np.abs(reported / stderr - 1.0)) > TOLSE:
-        sys.exit("Validation test failed at case 14: the standard errors of %s differ from those of exponential regression by a factor of up to %.3e." % (label, np.max(np.abs(reported / stderr - 1.0))))
+        sys.exit("Validation test failed at case 14: The standard errors of %s differ from those of exponential regression by a factor of up to %.3e." % (label, np.max(np.abs(reported / stderr - 1.0))))
     return estimates
 
 
@@ -1216,17 +1216,17 @@ def levelslopes(coef, levels):
     return {level: coef["x:g[%s]" % level] for level in levels}
 
 
-# 'x:g': one column per level, since g alone is not in the model
+# 'x:g': One column per level, since g alone is not in the model
 modelfull, _, _ = quietfit(formula="y ~ x:g", data=DATASLOPES, **EXACT)
 slopesoracle(xs[:, None] * levelcols, ys, modelfull, ["x:g[a]", "x:g[b]", "x:g[c]"], "'y ~ x:g'")
 
-# 'x + x:g': the common slope and the differences against the reference level,
+# 'x + x:g': The common slope and the differences against the reference level,
 # since x alone is in the model
 modelcontrast, _, _ = quietfit(formula="y ~ x + x:g", data=DATASLOPES, **EXACT)
 slopesoracle(np.column_stack([xs, xs * levelcols[:, 1], xs * levelcols[:, 2]]), ys, modelcontrast,
              ["x", "x:g[b]", "x:g[c]"], "'y ~ x + x:g'")
 
-# the two are one model: the same likelihood and the same slope for each level
+# the two are one model: The same likelihood and the same slope for each level
 if abs(modelfull.getloglik() - modelcontrast.getloglik()) > TOLEXACT * abs(modelfull.getloglik()):
     sys.exit("Validation test failed at case 14: 'y ~ x:g' and 'y ~ x + x:g' have different log-likelihoods.")
 slopesfull = levelslopes(modelfull.getcoef(), "abc")
@@ -1243,7 +1243,7 @@ slopesoracle(np.column_stack([levelcols[:, 1:], xs[:, None] * levelcols]), ys, m
 if abs(modelwithg.getloglik() - modelstar.getloglik()) > TOLEXACT * abs(modelstar.getloglik()):
     sys.exit("Validation test failed at case 14: 'y ~ g + x:g' is not the model 'y ~ x*g'.")
 
-# the reference level of g does not matter: with c first the fit is the same,
+# the reference level of g does not matter: With c first the fit is the same,
 # slope for slope, and in 'x + x:g' the coefficient of x is now the slope of c
 reordered = DATASLOPES.assign(g=DATASLOPES["g"].cat.reorder_categories(["c", "a", "b"]))
 for formula, original in (("y ~ x:g", slopesfull), ("y ~ x + x:g", slopescontrast)):
@@ -1253,14 +1253,14 @@ for formula, original in (("y ~ x:g", slopesfull), ("y ~ x + x:g", slopescontras
             max(abs(slopes[k] - original[k]) for k in "abc") > TOLEXACT:
         sys.exit("Validation test failed at case 14: '%s' depends on the reference level of g." % formula)
     if formula == "y ~ x + x:g" and (list(model.getcoef()) != ["x", "x:g[a]", "x:g[b]"] or abs(model.getcoef()["x"] - original["c"]) > TOLEXACT):
-        sys.exit("Validation test failed at case 14: with c as the reference level, 'y ~ x + x:g' is not coded against c.")
+        sys.exit("Validation test failed at case 14: With c as the reference level, 'y ~ x + x:g' is not coded against c.")
 
-# the fit depends on the origin of x: on a shifted x it is the GLM on shifted columns
+# the fit depends on the origin of x: On a shifted x it is the GLM on shifted columns
 shifted = xs + ORIGINSHIFT
 modelshifted, _, _ = quietfit(formula="y ~ x:g", data=DATASLOPES.assign(x=shifted), **EXACT)
 slopesoracle(shifted[:, None] * levelcols, ys, modelshifted, ["x:g[a]", "x:g[b]", "x:g[c]"], "'y ~ x:g' on a shifted x")
 if abs(modelshifted.getloglik() - modelfull.getloglik()) < ORIGINGAP:
-    sys.exit("Validation test failed at case 14: shifting x changed the log-likelihood by only %.3f, so the fit does not depend on the origin of x." % abs(modelshifted.getloglik() - modelfull.getloglik()))
+    sys.exit("Validation test failed at case 14: Shifting x changed the log-likelihood by only %.3f, so the fit does not depend on the origin of x." % abs(modelshifted.getloglik() - modelfull.getloglik()))
 
 # a prediction row follows the coding, and so does the CDF
 for model, covariates, handrow in ((modelfull, {"x": 2.0, "g": "b"}, [0.0, 2.0, 0.0]),
@@ -1269,17 +1269,17 @@ for model, covariates, handrow in ((modelfull, {"x": 2.0, "g": "b"}, [0.0, 2.0, 
                                    (modelwithg, {"x": 2.0, "g": "c"}, [0.0, 1.0, 0.0, 0.0, 2.0])):
     row = model.design.row(covariates)
     if np.max(np.abs(row - np.array(handrow))) > TOL:
-        sys.exit("Validation test failed at case 14: the prediction row of '%s' at %s is %s, not %s." % (model.formula, covariates, row, handrow))
+        sys.exit("Validation test failed at case 14: The prediction row of '%s' at %s is %s, not %s." % (model.formula, covariates, row, handrow))
     rate = -model.getphasegen()[0, 0] * np.exp(row @ np.array(list(model.getcoef().values())))
     if abs(model.getcumprob(1.5, covariates) - (1.0 - np.exp(-1.5 * rate))) > TOL:
-        sys.exit("Validation test failed at case 14: the CDF of '%s' at %s is not that of the exponential distribution with the predicted rate." % (model.formula, covariates))
+        sys.exit("Validation test failed at case 14: The CDF of '%s' at %s is not that of the exponential distribution with the predicted rate." % (model.formula, covariates))
 
 # the likelihood-ratio test of x:g in 'x + x:g' drops the differences, leaving
-# one slope for all levels: the test of equal slopes
+# one slope for all levels: The test of equal slopes
 lrslopes = quiet(modelcontrast.getlrtest, "x:g")[0]["x:g"]
 hand = 2.0 * (exponentialloglik(xs[:, None] * levelcols, ys) - exponentialloglik(xs[:, None], ys))
 if lrslopes["df"] != 2 or abs(lrslopes["statistic"] - hand) > TOLEXACT * max(1.0, hand):
-    sys.exit("Validation test failed at case 14: the likelihood-ratio statistic of equal slopes is %.10f (%d df), against %.10f (2 df) by hand." % (lrslopes["statistic"], lrslopes["df"], hand))
+    sys.exit("Validation test failed at case 14: The likelihood-ratio statistic of equal slopes is %.10f (%d df), against %.10f (2 df) by hand." % (lrslopes["statistic"], lrslopes["df"], hand))
 
 # missing main effects are allowed only for continuous x categorical
 DATAKINDS = DATASLOPES.assign(z=sloperng.normal(size=NEXACT), h=categorical(sloperng.choice(["p", "q"], size=NEXACT)))
@@ -1289,10 +1289,10 @@ for formula, missing, written in (("y ~ x:z", "'x'", "x*z"), ("y ~ x + x:z", "'z
     try:
         parsed = _regformula(formula)
         _regdesign(DATAKINDS, parsed.response, parsed.terms, parsed.group)
-        sys.exit("Validation test failed at case 14: the design accepted '%s'." % formula)
+        sys.exit("Validation test failed at case 14: The design accepted '%s'." % formula)
     except ValueError as error:
         if missing not in str(error) or written not in str(error):
-            sys.exit("Validation test failed at case 14: the refusal of '%s' does not name %s and '%s': %s" % (formula, missing, written, error))
+            sys.exit("Validation test failed at case 14: The refusal of '%s' does not name %s and '%s': %s" % (formula, missing, written, error))
     if not terminates(formula=formula, data=DATAKINDS, **EXACT):
         sys.exit("Validation test failed at case 14: '%s' did not terminate." % formula)
 
@@ -1303,7 +1303,7 @@ for formula, missing, written in (("y ~ x:z", "'x'", "x*z"), ("y ~ x + x:z", "'z
 
 def censor(times, rng, scheme=CENSSCHEME):
     """
-    Censors the times with limits that do not depend on them: each row is
+    Censors the times with limits that do not depend on them: Each row is
     exact, right-censored at a uniform limit, or inspected on CENSGRID.
     Returns the response (NaN where censored) and the lower and upper limits
     (NaN where there is none).
@@ -1332,7 +1332,7 @@ def censoredkinds(lower, upper):
 
 def exponentialcensored(D, kind, lower, upper, response):
     """
-    The one-phase censored MLE by Newton's method on (log rate, beta): the
+    The one-phase censored MLE by Newton's method on (log rate, beta): The
     log-likelihood is concave in z = D c. Returns
     the estimates, the log-likelihood and the observed information.
     """
@@ -1386,7 +1386,7 @@ CENSNAMES = ["x", "g[b]", "g[c]"]
 response, lower, upper = censor(tc, censrng, scheme=(0.0, 1.0, 0.0))
 kind = censoredkinds(lower, upper)
 if set(kind) != {0, 1}:
-    sys.exit("Validation test failed at case 15: the data are not a mix of exact and right-censored rows.")
+    sys.exit("Validation test failed at case 15: The data are not a mix of exact and right-censored rows.")
 DATARIGHT = pd.DataFrame({"y": response, "x": xc, "g": categorical(gc), "lo": lower, "hi": upper})
 modelright, _, _ = quietfit(formula="y ~ x + g", data=DATARIGHT, censoring=("lo", "hi"), **EXACT)
 
@@ -1396,15 +1396,15 @@ time = np.where(kind == 0, response, lower)
 poisson = sm.GLM(event, Dc, family=sm.families.Poisson(), offset=np.log(time)).fit(tol=1e-14, maxiter=1000)
 estimates = np.array([modelright.getcoef()[k] for k in CENSNAMES])
 if list(modelright.getcoef()) != CENSNAMES or np.max(np.abs(estimates - poisson.params[1:])) > TOLEXACT:
-    sys.exit("Validation test failed at case 15: the coefficients with right-censoring differ from the Poisson GLM by %.3e." % np.max(np.abs(estimates - poisson.params[1:])))
+    sys.exit("Validation test failed at case 15: The coefficients with right-censoring differ from the Poisson GLM by %.3e." % np.max(np.abs(estimates - poisson.params[1:])))
 if abs(-modelright.getphasegen()[0, 0] / np.exp(poisson.params[0]) - 1.0) > TOLEXACT:
-    sys.exit("Validation test failed at case 15: the baseline rate with right-censoring differs from the Poisson GLM.")
+    sys.exit("Validation test failed at case 15: The baseline rate with right-censoring differs from the Poisson GLM.")
 mu = np.exp(Dc @ poisson.params) * time
 loglik = np.sum(event * (Dc @ poisson.params) - mu)
 if abs(modelright.getloglik() - loglik) > TOLEXACT * abs(loglik):
-    sys.exit("Validation test failed at case 15: the log-likelihood with right-censoring is %.10f, against %.10f." % (modelright.getloglik(), loglik))
+    sys.exit("Validation test failed at case 15: The log-likelihood with right-censoring is %.10f, against %.10f." % (modelright.getloglik(), loglik))
 
-# standard errors: the full information with the rate profiled out (the
+# standard errors: The full information with the rate profiled out (the
 # conditional information is invalid with censoring and must differ)
 information = (Dc * mu[:, None]).T @ Dc
 full = np.sqrt(np.diag(np.linalg.inv(information)))[1:]
@@ -1412,16 +1412,16 @@ Dcentred = Dc[:, 1:] - Dc[:, 1:].mean(axis=0)
 conditional = np.sqrt(np.diag(np.linalg.inv((Dcentred * mu[:, None]).T @ Dcentred)))
 reported = np.array([modelright.getstderr()[k] for k in CENSNAMES])
 if np.max(np.abs(reported / full - 1.0)) > TOLSE:
-    sys.exit("Validation test failed at case 15: the standard errors with censoring are %s, against %s from the profiled information." % (reported, full))
-# (measured: conditional / full = 0.978 for x at 30% censoring)
+    sys.exit("Validation test failed at case 15: The standard errors with censoring are %s, against %s from the profiled information." % (reported, full))
+# (measured: Conditional / full = 0.978 for x at 30% censoring)
 if np.max(np.abs(conditional / full - 1.0)) < 10 * TOLSE:
-    sys.exit("Validation test failed at case 15: the data do not separate the full from the conditional information.")
+    sys.exit("Validation test failed at case 15: The data do not separate the full from the conditional information.")
 
 # the likelihood-ratio test of x is the difference of the Poisson deviances
 reducedpoisson = sm.GLM(event, Dc[:, [0, 2, 3]], family=sm.families.Poisson(), offset=np.log(time)).fit(tol=1e-14, maxiter=1000)
 lrright = quiet(modelright.getlrtest, "x")[0]["x"]
 if abs(lrright["statistic"] - 2.0 * (poisson.llf - reducedpoisson.llf)) > TOLEXACT * max(1.0, lrright["statistic"]):
-    sys.exit("Validation test failed at case 15: the likelihood-ratio statistic with censoring is %.10f, against %.10f." % (lrright["statistic"], 2.0 * (poisson.llf - reducedpoisson.llf)))
+    sys.exit("Validation test failed at case 15: The likelihood-ratio statistic with censoring is %.10f, against %.10f." % (lrright["statistic"], 2.0 * (poisson.llf - reducedpoisson.llf)))
 
 
 # ------------------------------------------------------------------
@@ -1431,20 +1431,20 @@ if abs(lrright["statistic"] - 2.0 * (poisson.llf - reducedpoisson.llf)) > TOLEXA
 response, lower, upper = censor(tc, censrng)
 kind = censoredkinds(lower, upper)
 if set(kind) != {0, 1, 2, 3}:
-    sys.exit("Validation test failed at case 16: the data do not contain every kind of row.")
+    sys.exit("Validation test failed at case 16: The data do not contain every kind of row.")
 DATACENSORED = pd.DataFrame({"y": response, "x": xc, "g": categorical(gc), "lo": lower, "hi": upper})
 modelcensored, _, _ = quietfit(formula="y ~ x + g", data=DATACENSORED, censoring=("lo", "hi"), **EXACT)
 
 oraclec, oraclell, oracleinformation = exponentialcensored(Dc, kind, lower, upper, response)
 estimates = np.array([modelcensored.getcoef()[k] for k in CENSNAMES])
 if np.max(np.abs(estimates - oraclec[1:])) > TOLEXACT or abs(-modelcensored.getphasegen()[0, 0] / np.exp(oraclec[0]) - 1.0) > TOLEXACT:
-    sys.exit("Validation test failed at case 16: the estimates with every kind of censoring differ from the one-phase MLE by %.3e." % np.max(np.abs(estimates - oraclec[1:])))
+    sys.exit("Validation test failed at case 16: The estimates with every kind of censoring differ from the one-phase MLE by %.3e." % np.max(np.abs(estimates - oraclec[1:])))
 if abs(modelcensored.getloglik() - oraclell) > TOLEXACT * abs(oraclell):
-    sys.exit("Validation test failed at case 16: the log-likelihood with every kind of censoring is %.10f, against %.10f." % (modelcensored.getloglik(), oraclell))
+    sys.exit("Validation test failed at case 16: The log-likelihood with every kind of censoring is %.10f, against %.10f." % (modelcensored.getloglik(), oraclell))
 full = np.sqrt(np.diag(np.linalg.inv(oracleinformation)))[1:]
 reported = np.array([modelcensored.getstderr()[k] for k in CENSNAMES])
 if np.max(np.abs(reported / full - 1.0)) > TOLSE:
-    sys.exit("Validation test failed at case 16: the standard errors with every kind of censoring are %s, against %s." % (reported, full))
+    sys.exit("Validation test failed at case 16: The standard errors with every kind of censoring are %s, against %s." % (reported, full))
 
 counts = [int(np.count_nonzero(kind == k)) for k in (1, 2, 3)]
 text = io.StringIO()
@@ -1452,7 +1452,7 @@ with contextlib.redirect_stdout(text):
     modelcensored.summary(effecttest=None)
 expected = "Observations: %d (%d right-censored, %d left-censored, %d interval-censored)" % (NEXACT, *counts)
 if expected not in text.getvalue():
-    sys.exit("Validation test failed at case 16: the summary does not count the censored observations ('%s')." % expected)
+    sys.exit("Validation test failed at case 16: The summary does not count the censored observations ('%s')." % expected)
 
 
 # ------------------------------------------------------------------
@@ -1465,24 +1465,24 @@ plain, _, _ = quietfit(formula="y ~ x + g", data=DATA, **COMMON)
 nocensoring, _, _ = quietfit(formula="y ~ x + g", data=DATA.assign(lo=np.nan, hi=np.nan), censoring=("lo", "hi"), **COMMON)
 for getter in ("getcoef", "getstderr"):
     if getattr(plain, getter)() != getattr(nocensoring, getter)():
-        sys.exit("Validation test failed at case 17: censoring columns without censored rows changed %s." % getter)
+        sys.exit("Validation test failed at case 17: Censoring columns without censored rows changed %s." % getter)
 if plain.getloglik() != nocensoring.getloglik() or not np.array_equal(plain.getphasegen(), nocensoring.getphasegen()) \
         or not np.array_equal(plain.getinitdist(), nocensoring.getinitdist()) or plain.iterations != nocensoring.iterations:
-    sys.exit("Validation test failed at case 17: censoring columns without censored rows changed the fit.")
+    sys.exit("Validation test failed at case 17: Censoring columns without censored rows changed the fit.")
 
-# three phases with every kind of censoring: the fit converges and the
+# three phases with every kind of censoring: The fit converges and the
 # effects are recovered
 threerng = np.random.default_rng([SEED, 17])
 response, lower, upper = censor(DATA["y"].to_numpy(), threerng)
 kind3 = censoredkinds(lower, upper)
 if set(kind3) != {0, 1, 2, 3}:
-    sys.exit("Validation test failed at case 17: the three-phase data do not contain every kind of row.")
+    sys.exit("Validation test failed at case 17: The three-phase data do not contain every kind of row.")
 modelthree, _, _ = quietfit(formula="y ~ x + g", data=DATA.assign(y=response, lo=lower, hi=upper), censoring=("lo", "hi"), **COMMON)
 for name, truth in TRUEBETA.items():
     if not modelthree.converged or abs(modelthree.getcoef()[name] - truth) > 4.0 * modelthree.getstderr()[name]:
-        sys.exit("Validation test failed at case 17: the censored three-phase fit gives %s = %.3f (s.e. %.3f), truth %.3f." % (name, modelthree.getcoef()[name], modelthree.getstderr()[name], truth))
+        sys.exit("Validation test failed at case 17: The censored three-phase fit gives %s = %.3f (s.e. %.3f), truth %.3f." % (name, modelthree.getcoef()[name], modelthree.getstderr()[name], truth))
 
-# the engine's rows at the true Coxian against scipy's expm: log-likelihood, l',
+# the engine's rows at the true Coxian against scipy's expm: Log-likelihood, l',
 # l'', Fisher's identity, sum E(Z) = u (right), sum E(N) = 1 (left, interval)
 engine = modelthree.d
 truthT = np.diag(-TRUERATES) + np.diag(TRUERATES[:-1] * TRUECONTINUE, 1)
@@ -1528,7 +1528,7 @@ for i in range(engine.n):
         worst["absorbed"] = max(worst["absorbed"], abs((e["a"][i] @ truths["t"]) * e["invf"][i] - 1.0))
 if max(worst["loglik"], worst["fisher"], worst["window"], worst["absorbed"]) > TOL or worst["derivative"] > 1e-7 \
         or worst["second"] > 1e-6:
-    sys.exit("Validation test failed at case 17: the censored rows of the engine disagree with the independent evaluation: %s." % worst)
+    sys.exit("Validation test failed at case 17: The censored rows of the engine disagree with the independent evaluation: %s." % worst)
 
 
 # ------------------------------------------------------------------
@@ -1538,7 +1538,7 @@ if max(worst["loglik"], worst["fisher"], worst["window"], worst["absorbed"]) > T
 response, lower, upper = censor(yre, np.random.default_rng([SEED, 18]))
 kindre = censoredkinds(lower, upper)
 if set(kindre) != {0, 1, 2, 3}:
-    sys.exit("Validation test failed at case 18: the data do not contain every kind of row.")
+    sys.exit("Validation test failed at case 18: The data do not contain every kind of row.")
 modelrandomcens, _, _ = quietfit(formula="y ~ x + (1|u)", data=DATARANDOMEXACT.assign(y=response, lo=lower, hi=upper),
                                  censoring=("lo", "hi"), quadnodes=15, **EXACT)
 lore = np.where(kindre == 0, response, np.where(kindre == 2, upper, lower))
@@ -1574,7 +1574,7 @@ oracle = minimize(randomcensnegloglik, np.array([0.0, 0.0, np.log(0.5)]), method
 fitted = np.array([np.log(-modelrandomcens.getphasegen()[0, 0]), modelrandomcens.getcoef()["x"],
                    np.log(modelrandomcens.getsigma())])
 if np.max(np.abs(fitted - oracle.x)) > TOLOPT or abs(modelrandomcens.getloglik() + oracle.fun) > TOLOPT:
-    sys.exit("Validation test failed at case 18: with censoring the random-effect fit differs from a direct maximization of the quadrature likelihood by %.3e." % np.max(np.abs(fitted - oracle.x)))
+    sys.exit("Validation test failed at case 18: With censoring the random-effect fit differs from a direct maximization of the quadrature likelihood by %.3e." % np.max(np.abs(fitted - oracle.x)))
 hessian = np.zeros((3, 3))
 for i in range(3):
     ei = np.zeros(3)
@@ -1588,11 +1588,11 @@ for i in range(3):
 oraclestderr = np.sqrt(np.diag(np.linalg.inv(-hessian)))[1:]
 reported = np.array([modelrandomcens.getstderr()["x"], modelrandomcens.sigmastderr / modelrandomcens.getsigma()])
 if np.max(np.abs(reported / oraclestderr - 1.0)) > TOLSE:
-    sys.exit("Validation test failed at case 18: with censoring the standard errors are %s, against %s from the oracle." % (reported, oraclestderr))
+    sys.exit("Validation test failed at case 18: With censoring the standard errors are %s, against %s from the oracle." % (reported, oraclestderr))
 
 
 # ------------------------------------------------------------------
-# CASE 19: Censoring: refusals, zeros, simulated p-values and the plot
+# CASE 19: Censoring: Refusals, zeros, simulated p-values and the plot
 # ------------------------------------------------------------------
 
 bad = {
@@ -1614,9 +1614,9 @@ for name, change in bad.items():
     arguments = dict(formula="y ~ x + g", data=DATACENSORED, censoring=("lo", "hi"), **EXACT)
     arguments.update(change)
     if not terminates(**arguments):
-        sys.exit("Validation test failed at case 19: censoring with %s did not terminate." % name)
+        sys.exit("Validation test failed at case 19: Censoring with %s did not terminate." % name)
 
-# zeros with censored rows: a censored row is positive whatever its response,
+# zeros with censored rows: A censored row is positive whatever its response,
 # and the point mass is the proportion of exact zeros, as in fit
 zero = (kind == 0) & (np.arange(NEXACT) % 7 == 3)
 withzeros = DATACENSORED.assign(y=np.where(zero, 0.0, np.where(kind == 0, DATACENSORED["y"], 0.0)))
@@ -1626,7 +1626,7 @@ p0, n0 = zero.mean(), int(zero.sum())
 loglik = modelpc.getloglik() + n0 * np.log(p0) + (NEXACT - n0) * np.log(1.0 - p0)
 if abs(modelzc.getzeroprob() - p0) > TOL or abs(modelzc.getloglik() - loglik) > TOL * abs(loglik) or \
         max(abs(modelzc.getcoef()[k] - modelpc.getcoef()[k]) for k in CENSNAMES) > TOL:
-    sys.exit("Validation test failed at case 19: with censored rows the zeros are not the point mass of the exact zeros.")
+    sys.exit("Validation test failed at case 19: With censored rows the zeros are not the point mass of the exact zeros.")
 
 # simulated p-values need a model of the censoring, so they are refused
 result, printed = quiet(modelcensored.getlrtest, "x", nsim=2)
@@ -1642,7 +1642,7 @@ try:
         warnings.simplefilter("always")
         modelcensored.plot(filename=plotfile)
     if os.path.exists(plotfile) or not any("censored" in str(w.message) for w in caught):
-        sys.exit("Validation test failed at case 19: the plot of a censored fit was drawn, or no warning was given.")
+        sys.exit("Validation test failed at case 19: The plot of a censored fit was drawn, or no warning was given.")
 finally:
     if os.path.exists(plotfile):
         os.remove(plotfile)
@@ -1655,15 +1655,9 @@ finally:
 
 def scoretestbyhand(score, kinds, X, groupcodes):
     """
-    The score test of sigma = 0 with dense matrices, from the rows' scores in
-    eta at the fit without random effect: the scores standardized by their
-    variance pooled within each kind of row (times n / (n - rank [1, X])),
-    e = D^(-1/2) l'; their covariance I - H, H the projection on D^(1/2) A,
-    A = [1, X]; the p-value P(e' S e / e' e >= c) for the observed ratio c, S
-    the same-group indicator (diagonal included), from the eigenvalues of
-    (I - H)(S - c I)(I - H); and T = e' (S - I) e / 2 standardized by the
-    eigenvalues of (I - H)(S - I)(I - H) / 2. Returns the standardized
-    statistic and the p-value.
+    The score test of sigma = 0 with dense matrices: P(e' S e / e' e >= c) from
+    the eigenvalues of (I - H)(S - c I)(I - H), e the standardized scores, S the
+    same-group indicator, H the projection on D^(1/2) [1, X]. Returns z and p.
     """
     n = score.size
     A = np.column_stack([np.ones(n), X])
@@ -1682,9 +1676,8 @@ def scoretestbyhand(score, kinds, X, groupcodes):
     return (T - moments.mean) / np.sqrt(moments.var), pvalue
 
 
-# uncensored: for one phase the score of a row is 1 - lambda exp(x beta) y;
-# on the data of case 2 (sigma = 0.8) and on the same design without group
-# effect, where the p-value is moderate
+# uncensored, one phase: The score of a row is 1 - lambda exp(x beta) y; on
+# the data of case 2 and without group effect (a moderate p-value)
 yre0 = np.random.default_rng([SEED, 20]).exponential(size=xre.size) / (EXACTRATE * np.exp(EXACTBETA["x"] * xre))
 for label, response0, fitted in (("the data of case 2", yre, modelrandomexact),
                                  ("data without group effect", yre0,
@@ -1696,16 +1689,15 @@ for label, response0, fitted in (("the data of case 2", yre, modelrandomexact),
     test = fitted.getsigmatest()
     if test["method"] != "score" or abs(test["statistic"] - hand[0]) > TOLSCORE * max(1.0, abs(hand[0])) or \
             abs(test["pvalue"] - hand[1]) > TOLSCORE * max(hand[1], 1e-3):
-        sys.exit("Validation test failed at case 20: on %s the score test is z = %.8f, p = %.8e, against %.8f, %.8e by hand." % (label, test["statistic"], test["pvalue"], hand[0], hand[1]))
+        sys.exit("Validation test failed at case 20: On %s the score test is z = %.8f, p = %.8e, against %.8f, %.8e by hand." % (label, test["statistic"], test["pvalue"], hand[0], hand[1]))
     if label == "data without group effect" and not 0.01 < hand[1] < 0.99:
-        sys.exit("Validation test failed at case 20: the data without group effect give the p-value %.4f, not a moderate one." % hand[1])
+        sys.exit("Validation test failed at case 20: The data without group effect give the p-value %.4f, not a moderate one." % hand[1])
 # it comes from the fit without random effect, so it exists at the boundary
 test = modelzero.getsigmatest()
 if not (np.isfinite(test["statistic"]) and 0.0 < test["pvalue"] < 1.0):
-    sys.exit("Validation test failed at case 20: the score test of the boundary fit is z = %s, p = %s." % (test["statistic"], test["pvalue"]))
+    sys.exit("Validation test failed at case 20: The score test of the boundary fit is z = %s, p = %s." % (test["statistic"], test["pvalue"]))
 
-# censored: the scores of right-, left- and interval-censored rows, with r
-# the rate times exp(x beta), and the variance pooled within each kind
+# censored: The scores of each kind of row, r the rate times exp(x beta)
 censoredrandom = DATARANDOMEXACT.assign(y=response, lo=lower, hi=upper)
 modelcensnorandom, _, _ = quietfit(formula="y ~ x", data=censoredrandom, censoring=("lo", "hi"), **EXACT)
 r = -modelcensnorandom.getphasegen()[0, 0] * np.exp(modelcensnorandom.getcoef()["x"] * xre)
@@ -1722,15 +1714,13 @@ scores[e] = (r[e] * upper[e] * su - r[e] * lore[e] * sl) / (sl - su)
 hand = scoretestbyhand(scores, kindre, (xre - xre.mean())[:, None], groupsexact)
 test = modelrandomcens.getsigmatest()
 if abs(test["statistic"] - hand[0]) > TOLSCORE * max(1.0, abs(hand[0])) or abs(test["pvalue"] - hand[1]) > TOLSCORE * max(hand[1], 1e-3):
-    sys.exit("Validation test failed at case 20: with censoring the score test is z = %.8f, p = %.8e, against %.8f, %.8e by hand." % (test["statistic"], test["pvalue"], hand[0], hand[1]))
-# pooling within kinds matters here (the hand computation with one pooled
-# variance must differ), or the check above has no power (measured: z 7.77
-# against 7.87)
+    sys.exit("Validation test failed at case 20: With censoring the score test is z = %.8f, p = %.8e, against %.8f, %.8e by hand." % (test["statistic"], test["pvalue"], hand[0], hand[1]))
+# one pooled variance must give another z (measured 7.77 against 7.87)
 pooled = scoretestbyhand(scores, np.zeros(xre.size), (xre - xre.mean())[:, None], groupsexact)
 if abs(pooled[0] - hand[0]) < 100 * TOLOPT:
-    sys.exit("Validation test failed at case 20: the censored data do not separate the variances pooled within kinds from one pooled variance.")
+    sys.exit("Validation test failed at case 20: The censored data do not separate the variances pooled within kinds from one pooled variance.")
 
-# no random effect, or an unknown method: None, with an error for the method
+# no random effect, or an unknown method: None
 if quiet(modelexact.getsigmatest)[0] is not None:
     sys.exit("Validation test failed at case 20: getsigmatest of a model without random effect is not None.")
 result, printed = quiet(modelrandomexact.getsigmatest, "wald")

@@ -4,16 +4,16 @@ UNIT TEST FOR THE _regdesign CLASS (the design matrices of fitreg).
 Sub-tests:
     Case 1: Main effects and interactions up to four-way of continuous and
             categorical variables equal hand-built products, names included.
-    Case 2: Centring and scaling: every column centred, continuous ones scaled;
+    Case 2: Centring and scaling: Every column centred, continuous ones scaled;
             the linear predictor is unchanged by backtransform().
     Case 3: Prediction rows equal the design rows; bad covariates refused.
-    Case 4: Levels and groups: the reference is the first category with
+    Case 4: Levels and groups: The reference is the first category with
             observations, unused categories dropped, groups recoded 0..J-1.
     Case 5: Unusable data is refused with a message.
     Case 6: Column names with spaces and special symbols (backticks).
-    Case 7: Censoring columns: kind and limits of each row; refusals.
+    Case 7: Censoring columns: Kind and limits of each row; refusals.
     Case 8: Numeric variables mixed with categorical ones of 2, 3 and 5 levels,
-            up to four-way: every column the hand-built product of its parts,
+            up to four-way: Every column the hand-built product of its parts,
             the number of columns of each effect the product of the parts'
             column counts, and interactions written in any order.
 '''
@@ -46,7 +46,7 @@ DATA = pd.DataFrame({"y": rng.exponential(size=N), "x": x, "z": z,
                      "g": pd.Categorical(g), "h": pd.Categorical(h), "k": pd.Categorical(k),
                      "u": pd.Categorical(rng.integers(0, 6, N))})
 if set(g) != {"a", "b", "c"} or set(h) != {"p", "q"} or len(set(zip(g, h))) != 6 or len(set(zip(g, k))) != 9:
-    sys.exit("Validation test failed at initialization: a level or a cell of g and h is empty.")
+    sys.exit("Validation test failed at initialization: A level or a cell of g and h is empty.")
 
 
 def design(formula, data=DATA, censoring=None):
@@ -79,21 +79,21 @@ hand = {
     "x:z:g[b]:h[q]": x * z * gb * hq, "x:z:g[c]:h[q]": x * z * gc * hq,
 }
 if built.columns != list(hand):
-    sys.exit("Validation test failed at case 1: the columns of 'x*z*g*h' are %s, not %s." % (built.columns, list(hand)))
+    sys.exit("Validation test failed at case 1: The columns of 'x*z*g*h' are %s, not %s." % (built.columns, list(hand)))
 if np.max(np.abs(built.X - np.column_stack(list(hand.values())))) > TOL:
-    sys.exit("Validation test failed at case 1: the design of 'x*z*g*h' differs from the hand-built products.")
-# two categorical variables with two dummies each: the columns run over the
+    sys.exit("Validation test failed at case 1: The design of 'x*z*g*h' differs from the hand-built products.")
+# two categorical variables with two dummies each: The columns run over the
 # levels of the second fastest
 ks, kt = (k == "s") * 1.0, (k == "t") * 1.0
 crossed = design("y ~ g*k")
 hand2 = {"g[b]": gb, "g[c]": gc, "k[s]": ks, "k[t]": kt,
          "g[b]:k[s]": gb * ks, "g[b]:k[t]": gb * kt, "g[c]:k[s]": gc * ks, "g[c]:k[t]": gc * kt}
 if crossed.columns != list(hand2) or np.max(np.abs(crossed.X - np.column_stack(list(hand2.values())))) > TOL:
-    sys.exit("Validation test failed at case 1: the design of 'g*k' differs from the hand-built products.")
+    sys.exit("Validation test failed at case 1: The design of 'g*k' differs from the hand-built products.")
 expectedcolumns = {"x": [0], "g": [2, 3], "x:z:g": [14, 15], "x:z:g:h": [21, 22]}
 for effect, index in expectedcolumns.items():
     if built.termcolumns[effect] != index:
-        sys.exit("Validation test failed at case 1: the effect '%s' has the columns %s, not %s." % (effect, built.termcolumns[effect], index))
+        sys.exit("Validation test failed at case 1: The effect '%s' has the columns %s, not %s." % (effect, built.termcolumns[effect], index))
 
 
 # ------------------------------------------------------------------
@@ -103,13 +103,13 @@ for effect, index in expectedcolumns.items():
 continuous = np.array([any(part.split("[")[0] in ("x", "z") for part in name.split(":")) for name in built.columns])
 scale = np.where(continuous, built.X.std(axis=0), 1.0)
 if np.max(np.abs(built.center - built.X.mean(axis=0))) > TOL or np.max(np.abs(built.scale - scale)) > TOL:
-    sys.exit("Validation test failed at case 2: the centres or scales are not the column means and the standard deviations of the continuous columns.")
+    sys.exit("Validation test failed at case 2: The centres or scales are not the column means and the standard deviations of the continuous columns.")
 if np.max(np.abs(built.Xtilde - (built.X - built.X.mean(axis=0)) / scale)) > TOL:
-    sys.exit("Validation test failed at case 2: the centred design is not (X - mean) / scale.")
+    sys.exit("Validation test failed at case 2: The centred design is not (X - mean) / scale.")
 betatilde = rng.normal(size=built.d)
 beta, delta = built.backtransform(betatilde)
 if np.max(np.abs((built.X @ beta - delta) - built.Xtilde @ betatilde)) > 1e-10:
-    sys.exit("Validation test failed at case 2: the back-transformed coefficients change the linear predictor.")
+    sys.exit("Validation test failed at case 2: The back-transformed coefficients change the linear predictor.")
 
 
 # ------------------------------------------------------------------
@@ -119,17 +119,17 @@ if np.max(np.abs((built.X @ beta - delta) - built.Xtilde @ betatilde)) > 1e-10:
 for i in (0, 7, 51, N - 1):
     row = built.row({"x": x[i], "z": z[i], "g": g[i], "h": h[i]})
     if np.max(np.abs(row - built.X[i])) > TOL:
-        sys.exit("Validation test failed at case 3: the prediction row of observation %d differs from its design row." % i)
+        sys.exit("Validation test failed at case 3: The prediction row of observation %d differs from its design row." % i)
 if np.any(design("y ~ x + g").row() != 0.0):
-    sys.exit("Validation test failed at case 3: the baseline row is not zero.")
+    sys.exit("Validation test failed at case 3: The baseline row is not zero.")
 for covariates in ({"x": 1.0, "z": 0.0, "g": "d", "h": "p"}, {"x": 1.0, "z": 0.0, "g": "a"},
                    {"x": 1.0, "z": 0.0, "g": "a", "h": "p", "w": 2.0}):
     try:
         built.row(covariates)
-        sys.exit("Validation test failed at case 3: the covariates %s were accepted." % covariates)
+        sys.exit("Validation test failed at case 3: The covariates %s were accepted." % covariates)
     except ValueError as error:
         if not str(error):
-            sys.exit("Validation test failed at case 3: the covariates %s were refused without a message." % covariates)
+            sys.exit("Validation test failed at case 3: The covariates %s were refused without a message." % covariates)
 
 
 # ------------------------------------------------------------------
@@ -140,11 +140,11 @@ for covariates in ({"x": 1.0, "z": 0.0, "g": "d", "h": "p"}, {"x": 1.0, "z": 0.0
 reordered = DATA.assign(g=pd.Categorical(g, categories=["unused", "c", "a", "b", "other"]))
 levels = design("y ~ g", reordered)
 if levels.columns != ["g[a]", "g[b]"] or levels.info["g"]["reference"] != "c":
-    sys.exit("Validation test failed at case 4: with categories (unused, c, a, b, other) the columns are %s." % levels.columns)
+    sys.exit("Validation test failed at case 4: With categories (unused, c, a, b, other) the columns are %s." % levels.columns)
 grouped = design("y ~ x + (1|u)")
 if grouped.group != "u" or sorted(set(grouped.groupcodes)) != list(range(6)) or \
         not np.array_equal(grouped.grouplabels, sorted(set(DATA["u"]))):
-    sys.exit("Validation test failed at case 4: the groups are not recoded 0..J-1 with their labels.")
+    sys.exit("Validation test failed at case 4: The groups are not recoded 0..J-1 with their labels.")
 
 
 # ------------------------------------------------------------------
@@ -180,10 +180,10 @@ plain = design("y ~ x*z + g + (1|u)")
 expected = ["body mass index (kg/m^2)", "x-1", "sex: m/f[b]", "sex: m/f[c]", "body mass index (kg/m^2):x-1"]
 if quoted.columns != expected or np.max(np.abs(quoted.X - plain.X)) > TOL or \
         not np.array_equal(quoted.groupcodes, plain.groupcodes) or not np.array_equal(quoted.y, plain.y):
-    sys.exit("Validation test failed at case 6: the design with special names is %s, not that of the plain names." % quoted.columns)
+    sys.exit("Validation test failed at case 6: The design with special names is %s, not that of the plain names." % quoted.columns)
 row = quoted.row({"body mass index (kg/m^2)": 2.0, "x-1": 0.5, "sex: m/f": "c"})
 if np.max(np.abs(row - np.array([2.0, 0.5, 0.0, 1.0, 1.0]))) > TOL:
-    sys.exit("Validation test failed at case 6: the prediction row with special names is %s." % row)
+    sys.exit("Validation test failed at case 6: The prediction row with special names is %s." % row)
 
 
 # ------------------------------------------------------------------
@@ -200,15 +200,15 @@ upper[np.flatnonzero(kinds == 1)[:3]] = np.inf            # an infinite upper li
 censored = DATA.assign(lo=lower, hi=upper)              # the response of censored rows is ignored
 built = design("y ~ x", censored, ("lo", "hi"))
 if not np.array_equal(built.kind, kinds):
-    sys.exit("Validation test failed at case 7: the kinds of the rows are wrong.")
+    sys.exit("Validation test failed at case 7: The kinds of the rows are wrong.")
 expectedlimits = np.column_stack([lower, np.where(np.isinf(upper), np.nan, upper)])
 if not np.array_equal(np.isnan(built.limits), np.isnan(expectedlimits)) or \
         np.any(built.limits[~np.isnan(expectedlimits)] != expectedlimits[~np.isnan(expectedlimits)]):
-    sys.exit("Validation test failed at case 7: the censoring limits are wrong.")
+    sys.exit("Validation test failed at case 7: The censoring limits are wrong.")
 if not np.all(np.isnan(built.y[kinds != 0])) or np.any(built.y[kinds == 0] != DATA["y"].to_numpy()[kinds == 0]):
-    sys.exit("Validation test failed at case 7: the response is not NaN in the censored rows and the observation elsewhere.")
+    sys.exit("Validation test failed at case 7: The response is not NaN in the censored rows and the observation elsewhere.")
 if design("y ~ x").kind is not None:
-    sys.exit("Validation test failed at case 7: a design without censoring has kinds.")
+    sys.exit("Validation test failed at case 7: A design without censoring has kinds.")
 
 badcensoring = {
     "a negative lower limit": (censored.assign(lo=np.where(kinds == 1, -1.0, lower)), ("lo", "hi")),
@@ -235,11 +235,11 @@ MIX = pd.DataFrame({"y": mixrng.exponential(size=NMIX), "x": mixrng.normal(size=
 for name, levels in LEVELS.items():
     MIX[name] = pd.Categorical(mixrng.choice(levels, NMIX), categories=levels)
 if len(set(zip(MIX["a"], MIX["b"], MIX["c"]))) != 30:
-    sys.exit("Validation test failed at initialization: a cell of a, b and c is empty.")
+    sys.exit("Validation test failed at initialization: A cell of a, b and c is empty.")
 
 
 def parts(name):
-    """The columns of one variable: itself if numeric, else its treatment dummies."""
+    """The columns of one variable: Itself if numeric, else its treatment dummies."""
     if name in LEVELS:
         return {"%s[%s]" % (name, level): (MIX[name].to_numpy() == level) * 1.0 for level in LEVELS[name][1:]}
     return {name: MIX[name].to_numpy()}
@@ -267,11 +267,11 @@ for formula, effects in cases.items():
     built = design(formula, MIX)
     hand = handbuilt(effects)
     if built.columns != list(hand) or np.max(np.abs(built.X - np.column_stack(list(hand.values())))) > TOL:
-        sys.exit("Validation test failed at case 8: the design of '%s' differs from the hand-built products." % formula)
+        sys.exit("Validation test failed at case 8: The design of '%s' differs from the hand-built products." % formula)
     for effect in effects:
         count = int(np.prod([len(parts(name)) for name in effect]))
         if len(built.termcolumns[":".join(effect)]) != count:
-            sys.exit("Validation test failed at case 8: the effect '%s' of '%s' has %d columns, not %d."
+            sys.exit("Validation test failed at case 8: The effect '%s' of '%s' has %d columns, not %d."
                      % (":".join(effect), formula, len(built.termcolumns[":".join(effect)]), count))
 if design("y ~ x*a*b*c", MIX).d != 59:
     sys.exit("Validation test failed at case 8: 'x*a*b*c' does not have 1 + 1 + 2 + 4 + 21 + 22 + 8 = 59 columns.")
@@ -280,17 +280,17 @@ if design("y ~ x*a*b*c", MIX).d != 59:
 built = design("y ~ x*a*b*c", MIX)
 column = built.columns.index("x:b[b3]:c[c5]")
 if np.max(np.abs(built.X[:, column] - MIX["x"].to_numpy() * (MIX["b"] == "b3") * (MIX["c"] == "c5"))) > TOL:
-    sys.exit("Validation test failed at case 8: the column x:b[b3]:c[c5] is not x times the two indicators.")
+    sys.exit("Validation test failed at case 8: The column x:b[b3]:c[c5] is not x times the two indicators.")
 
 # interactions written in another order give the same columns, renamed
 written = design("y ~ c:b:x + b:c + x + c + b + x:c + b:x", MIX)
 reference = design("y ~ x + b + c + x:b + b:c + c:x + b:c:x", MIX)
 if {frozenset(n.split(":")) for n in written.columns} != {frozenset(n.split(":")) for n in reference.columns}:
-    sys.exit("Validation test failed at case 8: the interactions written in another order give other columns.")
+    sys.exit("Validation test failed at case 8: The interactions written in another order give other columns.")
 order = [written.columns.index(next(m for m in written.columns if frozenset(m.split(":")) == frozenset(n.split(":"))))
          for n in reference.columns]
 if np.max(np.abs(written.X[:, order] - reference.X)) > TOL:
-    sys.exit("Validation test failed at case 8: the interactions written in another order give other values.")
+    sys.exit("Validation test failed at case 8: The interactions written in another order give other values.")
 
 
 print("_regdesign: All tests passed.")

@@ -5,7 +5,7 @@ Sub-tests:
     Case 1: Main effects and interactions up to four-way: '*' expands to every
             lower-order effect, written-out formulas give the same effects,
             and an incomplete higher-order interaction is refused.
-    Case 2: Spaces: none, many and mixed around '~', '+', ':', '*', '|' and
+    Case 2: Spaces: None, many and mixed around '~', '+', ':', '*', '|' and
             parentheses give the same output (hand-written and random).
     Case 3: Long covariate names (up to 32 characters).
     Case 4: Names with spaces and special symbols in backticks, and names
@@ -73,12 +73,12 @@ expected = {
     "y ~ 1 + a*b": ("y", [("a",), ("b",), ("a", "b")], None),
 }
 if len(expected["y ~ a*b*c*d"][1]) != 15 or expected["y ~ a*b*c*d"][1][-1] != ("a", "b", "c", "d"):
-    sys.exit("Validation test failed at initialization: the four-way expansion is not the 15 effects.")
+    sys.exit("Validation test failed at initialization: The four-way expansion is not the 15 effects.")
 for formula, result in expected.items():
     if parsed(formula) != result:
         sys.exit("Validation test failed at case 1: '%s' was parsed as %s, not %s." % (formula, parsed(formula), result))
 
-# the four-way model written out in a scrambled order: the same effects,
+# the four-way model written out in a scrambled order: The same effects,
 # sorted by degree, each named in the order its variables first appear
 rng = np.random.default_rng(SEED)
 effects = expansion(["a", "b", "c", "d"])
@@ -93,7 +93,7 @@ for _ in range(10):
     if sorted(map(frozenset, terms), key=sorted) != sorted(map(frozenset, effects), key=sorted) or \
             [len(term) for term in terms] != sorted(len(term) for term in terms) or \
             any(list(term) != sorted(term, key=first.index) for term in terms):
-        sys.exit("Validation test failed at case 1: the written-out four-way model '%s' was parsed as %s." % (formula, terms))
+        sys.exit("Validation test failed at case 1: The written-out four-way model '%s' was parsed as %s." % (formula, terms))
 
 # an interaction needs every lower-order effect from three variables on; the
 # message names a missing effect and the '*' formula
@@ -109,7 +109,7 @@ for formula, missing, written in (("y ~ a*b*c + d + a:b:c:d", "a:d", "a*b*c*d"),
 # CASE 2: Spaces around the operators
 # ------------------------------------------------------------------
 
-# hand-written: no spaces, many spaces and the mix a busy person types
+# hand-written: No spaces, many spaces and the mix a busy person types
 spacings = {
     "y ~ x1*x2 + x3:x4 + x3 + x4 + (1|grp)": [
         "y~x1*x2+x3:x4+x3+x4+(1|grp)",
@@ -170,7 +170,7 @@ long = {
     "g": "recruiting_hospital_identifier",        # 30
 }
 if max(len(name) for name in long.values()) != 32:
-    sys.exit("Validation test failed at initialization: the longest name is not 32 characters.")
+    sys.exit("Validation test failed at initialization: The longest name is not 32 characters.")
 for template, terms, group in (
         ("{y} ~ {a}*{b}*{c}*{d} + (1|{g})", expansion(["a", "b", "c", "d"]), "g"),
         ("{y} ~ {a} + {b} + {a}:{b} + {c} + (1|{g})", [("a",), ("b",), ("c",), ("a", "b")], "g"),
@@ -235,7 +235,7 @@ for formula in ("y ~ body mass + age", "y ~ x-1 + z", "y ~ #visits", "y ~ x + (1
     if not refused(formula):
         sys.exit("Validation test failed at case 4: '%s' was accepted." % formula)
 if not refused("y ~ body mass + age", ("backticks",)):
-    sys.exit("Validation test failed at case 4: the refusal of a name with a space does not mention backticks.")
+    sys.exit("Validation test failed at case 4: The refusal of a name with a space does not mention backticks.")
 for formula, word in (("y ~ `body mass + age", "backtick"), ("y ~ `` + age", "empty"), ("y ~ ` ` + age", "empty")):
     if not refused(formula, (word,)):
         sys.exit("Validation test failed at case 4: '%s' was not refused with a message mentioning '%s'." % (formula, word))
@@ -254,10 +254,10 @@ accepted = {
 for formula, terms in accepted.items():
     if parsed(formula)[1] != terms:
         sys.exit("Validation test failed at case 5: '%s' was parsed as %s, not %s." % (formula, parsed(formula)[1], terms))
-# the order of the variables in an interaction does not matter: the same model
+# the order of the variables in an interaction does not matter: The same model
 if sorted(map(frozenset, parsed("y ~ x + y2 + z + x:y2 + y2:z + z:x + y2:z:x")[1]), key=sorted) != \
         sorted(map(frozenset, expansion(["x", "y2", "z"])), key=sorted):
-    sys.exit("Validation test failed at case 5: interactions written in mixed order are not the model x*y2*z.")
+    sys.exit("Validation test failed at case 5: Interactions written in mixed order are not the model x*y2*z.")
 
 # an effect given twice, by "*" or written out, is refused with a message
 # naming it
@@ -266,7 +266,7 @@ for formula, effect in (("y ~ x*y2 + x*y2*z", "x"), ("y ~ x + y2 + x*y2", "x"), 
     if not refused(formula, ("Infeasible formula", "'%s'" % effect)):
         sys.exit("Validation test failed at case 5: '%s' was not refused as giving '%s' twice." % (formula, effect))
 
-# through fitreg: an error is printed and the program terminates
+# through fitreg: An error is printed and the program terminates
 frame = pd.DataFrame({"y": rng.exponential(size=30), "x": rng.normal(size=30), "y2": rng.normal(size=30),
                       "z": rng.normal(size=30)})
 for formula in ("y ~ x*y2 + x*y2*z", "y ~ x + y2 + x*y2"):

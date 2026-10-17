@@ -124,7 +124,7 @@ class ecph:
         n = self.nphases
         block = self.__blockJ()
 
-        # every distinct value in one call: the powers of the uniformized matrix
+        # Every distinct value in one call: The powers of the uniformized matrix
         # do not depend on the value, so they are built once and shared
         mats = self.unif.run(block, values, nrows=n)
 
@@ -377,7 +377,7 @@ class ecph:
                     or censoring.shape[0] < obs.size):
                 raise ValueError("The censoring array must have two columns and at least one row per observation.")
 
-            # zero is admissible: it is the lower limit of a left-censored
+            # Zero is admissible: It is the lower limit of a left-censored
             # interval
             known = censoring[np.isfinite(censoring)]
 

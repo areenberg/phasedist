@@ -45,7 +45,7 @@ for weight, dof in ((1.0, 1), (1.0, 2), (2.5, 3), (1.0, 4), (0.4, 10)):
 q = _quadform(np.array([1.5, 1.5, 1.5]), np.array([1, 2, 4]))
 for x in POINTS:
     if abs(q.sf(x) - chi2.sf(x / 1.5, 7)) > TOL:
-        sys.exit("Validation test failed at case 1: equal weights do not add their degrees of freedom at %.1f." % x)
+        sys.exit("Validation test failed at case 1: Equal weights do not add their degrees of freedom at %.1f." % x)
 
 
 # ------------------------------------------------------------------
@@ -69,9 +69,9 @@ for a, b in ((1.0, 0.5), (0.3, 2.0)):
 
 q = _quadform(np.array([2.0, 0.0, -0.5]), np.array([3, 5, 4]))
 if q.weights.size != 2 or abs(q.mean - (6.0 - 2.0)) > TOL or abs(q.var - 2.0 * (3 * 4.0 + 4 * 0.25)) > TOL:
-    sys.exit("Validation test failed at case 3: the weights are %s, the mean %.6f and the variance %.6f." % (q.weights, q.mean, q.var))
+    sys.exit("Validation test failed at case 3: The weights are %s, the mean %.6f and the variance %.6f." % (q.weights, q.mean, q.var))
 if not np.isnan(_quadform(np.zeros(3), np.ones(3)).sf(1.0)):
-    sys.exit("Validation test failed at case 3: with every weight zero the tail is not NaN.")
+    sys.exit("Validation test failed at case 3: With every weight zero the tail is not NaN.")
 
 
 print("_quadform: All tests passed.")

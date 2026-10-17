@@ -1,8 +1,8 @@
 """
-Comparison with a published Cox regression: survival in primary biliary
+Comparison with a published Cox regression: Survival in primary biliary
 cirrhosis (Mayo Clinic), Fleming and Harrington (1991), Table 4.6.3.
 
-Study: patients with primary biliary cirrhosis, a liver disease, seen at the
+Study: Patients with primary biliary cirrhosis, a liver disease, seen at the
 Mayo Clinic in 1974-1984 and followed until death or censoring (liver
 transplantation or the end of follow-up). Fleming and Harrington's final Cox
 model has log bilirubin, log prothrombin time, log albumin, age and edema
@@ -10,15 +10,14 @@ model has log bilirubin, log prothrombin time, log albumin, age and edema
 version used here is nearly identical and has 416 patients with all five
 covariates, 160 deaths.
 
-Application of fitreg from PhaseDist: The survival time is positive and
-right-censored. fitreg models it as Y | x ~ PH(pi, exp(x'beta) T). A positive
-beta means a higher hazard (a shorter time), as in the Cox model, but beta acts
-on the time scale, not on the hazard. The two coincide for a Weibull baseline,
-where the Cox coefficient is the shape times beta. In general the hazard-scale
-counterpart of beta is kappa * beta, where kappa = d log h(y | x) / d eta is
-averaged over the observed death times (kappa is 1 for an exponential
-baseline and the shape for a Weibull). The signs and z values compare
-directly.
+Application of fitreg from PhaseDist: fitreg models the right-censored
+survival time as Y | x ~ PH(pi, exp(x'beta) T), so
+log E(Y | x) = log(mu0) - x'beta, with mu0 the mean at x = 0: A positive beta
+shortens the mean time, as a positive Cox coefficient raises the hazard. The
+Cox coefficient acts on the hazard; its counterpart is kappa * beta, with
+kappa = d log h(y | x) / d eta averaged over the observed death times (1 for
+an exponential baseline, the shape for a Weibull). The signs and z values
+compare directly.
 
 Run from the repository root:  python validation/fleming_harrington_1991.py
 
@@ -52,7 +51,7 @@ data = pd.DataFrame({
     "upper": np.nan,
 })
 
-# Published Cox regression (Fleming and Harrington 1991): coefficient, standard error
+# Published Cox regression (Fleming and Harrington 1991): Coefficient, standard error
 published = {
     "logbili": (0.8707, 0.0826),
     "logprotime": (2.3800, 0.7667),
@@ -74,7 +73,7 @@ model = fitreg(
 coef = model.getcoef()
 stderr = model.getstderr()
 
-# kappa: the slope of log(u * baseline hazard(u)) in log(u), averaged over the
+# kappa: The slope of log(u * baseline hazard(u)) in log(u), averaged over the
 # transformed death times u = exp(x'beta) * time
 baseline = model.getdist()
 
@@ -90,7 +89,7 @@ step = 1.001
 kappa = np.mean([(log_u_hazard(u * step) - log_u_hazard(u / step)) / (2 * np.log(step)) for u in times])
 
 # Compare
-print("Fleming and Harrington (1991), PBC: published Cox regression vs fitreg (2-phase Coxian)")
+print("Fleming and Harrington (1991), PBC: Published Cox regression vs fitreg (2-phase Coxian)")
 print("Both coefficients are positive for a higher hazard; kappa * beta is fitreg on the hazard scale.")
 print()
 print(f"{'':10s} {'published Cox':>27s}   {'fitreg':>27s}   {'fitreg':>10s}")

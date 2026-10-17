@@ -180,7 +180,7 @@ class _fitcphreg:
         self.n, self.d = self.X.shape
         self.unif = _unif(tolerance=1e-14)
 
-        # censored rows: kind 0 exact, 1 right, 2 left, 3 interval, with the
+        # Censored rows: Kind 0 exact, 1 right, 2 left, 3 interval, with the
         # lower limit lo (the observation of an exact row) and the upper hi.
         # Without censored rows the fit takes the uncensored path unchanged.
         self.censored = False
@@ -420,7 +420,7 @@ class _fitcphreg:
 
     def __rowderivs(self, s: dict, eta: np.array) -> tuple:
         """
-        Returns l' and l'' in eta of every row: the uncensored formulas
+        Returns l' and l'' in eta of every row: The uncensored formulas
         unchanged when no row is censored.
 
         Args:
@@ -472,7 +472,7 @@ class _fitcphreg:
 
     def __censoredloglik(self, s: dict, eta: np.array, repeat: int) -> np.array:
         """
-        Returns the log-likelihood contribution of every (repeated) row: the
+        Returns the log-likelihood contribution of every (repeated) row: The
         log-density for an exact row, log S(u), log F(u) or log(S(u) - S(v))
         for a right-, left- or interval-censored one.
 
@@ -1041,7 +1041,7 @@ class _fitcphreg:
 
     def __startvalues(self) -> list:
         """
-        Returns the starting values: the given starts, then the preset and
+        Returns the starting values: The given starts, then the preset and
         `restarts` random representations (rndcph), scaled to the transformed
         data, with the quasi-likelihood coefficients.
 
@@ -1214,7 +1214,7 @@ class _fitcphreg:
 
     def __fitfixed(self) -> None:
         """
-        Fits the fixed-effects model: runs every start to convergence and keeps the
+        Fits the fixed-effects model: Runs every start to convergence and keeps the
         best fit without an unused phase, or the best degenerate fit with a warning.
 
         Args:
@@ -1452,34 +1452,23 @@ class _fitcphreg:
 
     def __sigmascore(self, s: dict) -> dict:
         """
-        Returns the score test of sigma = 0 at the fixed-effects fit s, see
-        Commenges and Andersen (1995) and Lin (1997). The rows' scores in eta
-        are standardized by their standard deviation, pooled within each kind
-        of row (exact, right-, left- and interval-censored), and the statistic
-        is T = 1/2 sum_j sum_{i != k in j} e_i e_k, the within-group cross
-        products of the standardized scores e. Under sigma = 0 the scores are
-        independent with mean zero, apart from the constraints that the
-        estimated scale and beta put on them, A' D^(1/2) e = 0 with A = [1, X].
-        The p-value is exact for normal scores: with the pooled variance
-        estimated from the same scores, T exceeds its observed value when
-        sum_j S_j^2 / sum_i e_i^2 does (S_j the group sums), and that ratio
-        is a quadratic form whose tail is a weighted sum of chi-square
-        variables, so the few-groups case is covered.
+        Returns the score test of sigma = 0 at the fixed-effects fit s: The
+        within-group cross products of the rows' standardized scores in eta,
+        with a p-value that is exact for normal scores, see Commenges and
+        Andersen (1995) and Lin (1997).
 
         Args:
             s (dict): The fixed-effects fit.
 
         Returns:
-            dict: 'statistic' (T centred and scaled to unit variance under
-                sigma = 0) and 'pvalue'.
+            dict: 'statistic' (standardized) and 'pvalue'.
         """
 
         n = self.n
         a, _ = self.__rowderivs(s, self.X @ s["beta"])
         kind = self.kind if self.censored else np.zeros(n, dtype=int)
 
-        # the variance of a row's score, pooled within its kind, with the
-        # degrees of freedom of the scale and beta taken off
+        # scores standardized by their variance, pooled within each kind of row
         A = np.column_stack([np.ones(n), self.X])
         rank = int(np.linalg.matrix_rank(A))
         d = np.empty(n)
@@ -1489,15 +1478,11 @@ class _fitcphreg:
         d *= n / max(n - rank, 1)
         e = a / np.sqrt(d)
 
-        # the group sums and the statistic
         sums = np.add.reduceat(e, self.starts)
         squares = float(np.sum(e ** 2))
         T = 0.5 * (float(np.sum(sums ** 2)) - squares)
 
-        # Z'(I - H) Z for H the projection on D^(1/2) A, Z the group indicators:
-        # the scores' covariance is I - H, so the quadratic form e' Z Z' e - c e' e
-        # has the weights mu_k - c (mu the eigenvalues of Z'(I - H) Z) and -c
-        # with the remaining n - rank - J degrees of freedom
+        # eigenvalues of Z'(I - H) Z, H the projection on D^(1/2) A
         W = np.sqrt(d)[:, None] * A
         K = np.linalg.pinv(W.T @ W)
         groupW = np.add.reduceat(W, self.starts, axis=0)
@@ -1507,11 +1492,9 @@ class _fitcphreg:
         if not np.any(sizes > 1):
             return dict(statistic=np.nan, pvalue=np.nan)
 
+        # P(sum_j S_j^2 / sum_i e_i^2 >= ratio) for e ~ N(0, I - H)
         ratio = float(np.sum(sums ** 2)) / squares
         pvalue = _quadform(np.r_[mu - ratio, -ratio], np.r_[np.ones(mu.size), rest]).sf(0.0)
-
-        # T standardized by its moments under sigma = 0, with the weights
-        # (mu_k - 1) / 2 and -1/2
         moments = _quadform(np.r_[0.5 * (mu - 1.0), -0.5], np.r_[np.ones(mu.size), rest])
 
         return dict(statistic=(T - moments.mean) / np.sqrt(moments.var), pvalue=pvalue)
@@ -1554,7 +1537,6 @@ class _fitcphreg:
 
         s = dict(self.state)
 
-        # the score test of sigma = 0, at the fixed-effects fit
         self.sigmascore = self.__sigmascore(s)
 
         # sigma = 0 when the likelihood does not increase away from it
@@ -1585,7 +1567,7 @@ class _fitcphreg:
                 if adapting or not self.accelerate:
                     loglik, new = self.__randomiteration(s, nodes, scales)
                 else:
-                    # frozen nodes: a fixed objective, so SQUAREM stays monotone
+                    # frozen nodes: A fixed objective, so SQUAREM stays monotone
                     loglik, new = self.__squaremstep(
                         s,
                         lambda x: self.__randomiteration(x, nodes, scales),
@@ -1618,7 +1600,7 @@ class _fitcphreg:
                 print("Random effect: Iteration", iteration, "  eps =", rule.eps,
                       "  loglik =", loglik, "  std. dev. =", s["sigma"])
 
-            # sigma heading for zero converges sublinearly: move to the boundary
+            # sigma heading for zero converges sublinearly - move to the boundary
             if (s["sigma"] < 1e-3 and len(sigmas) > 50 and s["sigma"] < sigmas[-51]):
                 fixed = dict(s, sigma=None)
                 fixed, _, status, more = self.__runfixed(fixed, self.itermax, final=True)
@@ -1854,7 +1836,7 @@ class _fitcphreg:
             self.modes = None
             self.ranef = None
         elif self.boundary:
-            # sigma = 0: the model without random effect
+            # sigma = 0: The model without random effect
             self.loglikelihood = self.__fixedloglik(s)
             self.modes = np.zeros(self.ngroups)
             self.ranef = np.zeros(self.ngroups)
