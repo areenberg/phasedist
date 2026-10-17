@@ -4,13 +4,6 @@ import re
 import numpy as np
 
 
-# a variable name: a letter (any alphabet) or an underscore, then letters,
-# digits, underscores or dots; any other name is written in backticks, as in R
-_NAME = re.compile(r"^[^\W\d][\w.]*$")
-# a name in backticks is replaced by a placeholder while the formula is parsed
-_QUOTED = re.compile(r"\x00(\d+)\x00")
-
-
 class _regformula:
     """
     Parses a regression formula in the target notation, restricted
@@ -45,6 +38,12 @@ class _regformula:
         self.variables = []
         self.group = None
 
+        # a variable name: a letter (any alphabet) or an underscore, then letters,
+        # digits, underscores or dots; any other name is written in backticks, as in R
+        self.namepattern = re.compile(r"^[^\W\d][\w.]*$")
+        # a name in backticks is replaced by a placeholder while the formula is parsed
+        self.quotedpattern = re.compile(r"\x00(\d+)\x00")
+
         self.__parse()
 
         return None
@@ -76,14 +75,14 @@ class _regformula:
                           for k, piece in enumerate(pieces))
 
         def isname(token):
-            return bool(_NAME.match(token)) or bool(_QUOTED.fullmatch(token))
+            return bool(self.namepattern.match(token)) or bool(self.quotedpattern.fullmatch(token))
 
         def unquote(token):
-            match = _QUOTED.fullmatch(token)
+            match = self.quotedpattern.fullmatch(token)
             return quoted[int(match.group(1))] if match else token
 
         def show(text):
-            return _QUOTED.sub(lambda m: "`%s`" % quoted[int(m.group(1))], text)
+            return self.quotedpattern.sub(lambda m: "`%s`" % quoted[int(m.group(1))], text)
 
         sides = formula.split("~")
         if len(sides) != 2:
