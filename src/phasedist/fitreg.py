@@ -30,10 +30,11 @@ class fitreg:
     assuming that the probability of a zero-observation is constant (i.e. independent
     from the covariates).
     
-    The fixed effects of the formula are tested by likelihood-ratio tests (getlrtest,
-    summary), and the individual coefficients by Wald tests (coeftest). The random
-    effect is tested by a score test (getsigmatest, summary), see Commenges and
-    Andersen (1995) and Lin (1997).
+    The fixed effects of the formula and the individual coefficients are tested by
+    likelihood-ratio tests (getlrtest, summary, coeftest), and the coefficients get
+    profile-likelihood confidence intervals (confint); Wald tests and intervals are
+    available on request. The random effect is tested by a score test (getsigmatest,
+    summary), see Commenges and Andersen (1995) and Lin (1997).
 
     The data are imported as a pandas DataFrame. A column with the 'category' dtype is
     categorical, and a numeric column is continuous.
@@ -137,8 +138,11 @@ class fitreg:
         self.verbose = verbose
         # random starts of each fit to a simulated data set in getlrtest
         self.lrsimrestarts = 1
-        # getlrtest says how long it may take when that exceeds this (seconds)
+        # getlrtest, coeftest and confint say how long they may take when that
+        # exceeds this (seconds)
         self.lrnotice = 10.0
+        # expected refits per profile-likelihood interval, for the runtime note
+        self.profilepoints = 12
 
         # checking and fitting
         if self.__checkinputs():
@@ -172,47 +176,187 @@ class fitreg:
         """
         return dict(zip(self.design.columns, self.stderr.tolist()))
 
-    def coeftest(self, confidence: float = 0.95, show: bool = True) -> dict:
+    def coeftest(self, method: str = "lrt", nsim: int = 0, seed: int = None, confidence: float = 0.95,
+                 coefficients=None, show: bool = True) -> dict:
         """
-        Wald tests of the individual coefficients. Prints and returns each
-        coefficient with its standard error, z value, two-sided p-value and
-        Wald confidence interval.
+        Test whether each coefficient is zero using either the likelihood-ratio
+        test ("lrt"), which is the default, or the Wald test ("wald"). When the
+        likelihood-ratio test is selected, the reference distribution can be simulated
+        by setting nsim > 0. Note that the Wald test is much faster to compute, but
+        less accurate in small samples.
 
         Args:
-            confidence (float, default=0.95): Confidence level of the intervals.
+            method (str, default="lrt"): "lrt" or "wald".
+            nsim (int, default=0): With "lrt", simulated data sets per
+                coefficient; 0 for none.
+            seed (int, optional): Random seed of the simulation.
+            confidence (float, default=0.95): Confidence level of the Monte
+                Carlo interval of a simulated p-value.
+            coefficients (str or list, optional): The coefficients to test, named
+                as in getcoef; all when omitted.
             show (bool, default=True): Whether to print the table.
 
         Returns:
             dict: For each coefficient, a dictionary with 'estimate', 'stderr',
-                'zvalue', 'pvalue' and 'confint' (lower, upper). None if the
-                confidence level is invalid.
+                'statistic' (the likelihood-ratio statistic, or z for "wald") and
+                'pvalue', and with nsim > 0 'simpvalue', 'siminterval' and 'nsim'.
+                None if the arguments are invalid.
         """
 
-        if not isinstance(confidence, float) or not 0.0 < confidence < 1.0:
-            print("Error: The confidence level must be a float between 0 and 1.")
+        names = self.__checkcoefargs(method, ("lrt", "wald"), nsim, seed, confidence, coefficients, show)
+        if names is None:
             return None
 
-        intervals = self._getwaldconfint(confidence)
-        pvalues = self._getwaldcoeftest()
         out = {}
-        for name, b, se in zip(self.design.columns, self.beta, self.stderr):
-            out[name] = dict(estimate=float(b), stderr=float(se),
-                             zvalue=float(b / se) if np.isfinite(se) and se > 0 else np.nan,
-                             pvalue=pvalues[name], confint=tuple(float(v) for v in intervals[name]))
+        if method == "wald":
+            pvalues = self._getwaldcoeftest()
+            for name in names:
+                k = self.design.columns.index(name)
+                b, se = float(self.beta[k]), float(self.stderr[k])
+                out[name] = dict(estimate=b, stderr=se, statistic=b / se if np.isfinite(se) and se > 0 else np.nan,
+                                 pvalue=pvalues[name])
+        else:
+            indices = [self.design.columns.index(name) for name in names]
+            refits = sum((k,) not in self.__lrcache for k in indices)
+            expected = refits * self.fittime + 2 * nsim * len(names) * self.__simfittime()
+            if expected > self.lrnotice:
+                print("Note: The likelihood-ratio tests of the coefficients are being computed. This can take "
+                      "about %s." % self.__duration(expected), flush=True)
+            rng = np.random.default_rng(seed)
+            for name, k in zip(names, indices):
+                result = dict(estimate=float(self.beta[k]), stderr=float(self.stderr[k]))
+                dropped = self.__dropfit([k], name)
+                if dropped is None:
+                    result.update(statistic=np.nan, pvalue=np.nan)
+                    out[name] = result
+                    continue
+                statistic, reduced = dropped
+                result.update(statistic=float(statistic), pvalue=float(chi2.sf(statistic, 1)))
+                if nsim:
+                    keep = [j for j in range(self.design.d) if j != k]
+                    simulated = self.__simulatelr(reduced, keep, nsim, rng, name)
+                    hits = int(np.count_nonzero(simulated >= statistic))
+                    m = simulated.size
+                    result.update(simpvalue=(hits + 1.0) / (m + 1.0) if m else np.nan,
+                                  siminterval=self.__clopperpearson(hits, m, confidence) if m else (np.nan, np.nan),
+                                  nsim=m)
+                out[name] = result
 
         if show:
             if not out:
                 print("The model has no coefficients.")
                 return out
-            print("Wald tests of the coefficients (every intensity is multiplied by exp(x'beta), "
-                  "i.e. positive means lower response):")
             width = max(12, max(len(name) for name in out) + 2)
-            label = "%g%% conf. int." % (100.0 * confidence)
-            print("%-*s %10s %10s %9s %9s %21s" % (width, "", "Estimate", "Std.Err", "z value", "Pr(>|z|)", label))
+            if method == "wald":
+                print("Wald tests of the coefficients (every intensity is multiplied by exp(x'beta), "
+                      "i.e. positive means lower response):")
+                print("%-*s %10s %10s %9s %9s" % (width, "", "Estimate", "Std.Err", "z value", "Pr(>|z|)"))
+                for name, row in out.items():
+                    print("%-*s %10.4f %10.4f %9.2f %9s" % (width, name, row["estimate"], row["stderr"],
+                                                         row["statistic"], self.__ptext(row["pvalue"])))
+            else:
+                print("Likelihood-ratio tests of the coefficients (every intensity is multiplied by "
+                      "exp(x'beta), i.e. positive means lower response):")
+                header = "%-*s %10s %10s %9s %9s" % (width, "", "Estimate", "Std.Err", "LR stat", "Pr(>Chi)")
+                if nsim:
+                    header += " %9s %17s" % ("Sim. p", "%g%% MC interval" % (100.0 * confidence))
+                print(header)
+                for name, row in out.items():
+                    text = "%-*s %10.4f %10.4f %9.2f %9s" % (width, name, row["estimate"], row["stderr"],
+                                                           row["statistic"], self.__ptext(row["pvalue"]))
+                    if nsim:
+                        text += " %9.4f %8.4f %8.4f" % ((row["simpvalue"],) + tuple(row["siminterval"]))
+                    print(text)
+                if nsim:
+                    print("Simulated p-values from %d data sets per coefficient simulated without the "
+                          "coefficient." % nsim)
+
+        return out
+
+    def confint(self, confidence: float = 0.95, method: str = "profile", nsim: int = 0, seed: int = None,
+                coefficients=None, show: bool = True) -> dict:
+        """
+        Return confidence intervals of the coefficients. The default is the
+        profile-likelihood interval ("profile"), optionally with a simulated critical
+        value (nsim > 0). The alternative is the Wald interval ("wald"). Note that
+        the Wald interval is much faster to compute, but less accurate in small
+        samples.
+
+        Args:
+            confidence (float, default=0.95): Confidence level.
+            method (str, default="profile"): "profile" or "wald".
+            nsim (int, default=0): With "profile", simulated data sets per
+                coefficient for a simulated critical value; 0 for none.
+            seed (int, optional): Random seed of the simulation.
+            coefficients (str or list, optional): The coefficients, named as in
+                getcoef; all when omitted.
+            show (bool, default=True): Whether to print the table.
+
+        Returns:
+            dict: For each coefficient, a dictionary with 'estimate', 'lower' and
+                'upper' (infinite for an unbounded interval), with "profile" also
+                'critical' (the critical value), and with nsim > 0 'nsim'. None if
+                the arguments are invalid.
+        """
+
+        names = self.__checkcoefargs(method, ("profile", "wald"), nsim, seed, confidence, coefficients, show)
+        if names is None:
+            return None
+
+        out = {}
+        if method == "wald":
+            intervals = self._getwaldconfint(confidence)
+            for name in names:
+                k = self.design.columns.index(name)
+                out[name] = dict(estimate=float(self.beta[k]), lower=float(intervals[name][0]),
+                                 upper=float(intervals[name][1]))
+        else:
+            chain = 2 if self.dtype in ("coxian", "gencoxian", "generlang") else 1
+            expected = len(names) * (self.profilepoints * chain + 2 * nsim * (self.lrsimrestarts + chain)) \
+                * self.fittime / max(1, len(self.d.startstatus))
+            if expected > self.lrnotice:
+                print("Note: The profile-likelihood intervals are being computed. This can take about %s."
+                      % self.__duration(expected), flush=True)
+            rng = np.random.default_rng(seed)
+            quantile = float(chi2.ppf(confidence, 1))
+            for name in names:
+                k = self.design.columns.index(name)
+                result = dict(estimate=float(self.beta[k]))
+                if (k,) in self.__lrcache:
+                    # the refit without the column is the profile at zero
+                    statistic, reduced = self.__lrcache[(k,)]
+                    self.__profilecache.setdefault(k, {})[0.0] = (self.d.loglikelihood - statistic / 2.0, reduced)
+                critical = quantile
+                if nsim:
+                    simulated = self.__simulateprofile(k, nsim, rng, name)
+                    critical = float(np.quantile(simulated, confidence, method="higher")) if simulated.size else np.nan
+                    result["nsim"] = int(simulated.size)
+                scale = float(self.design.scale[k])
+                ends = [self.__profilebound(k, critical, side, name) / scale for side in (-1.0, 1.0)]
+                result.update(lower=float(ends[0]), upper=float(ends[1]), critical=critical)
+                out[name] = result
+
+        if show:
+            if not out:
+                print("The model has no coefficients.")
+                return out
+            width = max(12, max(len(name) for name in out) + 2)
+            kind = "Wald" if method == "wald" else "Profile-likelihood"
+            print("%s confidence intervals of the coefficients (%g%%):" % (kind, 100.0 * confidence))
+            header = "%-*s %10s %10s %10s" % (width, "", "Estimate", "Lower", "Upper")
+            if method == "profile":
+                header += " %10s" % "Crit. val."
+            print(header)
             for name, row in out.items():
-                print("%-*s %10.4f %10.4f %9.2f %9s %10.4f %10.4f"
-                      % (width, name, row["estimate"], row["stderr"], row["zvalue"], self.__ptext(row["pvalue"]),
-                         row["confint"][0], row["confint"][1]))
+                text = "%-*s %10.4f %10.4f %10.4f" % (width, name, row["estimate"], row["lower"], row["upper"])
+                if method == "profile":
+                    text += " %10.4f" % row["critical"]
+                print(text)
+            if method == "profile":
+                if nsim:
+                    print("Critical values simulated from %d data sets per coefficient, simulated from the fit." % nsim)
+                else:
+                    print("Critical value: The %g%% quantile of chi-square(1)." % (100.0 * confidence))
 
         return out
 
@@ -293,8 +437,8 @@ class fitreg:
             return None
 
         # the refits take about as long as the fit itself, notify user when that is long
-        refits = sum(term not in self.__lrcache for term in effects) + 2 * nsim * len(effects)
-        expected = refits * self.fittime
+        refits = sum(tuple(sorted(self.design.termcolumns[term])) not in self.__lrcache for term in effects)
+        expected = refits * self.fittime + 2 * nsim * len(effects) * self.__simfittime()
         if expected > self.lrnotice:
             print("Note: The likelihood-ratio tests are being computed. This can take about %s."
                   % self.__duration(expected), flush=True)
@@ -306,31 +450,11 @@ class fitreg:
             keep = [k for k in range(self.design.d) if k not in index]
             df = len(index)
 
-            if term not in self.__lrcache:
-                # the model without the effect, also started from the fit
-                X = self.design.Xtilde[self.order]
-                fullstart = self.__startfrom(self.d)
-                reduced = self.__engine(self.__lrobs, X[:, keep], self.restarts, self.seed,
-                                        [dict(fullstart, beta=fullstart["beta"][keep])])
-                if reduced is None:
-                    print("Error: The model without '%s' could not be fitted." % term)
-                    out[term] = dict(statistic=np.nan, df=df, pvalue=np.nan)
-                    continue
-                full = self.d.loglikelihood
-                if reduced.loglikelihood > full + 1e-6:
-                    # The fit is at a local maximum: Refit it from the smaller model
-                    start = self.__startfrom(reduced)
-                    start["beta"] = self.__insert(start["beta"], keep, self.design.d)
-                    refit = self.__engine(self.__lrobs, X, self.restarts, self.seed, [start])
-                    if refit is not None and refit.loglikelihood > full:
-                        full = refit.loglikelihood
-                    print("Warning: The model without '%s' reached a higher likelihood than the fit, which "
-                          "is therefore not at the maximum likelihood; refit with more restarts. The test "
-                          "uses the better fit of the full model." % term)
-                statistic = max(2.0 * (full - reduced.loglikelihood), 0.0)
-                self.__lrcache[term] = (statistic, reduced)
-
-            statistic, reduced = self.__lrcache[term]
+            dropped = self.__dropfit(index, term)
+            if dropped is None:
+                out[term] = dict(statistic=np.nan, df=df, pvalue=np.nan)
+                continue
+            statistic, reduced = dropped
             result = dict(statistic=float(statistic), df=df, pvalue=float(chi2.sf(statistic, df)))
 
             if nsim:
@@ -613,7 +737,8 @@ class fitreg:
                     print(text)
                 if nsim:
                     print("Simulated p-values from %d data sets per effect simulated without the effect." % nsim)
-            print("(The Wald tests and intervals of the individual coefficients are given by coeftest())")
+            print("(The tests of the individual coefficients are given by coeftest(), their confidence "
+                  "intervals by confint())")
             print("")
 
         # the random effect and the point mass
@@ -912,7 +1037,12 @@ class fitreg:
         self.__groups = groups
         self.__lrobs = design.y[self.order]
         self.__lrcensoring = design.limits[self.order] if self.censored else None
+        # refits without columns, keyed by the dropped columns, and profile
+        # points, keyed by column and value
         self.__lrcache = {}
+        self.__profilecache = {}
+        exact = np.ones(design.n, dtype=bool) if not self.censored else np.all(np.isnan(self.__lrcensoring), axis=1)
+        self.__exactrows = exact
 
         self.d = _fitcphreg(
             obs=design.y[self.order],
@@ -997,10 +1127,10 @@ class fitreg:
 
         return 0
 
-    def __engine(self, obs: np.array, X: np.array, restarts: int, seed: int, starts: list):
+    def __engine(self, obs: np.array, X: np.array, restarts: int, seed: int, starts: list, censoring=False):
         """
         Fit the engine with the settings of the fit, without covariance and
-        warnings, for the likelihood-ratio tests.
+        warnings, for the likelihood-ratio tests and the profiles.
 
         Args:
             obs (ndarray): Positive observations, in the order of the fit.
@@ -1008,6 +1138,8 @@ class fitreg:
             restarts (int): Number of random starts.
             seed (int): Random seed of the engine.
             starts (list): Further starting values (see _fitcphreg).
+            censoring (ndarray, optional): Censoring limits in the order of the
+                fit; those of the data when omitted.
 
         Returns:
             _fitcphreg: The fitted engine, or None if the fit failed.
@@ -1021,7 +1153,8 @@ class fitreg:
                                 quadnodes=self.quadnodes, restarts=restarts, seed=seed,
                                 tolerance=self.tolerance, itermax=int(self.itermax),
                                 accelerate=self.accelerate, verbose=False, starts=starts,
-                                covariance=False, censoring=self.__lrcensoring)
+                                covariance=False,
+                                censoring=self.__lrcensoring if censoring is False else censoring)
             engine.fit()
         return None if engine.failed else engine
 
@@ -1056,6 +1189,278 @@ class fitreg:
         out = np.zeros(d)
         out[keep] = values
         return out
+
+    def __checkcoefargs(self, method: str, methods: tuple, nsim: int, seed, confidence: float,
+                        coefficients, show: bool):
+        """
+        Check the arguments of coeftest and confint.
+
+        Args:
+            method (str): The method asked for.
+            methods (tuple): The methods available, the simulating one first.
+            nsim (int): Simulated data sets.
+            seed: Random seed.
+            confidence (float): Confidence level.
+            coefficients: Names of coefficients, or None for all.
+            show (bool): Whether to print.
+
+        Returns:
+            list: The names of the coefficients, or None (with an error printed)
+                if an argument is invalid.
+        """
+        if method not in methods:
+            print("Error: The method must be '%s' or '%s'." % methods)
+            return None
+        if not isinstance(nsim, int) or isinstance(nsim, bool) or nsim < 0:
+            print("Error: The number of simulations must be an integer of at least 0.")
+            return None
+        if nsim and method != methods[0]:
+            print("Error: Simulations are available for method='%s'." % methods[0])
+            return None
+        if nsim and self.censored:
+            print("Error: Simulations are not available with censored observations, which would need a model "
+                  "of the censoring; use nsim=0.")
+            return None
+        if seed is not None and (not isinstance(seed, int) or isinstance(seed, bool)):
+            print("Error: The seed can only be specified as an integer.")
+            return None
+        if not isinstance(confidence, float) or not 0.0 < confidence < 1.0:
+            print("Error: The confidence level must be a float between 0 and 1.")
+            return None
+        if not isinstance(show, bool):
+            print("Error: The argument 'show' needs to be of type 'bool'.")
+            return None
+        columns = list(self.design.columns)
+        if coefficients is None:
+            return columns
+        if isinstance(coefficients, str):
+            coefficients = [coefficients]
+        if not isinstance(coefficients, (list, tuple)) or not all(isinstance(c, str) for c in coefficients):
+            print("Error: The coefficients must be given as a name or a list of names, e.g. 'x' or ['x', 'g[B]'].")
+            return None
+        unknown = [c for c in coefficients if c not in columns]
+        if unknown:
+            print("Error: '%s' is not a coefficient of the model. The coefficients are: %s."
+                  % (unknown[0], ", ".join(columns) if columns else "none"))
+            return None
+        return list(dict.fromkeys(coefficients))
+
+    def __dropfit(self, index: list, label: str):
+        """
+        Return the likelihood-ratio statistic for dropping columns of the
+        design, refitting the model without them, also started from the fit.
+        Refits are cached by the dropped columns, so getlrtest, summary and
+        coeftest share them.
+
+        Args:
+            index (list): Indices of the dropped columns.
+            label (str): Name of the effect or coefficient, for messages.
+
+        Returns:
+            tuple: The statistic and the fitted engine without the columns, or
+                None (with an error printed) if that fit failed.
+        """
+        key = tuple(sorted(index))
+        if key not in self.__lrcache:
+            keep = [k for k in range(self.design.d) if k not in key]
+            X = self.design.Xtilde[self.order]
+            fullstart = self.__startfrom(self.d)
+            reduced = self.__engine(self.__lrobs, X[:, keep], self.restarts, self.seed,
+                                    [dict(fullstart, beta=fullstart["beta"][keep])])
+            if reduced is None:
+                print("Error: The model without '%s' could not be fitted." % label)
+                return None
+            full = self.d.loglikelihood
+            if reduced.loglikelihood > full + 1e-6:
+                # The fit is at a local maximum: Refit it from the smaller model
+                start = self.__startfrom(reduced)
+                start["beta"] = self.__insert(start["beta"], keep, self.design.d)
+                refit = self.__engine(self.__lrobs, X, self.restarts, self.seed, [start])
+                if refit is not None and refit.loglikelihood > full:
+                    full = refit.loglikelihood
+                print("Warning: The model without '%s' reached a higher likelihood than the fit, which "
+                      "is therefore not at the maximum likelihood; refit with more restarts. The test "
+                      "uses the better fit of the full model." % label)
+            self.__lrcache[key] = (max(2.0 * (full - reduced.loglikelihood), 0.0), reduced)
+        return self.__lrcache[key]
+
+    def __simfittime(self) -> float:
+        """
+        Return the expected duration of one fit to a simulated data set: Its
+        starts (the given one, the preset of a chain, lrsimrestarts random ones)
+        at the duration of one start of the fit.
+
+        Returns:
+            float: Seconds.
+        """
+        chain = 2 if self.dtype in ("coxian", "gencoxian", "generlang") else 1
+        return (self.lrsimrestarts + chain) * self.fittime / max(1, len(self.d.startstatus))
+
+    def __profile(self, k: int, value: float, obs: np.array = None, start: dict = None, seed: int = None):
+        """
+        Return the profile log-likelihood with the coefficient of centred column k
+        held at value: The model without the column, fitted to the responses
+        (and censoring limits) multiplied by exp(value x_k), plus value times the
+        sum of x_k over the uncensored rows, the Jacobian of that change of time
+        scale. The fit starts from the nearest cached profile point (or the fit).
+
+        Args:
+            k (int): Index of the column on the centred design.
+            value (float): The coefficient on the centred design.
+            obs (ndarray, optional): Responses in the order of the fit; those of
+                the data when omitted (and then cached).
+            start (dict, optional): Starting value, with the coefficients of the
+                kept columns.
+            seed (int, optional): Random seed of the engine; that of the fit when
+                omitted.
+
+        Returns:
+            tuple: The profile log-likelihood (-inf if the fit failed) and the
+                fitted engine (None if it failed).
+        """
+        X = self.design.Xtilde[self.order]
+        keep = [j for j in range(self.design.d) if j != k]
+        xk = X[:, k]
+        cache = self.__profilecache.setdefault(k, {}) if obs is None else None
+        if cache is not None and value in cache:
+            return cache[value]
+        if start is None:
+            if cache:
+                nearest = min(cache, key=lambda v: abs(v - value))
+                start = self.__startfrom(cache[nearest][1]) if cache[nearest][1] is not None else None
+            if start is None:
+                full = self.__startfrom(self.d)
+                start = dict(full, beta=full["beta"][keep])
+        factor = np.exp(value * xk)
+        y = (self.__lrobs if obs is None else obs) * factor
+        censoring = None if self.__lrcensoring is None else self.__lrcensoring * factor[:, None]
+        engine = self.__engine(y, X[:, keep], 0, self.seed if seed is None else seed, [start], censoring=censoring)
+        loglik = -np.inf if engine is None else engine.loglikelihood + value * float(np.sum(xk[self.__exactrows]))
+        if cache is not None:
+            cache[value] = (loglik, engine)
+        if self.verbose and obs is None:
+            print("Profile of coefficient %d: Value %.6f, log-likelihood %.6f" % (k, value, loglik))
+        return loglik, engine
+
+    def __profilebound(self, k: int, critical: float, side: float, name: str) -> float:
+        """
+        Return one end of the profile-likelihood interval of centred column k:
+        The value on the given side of the estimate where
+        2 (loglik - profile loglik) equals the critical value, found by the
+        secant method on the signed root of the statistic, bracketed.
+
+        Args:
+            k (int): Index of the column on the centred design.
+            critical (float): The critical value of the statistic.
+            side (float): -1.0 for the lower end, 1.0 for the upper.
+            name (str): Name of the coefficient, for messages.
+
+        Returns:
+            float: The end on the centred scale; infinite if the profile does
+                not reach the critical value, NaN if it cannot be evaluated.
+        """
+        if not np.isfinite(critical):
+            return np.nan
+        estimate = float(self.d.beta[k])
+        full = self.d.loglikelihood
+        target = np.sqrt(critical)
+        se = float(np.sqrt(self.d.covariance[k, k])) if np.isfinite(self.d.covariance[k, k]) else np.nan
+        step = se if np.isfinite(se) and se > 0 else 1.0
+        warned = [False]
+
+        def root(value):
+            loglik, _ = self.__profile(k, value)
+            if not np.isfinite(loglik):
+                return np.nan
+            if loglik > full + 1e-6 and not warned[0]:
+                warned[0] = True
+                print("Warning: The profile of '%s' reached a higher likelihood than the fit, which is "
+                      "therefore not at the maximum likelihood; refit with more restarts." % name)
+            return np.sqrt(max(2.0 * (full - loglik), 0.0))
+
+        # bracket the end: (inner, r_inner) below the target, (outer, r_outer) above
+        inner, rinner = estimate, 0.0
+        outer = estimate + side * target * step
+        router = root(outer)
+        for _ in range(30):
+            if not np.isfinite(router):
+                return np.nan
+            if router >= target:
+                break
+            # extrapolate the signed root linearly, by at least half the distance
+            distance = abs(outer - estimate)
+            slope = (router - rinner) / abs(outer - inner) if router > rinner else 0.0
+            grow = (target - router) / slope if slope > 0 else 2.0 * distance
+            grow = min(max(grow * 1.1, 0.5 * distance), 10.0 * distance)
+            inner, rinner = outer, router
+            outer = outer + side * grow
+            if abs(outer - estimate) > 1e3 * step:
+                return side * np.inf
+            router = root(outer)
+        else:
+            return side * np.inf
+
+        # the secant method within the bracket (Illinois variant)
+        lo, rlo, hi, rhi = inner, rinner - target, outer, router - target
+        for _ in range(40):
+            if abs(rhi) < 1e-5 or abs(hi - lo) < 1e-7 * step:
+                break
+            trial = hi - rhi * (hi - lo) / (rhi - rlo)
+            rtrial = root(trial)
+            if not np.isfinite(rtrial):
+                return np.nan
+            rtrial -= target
+            if rtrial * rhi < 0:
+                lo, rlo = hi, rhi
+            else:
+                rlo /= 2.0
+            hi, rhi = trial, rtrial
+        return hi
+
+    def __simulateprofile(self, k: int, nsim: int, rng, name: str) -> np.array:
+        """
+        Simulate the profile likelihood-ratio statistic of centred column k at
+        its estimate, by a parametric bootstrap from the fit: The profile at the
+        estimate is started from the parameters that generated the data, and the
+        full model from both, so the statistic is not negative. Data sets whose
+        fits fail are left out.
+
+        Args:
+            k (int): Index of the column on the centred design.
+            nsim (int): Number of simulated data sets.
+            rng (Generator): Random number generator.
+            name (str): Name of the coefficient, for messages.
+
+        Returns:
+            ndarray: The simulated statistics.
+        """
+        X = self.design.Xtilde[self.order]
+        keep = [j for j in range(self.design.d) if j != k]
+        truth = self.__startfrom(self.d)
+        eta0 = X @ truth["beta"]
+        sigma0 = self.d.sigma if self.__groups is not None else None
+        value = float(truth["beta"][k])
+
+        values = []
+        for r in range(nsim):
+            y = self.__simulatenull(truth, eta0, sigma0, rng)
+            seed = int(rng.integers(2 ** 31))
+            loglik, profiled = self.__profile(k, value, obs=y, start=dict(truth, beta=truth["beta"][keep]), seed=seed)
+            if profiled is None:
+                continue
+            start = self.__startfrom(profiled)
+            start["beta"] = np.insert(start["beta"], k, value)
+            full = self.__engine(y, X, self.lrsimrestarts, seed, [start, truth])
+            if full is None:
+                continue
+            values.append(max(2.0 * (full.loglikelihood - loglik), 0.0))
+            if self.verbose:
+                print("Profile interval of %s: Simulation %d of %d, statistic %.4f" % (name, r + 1, nsim, values[-1]))
+
+        if len(values) < nsim:
+            print("Warning: %d of the %d simulated data sets for '%s' could not be fitted and were left out."
+                  % (nsim - len(values), nsim, name))
+        return np.array(values)
 
     def __sigmatest(self) -> tuple:
         """

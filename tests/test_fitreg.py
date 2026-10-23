@@ -41,6 +41,10 @@ Sub-tests:
     Case 20: The score test of the random effect against a hand computation
              with dense matrices, uncensored and censored; the
              likelihood-ratio alternative; refusals.
+    Case 21: coeftest's likelihood-ratio tests and confint's profile-likelihood
+             intervals against hand fits (uncensored, censored, random effect);
+             the refits are shared; simulated p-values and critical values;
+             runtime notes; refusals.
 
 References:
     Bladt, M. (2022). Phase-type distributions for claim severity regression
@@ -130,6 +134,14 @@ SLOPEMEAN = 1.0
 ORIGINSHIFT = -3.0
 ORIGINGAP = 10.0
 
+# Case 21: Profile-likelihood ends against hand profiles, relative to the
+# standard error (measured up to 6.6e-6 over seeds 0 and 2); NSIMPROFILE
+# simulated profile statistics, whose mean must be that of chi-square(1) at
+# the level ALPHAPROFILE
+TOLPROFILE = 1e-4
+NSIMPROFILE = 100
+ALPHAPROFILE = 0.001
+
 # Cases 15-19: Limits independent of the times: A uniform right-censoring
 # limit, or inspections on CENSGRID (exact, right, inspected: CENSSCHEME).
 CENSRIGHT = (0.5, 6.0)
@@ -149,7 +161,7 @@ EXACTBETA = dict(x=0.6, gb=-0.4, gc=0.5, w=0.3, hq=0.3, xgb=0.4, xgc=-0.3, xw=0.
 EXACTSIGMA = 0.8
 
 # every public method of fitreg, checked against the class
-COVEREDMETHODS = {"getcoef", "getstderr", "coeftest", "getwaldtest", "getlrtest", "getsigma", "getsigmatest", "getzeroprob",
+COVEREDMETHODS = {"getcoef", "getstderr", "coeftest", "confint", "getwaldtest", "getlrtest", "getsigma", "getsigmatest", "getzeroprob",
                   "getranef", "getinitdist", "getphasegen", "getexitrates",
                   "getloglik", "getaic", "getbic", "getdist", "getdensity",
                   "getcumprob", "summary", "plot"}
@@ -347,6 +359,7 @@ fitted = np.array([np.log(-modelrandomexact.getphasegen()[0, 0]), modelrandomexa
                    np.log(modelrandomexact.getsigma())])
 if np.max(np.abs(fitted - oracle.x)) > TOLOPT:
     sys.exit("Validation test failed at case 2: The random-effect estimates differ from a direct maximization of the quadrature likelihood by %.3e." % np.max(np.abs(fitted - oracle.x)))
+RANDOMORACLE = oracle.x.copy()      # kept for the profile of case 21
 if abs(modelrandomexact.getloglik() + oracle.fun) > TOLOPT:
     sys.exit("Validation test failed at case 2: The marginal log-likelihood is %.8f, against %.8f by quadrature." % (modelrandomexact.getloglik(), -oracle.fun))
 
@@ -884,32 +897,31 @@ for arguments in (dict(effecttest="score"), dict(nsim=-1), dict(nsim=2, effectte
     if "Error" not in text or "Formula" in text:
         sys.exit("Validation test failed at case 11: summary accepted the arguments %s." % arguments)
 
-# coeftest: The Wald test, standard error and interval of every coefficient,
-# returned and printed
+# coeftest: Likelihood-ratio tests by default (case 21), Wald tests on
+# request, returned and printed without intervals (those are in confint)
 buffer = io.StringIO()
 with contextlib.redirect_stdout(buffer):
-    table = modelexact.coeftest(confidence=0.9)
+    table = modelexact.coeftest(method="wald")
 printedtable = buffer.getvalue()
-intervals = modelexact._getwaldconfint(0.9)
 if list(table) != HANDNAMES:
     sys.exit("Validation test failed at case 11: coeftest does not return every coefficient.")
 for name, row in table.items():
     se = modelexact.getstderr()[name]
     if abs(row["estimate"] - modelexact.getcoef()[name]) > TOL or abs(row["stderr"] - se) > TOL or \
-            abs(row["zvalue"] - row["estimate"] / se) > TOL or abs(row["pvalue"] - 2.0 * norm.sf(abs(row["estimate"] / se))) > TOL or \
-            max(abs(row["confint"][k] - intervals[name][k]) for k in (0, 1)) > TOL:
-        sys.exit("Validation test failed at case 11: coeftest's row of %s is not the Wald test and interval of the coefficient." % name)
+            abs(row["statistic"] - row["estimate"] / se) > TOL or abs(row["pvalue"] - 2.0 * norm.sf(abs(row["estimate"] / se))) > TOL:
+        sys.exit("Validation test failed at case 11: coeftest's row of %s is not the Wald test of the coefficient." % name)
     fields = [line.split() for line in printedtable.splitlines() if line.split()[:1] == [name]]
-    if len(fields) != 1 or abs(float(fields[0][1]) - row["estimate"]) > 5e-5 or abs(float(fields[0][-1]) - row["confint"][1]) > 5e-5:
-        sys.exit("Validation test failed at case 11: coeftest does not print the row of %s." % name)
-if "90% conf. int." not in printedtable or "Pr(>|z|)" not in printedtable:
-    sys.exit("Validation test failed at case 11: coeftest does not label the p-values and the intervals at the requested level.")
+    if len(fields) != 1 or len(fields[0]) != 5 or abs(float(fields[0][1]) - row["estimate"]) > 5e-5 or \
+            abs(float(fields[0][3]) - row["statistic"]) > 5e-3:
+        sys.exit("Validation test failed at case 11: coeftest does not print the row of %s (without an interval)." % name)
+if "Pr(>|z|)" not in printedtable or "conf. int." in printedtable:
+    sys.exit("Validation test failed at case 11: coeftest does not label the Wald p-values, or still prints intervals.")
 buffer = io.StringIO()
 with contextlib.redirect_stdout(buffer):
-    silent = modelexact.coeftest(show=False)
-    refused = modelexact.coeftest(confidence=1)
+    silent = modelexact.coeftest(method="wald", show=False)
+    refused = modelexact.coeftest(method="score")
 if buffer.getvalue().count("Error") != 1 or refused is not None or silent["x"]["pvalue"] != table["x"]["pvalue"]:
-    sys.exit("Validation test failed at case 11: coeftest(show=False) prints, or a bad confidence level is accepted.")
+    sys.exit("Validation test failed at case 11: coeftest(show=False) prints, or an unknown method is accepted.")
 
 _, printed, _ = quietfit(formula="y ~ x + g", data=DATAEXACT, verbose=False, **EXACT)
 _, printedverbose, _ = quietfit(formula="y ~ x + g", data=DATAEXACT, verbose=True, **EXACT)
@@ -1330,17 +1342,17 @@ def censoredkinds(lower, upper):
     return np.where(np.isnan(lower), np.where(np.isnan(upper), 0, 2), np.where(np.isnan(upper), 1, 3))
 
 
-def exponentialcensored(D, kind, lower, upper, response):
+def exponentialcensored(D, kind, lower, upper, response, offset=0.0):
     """
     The one-phase censored MLE by Newton's method on (log rate, beta): The
-    log-likelihood is concave in z = D c. Returns
+    log-likelihood is concave in z = D c + offset. Returns
     the estimates, the log-likelihood and the observed information.
     """
     lo = np.where(kind == 0, response, np.where(kind == 2, upper, lower))
     hi = upper
 
     def parts(c):
-        z = D @ c
+        z = D @ c + offset
         r = np.exp(z)
         value, g, h = np.zeros(z.size), np.zeros(z.size), np.zeros(z.size)
         e = kind == 0
@@ -1726,6 +1738,199 @@ if quiet(modelexact.getsigmatest)[0] is not None:
 result, printed = quiet(modelrandomexact.getsigmatest, "wald")
 if result is not None or "Error" not in printed:
     sys.exit("Validation test failed at case 20: getsigmatest accepted an unknown method.")
+
+
+# ------------------------------------------------------------------
+# CASE 21: coeftest's likelihood-ratio tests and confint's profile intervals
+# ------------------------------------------------------------------
+
+def countfits(model):
+    """Counts the refits of a fitted model's engine; returns the counter."""
+    counter = [0]
+    original = model._fitreg__engine
+
+    def counting(*arguments, **keywords):
+        counter[0] += 1
+        return original(*arguments, **keywords)
+    model._fitreg__engine = counting
+    return counter
+
+
+def profileends(profile, estimate, critical, width):
+    """The two roots of 2 (profile max - profile(b)) = critical around the estimate, by brentq."""
+    top = profile(estimate)
+    statistic = lambda b: 2.0 * (top - profile(b)) - critical
+    ends = []
+    for side in (-1.0, 1.0):
+        far = estimate + side * width
+        while statistic(far) < 0.0:
+            far = estimate + 2.0 * (far - estimate)
+        ends.append(brentq(statistic, *sorted((estimate, far)), xtol=1e-12))
+    return ends
+
+
+from scipy.optimize import brentq
+
+# one phase: Each coefficient's statistic is that of exponential regression
+# without its column; one refit per coefficient, none for the one-coefficient
+# effects tested in case 13, and none when asked again
+cached = modelexact._fitreg__lrcache
+expected = sum((k,) not in cached for k in range(len(HANDNAMES)))
+if not 0 < expected < len(HANDNAMES):
+    sys.exit("Validation test failed at case 21: Case 13 left %d of the coefficients without a refit, so sharing is not tested." % expected)
+counter = countfits(modelexact)
+tests, printed = quiet(modelexact.coeftest)
+if counter[0] != expected:
+    sys.exit("Validation test failed at case 21: coeftest made %d refits, not one per coefficient without a cached refit (%d)." % (counter[0], expected))
+if quiet(modelexact.coeftest)[0] != tests or counter[0] != expected:
+    sys.exit("Validation test failed at case 21: A second coeftest refitted the model, or changed the tests.")
+if tests["w"]["statistic"] != lrtests["w"]["statistic"]:
+    sys.exit("Validation test failed at case 21: coeftest and getlrtest do not share the refit of a one-coefficient effect.")
+for k, name in enumerate(HANDNAMES):
+    keep = [j for j in range(len(HANDNAMES)) if j != k]
+    hand = 2.0 * (fullloglik - exponentialloglik(HANDX[:, keep], ye))
+    row = tests[name]
+    if abs(row["statistic"] - hand) > TOLEXACT * max(1.0, hand) or abs(row["pvalue"] - chi2.sf(row["statistic"], 1)) > TOL or \
+            row["estimate"] != modelexact.getcoef()[name] or row["stderr"] != modelexact.getstderr()[name]:
+        sys.exit("Validation test failed at case 21: The likelihood-ratio test of %s is %.10f (p = %.6g), against %.10f (p = %.6g) by hand." % (name, row["statistic"], row["pvalue"], hand, chi2.sf(hand, 1)))
+    fields = [line.split() for line in printed.splitlines() if line.split()[:1] == [name]]
+    if len(fields) != 1 or abs(float(fields[0][3]) - row["statistic"]) > 5e-3:
+        sys.exit("Validation test failed at case 21: coeftest does not print the likelihood-ratio row of %s." % name)
+if "Likelihood-ratio tests of the coefficients" not in printed or "Pr(>Chi)" not in printed or "Note" in printed:
+    sys.exit("Validation test failed at case 21: coeftest does not label its likelihood-ratio tests, or printed a note.")
+if list(quiet(modelexact.coeftest, coefficients=["x:g[b]", "x"])[0]) != ["x:g[b]", "x"]:
+    sys.exit("Validation test failed at case 21: coeftest does not test the coefficients asked for, in their order.")
+
+
+def exponentialprofile(X, column, value, response):
+    """The log-likelihood of exponential regression with the coefficient of one column held at value."""
+    full = np.column_stack([np.ones(response.size), np.delete(X, column, axis=1)])
+    fitted = sm.GLM(response, full, family=sm.families.Gamma(link=sm.families.links.Log()),
+                    offset=-value * X[:, column]).fit(tol=1e-14, maxiter=1000)
+    mean = np.exp(full @ fitted.params - value * X[:, column])
+    return float(np.sum(-np.log(mean) - response / mean))
+
+
+# one phase, uncensored: The ends of the profile-likelihood interval, where the
+# statistic reaches the chi-square quantile; refits shared on a second call
+quantile = chi2.ppf(0.95, 1)
+chosen = ["x", "g[c]", "x:w"]
+counter[0] = 0
+intervals, printed = quiet(modelexact.confint, coefficients=chosen)
+fits = counter[0]
+if quiet(modelexact.confint, coefficients=chosen)[0] != intervals or counter[0] != fits:
+    sys.exit("Validation test failed at case 21: A second confint refitted the model, or changed the intervals.")
+worst = 0.0
+for name in chosen:
+    k = HANDNAMES.index(name)
+    se = modelexact.getstderr()[name]
+    ends = profileends(lambda b: exponentialprofile(HANDX, k, b, ye), modelexact.getcoef()[name], quantile, 3.0 * se)
+    row = intervals[name]
+    worst = max(worst, abs(row["lower"] - ends[0]) / se, abs(row["upper"] - ends[1]) / se)
+    if row["critical"] != quantile or row["estimate"] != modelexact.getcoef()[name] or not row["lower"] < row["estimate"] < row["upper"]:
+        sys.exit("Validation test failed at case 21: The interval of %s has critical value %s or does not contain the estimate." % (name, row["critical"]))
+    if (row["lower"] > 0.0 or row["upper"] < 0.0) != (tests[name]["pvalue"] < 0.05):
+        sys.exit("Validation test failed at case 21: The profile interval of %s and its likelihood-ratio test disagree." % name)
+if worst > TOLPROFILE:
+    sys.exit("Validation test failed at case 21: The profile-likelihood ends differ from the hand profile by %.2e standard errors." % worst)
+if "Profile-likelihood confidence intervals of the coefficients (95%):" not in printed or "Crit. val." not in printed:
+    sys.exit("Validation test failed at case 21: confint does not label its profile-likelihood intervals.")
+# Wald intervals on request, at the requested level
+wald = quiet(modelexact.confint, 0.9, "wald")[0]
+waldhand = modelexact._getwaldconfint(0.9)
+if list(wald) != HANDNAMES or max(abs(wald[n]["lower"] - waldhand[n][0]) + abs(wald[n]["upper"] - waldhand[n][1]) for n in HANDNAMES) > TOL:
+    sys.exit("Validation test failed at case 21: confint(method='wald') is not the Wald interval.")
+profileworst = worst
+
+# every kind of censoring: The responses and limits are rescaled by exp(b x),
+# with the Jacobian of the uncensored rows only
+lowerc, upperc = DATACENSORED["lo"].to_numpy(), DATACENSORED["hi"].to_numpy()
+responsec = DATACENSORED["y"].to_numpy()
+kindc = censoredkinds(lowerc, upperc)
+intervals = quiet(modelcensored.confint, coefficients=["x", "g[c]"])[0]
+for name in ("x", "g[c]"):
+    k = CENSNAMES.index(name) + 1
+    other = [j for j in range(Dc.shape[1]) if j != k]
+    profile = lambda b: exponentialcensored(Dc[:, other], kindc, lowerc, upperc, responsec, offset=b * Dc[:, k])[1]
+    se = modelcensored.getstderr()[name]
+    ends = profileends(profile, modelcensored.getcoef()[name], quantile, 3.0 * se)
+    gap = max(abs(intervals[name]["lower"] - ends[0]), abs(intervals[name]["upper"] - ends[1])) / se
+    profileworst = max(profileworst, gap)
+    if gap > TOLPROFILE:
+        sys.exit("Validation test failed at case 21: With censoring the profile-likelihood ends of %s differ from the hand profile by %.2e standard errors." % (name, gap))
+tests = quiet(modelcensored.coeftest, coefficients="x")[0]
+statistic = 2.0 * (oraclell - exponentialcensored(Dc[:, [0, 2, 3]], kindc, lowerc, upperc, responsec)[1])
+if abs(tests["x"]["statistic"] - statistic) > TOLEXACT * max(1.0, statistic):
+    sys.exit("Validation test failed at case 21: With censoring the likelihood-ratio test of x is %.10f, against %.10f." % (tests["x"]["statistic"], statistic))
+
+# a random effect: The profile maximizes over the rate and sigma too
+def randomprofile(b):
+    """The quadrature log-likelihood of case 2 maximized over the rate and log sigma, beta held at b."""
+    fitted = minimize(lambda v: randomnegloglik(np.array([v[0], b, v[1]])), RANDOMORACLE[[0, 2]], method="Nelder-Mead",
+                      options=dict(xatol=1e-10, fatol=1e-12, maxiter=4000))
+    return -fitted.fun
+
+
+row = quiet(modelrandomexact.confint, coefficients="x")[0]["x"]
+se = modelrandomexact.getstderr()["x"]
+ends = profileends(randomprofile, RANDOMORACLE[1], quantile, 3.0 * se)
+gap = max(abs(row["lower"] - ends[0]), abs(row["upper"] - ends[1])) / se
+if gap > TOLPROFILE:
+    sys.exit("Validation test failed at case 21: With a random effect the profile-likelihood ends of x differ from the quadrature profile by %.2e standard errors." % gap)
+
+# simulations: A simulated p-value of the form (1 + k) / (nsim + 1), and a
+# simulated critical value, both reproducible with their seed; the ends then
+# lie where the profile statistic reaches that critical value
+test = quiet(modellr.coeftest, coefficients="w", nsim=NSIMLR, seed=SEED)[0]["w"]
+k = test["simpvalue"] * (NSIMLR + 1) - 1
+if test["nsim"] != NSIMLR or abs(k - round(k)) > 1e-9 or not test["siminterval"][0] <= test["simpvalue"] <= test["siminterval"][1] + 1.0 / NSIMLR:
+    sys.exit("Validation test failed at case 21: The simulated p-value of coeftest is %.6f from %d data sets." % (test["simpvalue"], test["nsim"]))
+if quiet(modellr.coeftest, coefficients="w", nsim=NSIMLR, seed=SEED)[0]["w"] != test:
+    sys.exit("Validation test failed at case 21: The simulated p-value of coeftest is not reproducible with its seed.")
+nsimci = 20
+row = quiet(modellr.confint, coefficients="w", nsim=nsimci, seed=SEED)[0]["w"]
+if row["nsim"] != nsimci or not row["critical"] > 0.0 or quiet(modellr.confint, coefficients="w", nsim=nsimci, seed=SEED)[0]["w"] != row:
+    sys.exit("Validation test failed at case 21: The simulated critical value %s from %s data sets is not reproducible." % (row["critical"], row["nsim"]))
+k = modellr.design.columns.index("w")
+scale = modellr.design.scale[k]
+# the critical value is the quantile of the simulated statistics, which the
+# simulator reproduces from the same seed
+again = modellr._fitreg__simulateprofile(k, nsimci, np.random.default_rng(SEED), "w")
+if row["critical"] != float(np.quantile(again, 0.95, method="higher")):
+    sys.exit("Validation test failed at case 21: The simulated critical value %.6f is not the 95%% quantile of the simulated statistics (%.6f)." % (row["critical"], np.quantile(again, 0.95, method="higher")))
+for end in (row["lower"], row["upper"]):
+    statistic = 2.0 * (modellr.d.loglikelihood - modellr._fitreg__profile(k, end * scale)[0])
+    if abs(statistic - row["critical"]) > 1e-3:
+        sys.exit("Validation test failed at case 21: At an end of the simulated interval the statistic is %.6f, not the critical value %.6f." % (statistic, row["critical"]))
+# the simulated statistics at the estimate follow chi-square(1) on one-phase
+# data: Their mean must be 1 (t interval at the level ALPHAPROFILE)
+simulated = modellr._fitreg__simulateprofile(k, NSIMPROFILE, np.random.default_rng([SEED, 21]), "w")
+half = t_dist.ppf(1.0 - ALPHAPROFILE / 2.0, simulated.size - 1) * simulated.std(ddof=1) / np.sqrt(simulated.size)
+if simulated.size != NSIMPROFILE or abs(simulated.mean() - 1.0) > half:
+    sys.exit("Validation test failed at case 21: The simulated profile statistics have mean %.4f, outside 1 +/- %.4f." % (simulated.mean(), half))
+
+# the runtime notes: Printed when the refits are expected to take longer than
+# lrnotice, without changing the results
+modellr.lrnotice = -1.0
+noted, printed = quiet(modellr.coeftest, coefficients="x")
+notedci, printedci = quiet(modellr.confint, coefficients="x")
+modellr.lrnotice = 10.0
+if not printed.startswith("Note: The likelihood-ratio tests of the coefficients are being computed. This can take about ") or \
+        not printedci.startswith("Note: The profile-likelihood intervals are being computed. This can take about ") or \
+        noted != quiet(modellr.coeftest, coefficients="x")[0] or notedci != quiet(modellr.confint, coefficients="x")[0]:
+    sys.exit("Validation test failed at case 21: The runtime notes are '%s' and '%s', or they changed the results." % (printed.splitlines()[0], printedci.splitlines()[0]))
+
+# refusals: An error and None
+for method, arguments in ((modelexact.coeftest, dict(method="profile")), (modelexact.confint, dict(method="lrt")),
+                          (modelexact.coeftest, dict(nsim=-1)), (modelexact.confint, dict(nsim=1.5)),
+                          (modelexact.coeftest, dict(method="wald", nsim=2)), (modelexact.confint, dict(method="wald", nsim=2)),
+                          (modelexact.coeftest, dict(seed=1.5)), (modelexact.confint, dict(confidence=1)),
+                          (modelexact.coeftest, dict(coefficients="q")), (modelexact.confint, dict(coefficients=3)),
+                          (modelexact.coeftest, dict(show=1)), (modelcensored.coeftest, dict(nsim=2)),
+                          (modelcensored.confint, dict(nsim=2))):
+    result, printed = quiet(method, **arguments)
+    if result is not None or not printed.startswith("Error"):
+        sys.exit("Validation test failed at case 21: %s accepted %s." % (method.__name__, arguments))
 
 
 print("fitreg: All tests passed.")
