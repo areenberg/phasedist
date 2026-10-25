@@ -104,20 +104,6 @@ class fitcph2dist:
         else:
             sys.exit(1)  # terminate the program
 
-    def __exponential(self, matrix: np.array, x: float) -> np.array:
-        """
-        Returns exp(matrix * x) by uniformization.
-
-        Args:
-            matrix (ndarray): The matrix to exponentiate.
-            x (float): The time to exponentiate over.
-
-        Returns:
-            ndarray: The matrix exponential.
-        """
-
-        return self.__unif.run(matrix, float(x))[0]
-
     # ----------------------------------------------------------------------
     #   PUBLIC METHODS
     # ----------------------------------------------------------------------
@@ -1342,8 +1328,8 @@ class fitcph2dist:
         if self.disttype == "ph":
             # the life left beyond q is phase-type with the same generator,
             # started from where the process is at q
-            alive = np.matmul(np.asarray(self.param1, dtype=float).ravel(),
-                              self.__exponential(self.param2, q))
+            alive = self.__unif.vectorrun(self.param2, float(q),
+                                          np.asarray(self.param1, dtype=float).ravel())[0]
             green = np.linalg.inv(-np.asarray(self.param2, dtype=float))
             return float(q + np.sum(np.matmul(alive, green)) / np.sum(alive))
 
@@ -1446,12 +1432,12 @@ class fitcph2dist:
         Returns:
             float: Cumulative probability.
         """
+        ones = np.ones(np.asarray(self.param2).shape[0])
         if x0 == 0:
-            return 1 - np.sum(np.matmul(self.param1, self.__exponential(self.param2, x1)))
+            return 1 - float(self.__unif.vectorrun(self.param2, float(x1), self.param1, ones)[0])
         else:
-            return np.sum(np.matmul(self.param1, self.__exponential(self.param2, x0))) - np.sum(
-                np.matmul(self.param1, self.__exponential(self.param2, x1))
-            )
+            survival = self.__unif.vectorrun(self.param2, np.array([x0, x1], dtype=float), self.param1, ones)
+            return float(survival[0]) - float(survival[1])
 
     def __per_dcdf(self, x0: float, x1: float) -> float:
         """

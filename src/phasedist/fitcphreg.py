@@ -4,7 +4,7 @@ import warnings
 import numpy as np
 from phasedist.mcph import mcph
 from phasedist.rndcph import rndcph
-from phasedist.unif import _unif
+from phasedist.unif import _unif, _compiled
 from phasedist.regtools import _stoprule, _aghq, _quadform
 
 
@@ -222,6 +222,41 @@ class _fitcphreg:
     #   PRIVATE METHODS: MATRIX EXPONENTIALS AND THE E-STEP
     # ----------------------------------------------------------------------
 
+    def __chunks(self, mus: np.array):
+        """
+        Yields the chunks of sorted Poisson parameters that are exponentiated
+        together: Parameters of similar size, within a budget of terms, and a
+        chunk above maxpoisson scaled to it by halvings. The compiled kernels
+        sum each time over its own window of terms, so with them the
+        parameters up to maxpoisson form a single chunk, with one stack of
+        powers.
+
+        Args:
+            mus (ndarray): The sorted Poisson parameters.
+
+        Yields:
+            tuple: The start and stop of the chunk, and the number of halvings
+                (zero below maxpoisson).
+        """
+
+        budget = 4e6
+
+        start = 0
+        if _compiled():
+            start = int(np.searchsorted(mus, self.maxpoisson, side="right"))
+            if start > 0:
+                yield 0, start, 0
+        while start < mus.size:
+            limit = max(2.0 * mus[start], mus[start] + 32.0)
+            stop = max(int(np.searchsorted(mus, limit, side="right")), start + 1)
+            terms = mus[stop - 1] + 6.0 * np.sqrt(mus[stop - 1]) + 20.0
+            stop = min(stop, start + max(16, int(budget / (terms + 1.0))))
+            halvings = 0
+            if not mus[stop - 1] <= self.maxpoisson:
+                halvings = int(np.ceil(np.log2(mus[stop - 1] / self.maxpoisson)))
+            yield start, stop, halvings
+            start = stop
+
     def __expm(self, matrix: np.array, times: np.array, nrows: int = None) -> np.array:
         """
         Returns exp(matrix * y), or its leading rows, for every y by
@@ -248,26 +283,58 @@ class _fitcphreg:
         order = np.argsort(times)
         ordered = times[order]
         gamma = float(np.max(np.abs(np.diag(matrix))))
-        mus = gamma * ordered
-        budget = 4e6
 
-        start = 0
-        while start < times.size:
-            limit = max(2.0 * mus[start], mus[start] + 32.0)
-            stop = max(int(np.searchsorted(mus, limit, side="right")), start + 1)
-            terms = mus[stop - 1] + 6.0 * np.sqrt(mus[stop - 1]) + 20.0
-            stop = min(stop, start + max(16, int(budget / (terms + 1.0))))
-            if mus[stop - 1] <= self.maxpoisson:
+        for start, stop, halvings in self.__chunks(gamma * ordered):
+            if halvings == 0:
                 out[order[start:stop]] = self.unif.run(matrix, ordered[start:stop], nrows=nrows)
             else:
-                halvings = int(np.ceil(np.log2(mus[stop - 1] / self.maxpoisson)))
                 block = self.unif.run(matrix, ordered[start:stop] / 2.0 ** halvings)
                 for _ in range(halvings):
                     block = block @ block
                 out[order[start:stop]] = block[:, :nrows, :]
-            start = stop
 
         return out
+
+    def __vecexp(self, left: np.array, matrix: np.array, times: np.array, right: np.array = None) -> np.array:
+        """
+        Returns left exp(matrix * y) right for every y: The vector series of
+        the uniformization class over the chunks of __expm, and a chunk above
+        maxpoisson from its scaled and squared exponential.
+
+        Args:
+            left (ndarray): A vector.
+            matrix (ndarray): A sub-intensity matrix.
+            times (ndarray): Non-negative times.
+            right (ndarray, optional): A vector, or a matrix of column vectors;
+                the identity when omitted.
+
+        Returns:
+            ndarray: Shape (len(times),) for a vector right, (len(times), q)
+                for q columns, and (len(times), n) without right.
+        """
+
+        times = np.asarray(times, dtype=float).reshape(-1)
+        n = matrix.shape[0]
+        vector = right is not None and np.ndim(right) == 1
+        columns = None if right is None else np.asarray(right, dtype=float).reshape(n, -1)
+        out = np.empty((times.size, n if columns is None else columns.shape[1]))
+
+        if times.size > 0:
+            order = np.argsort(times)
+            ordered = times[order]
+            gamma = float(np.max(np.abs(np.diag(matrix))))
+
+            for start, stop, halvings in self.__chunks(gamma * ordered):
+                if halvings == 0:
+                    out[order[start:stop]] = self.unif.vectorrun(matrix, ordered[start:stop], left, columns)
+                else:
+                    block = self.unif.run(matrix, ordered[start:stop] / 2.0 ** halvings)
+                    for _ in range(halvings):
+                        block = block @ block
+                    rows = np.einsum("k,mkl->ml", left, block)
+                    out[order[start:stop]] = rows if columns is None else rows @ columns
+
+        return out[:, 0] if vector else out
 
     def __rowexp(self, pi: np.array, T: np.array, u: np.array) -> np.array:
         """
@@ -282,7 +349,7 @@ class _fitcphreg:
             ndarray: Shape (len(u), nphases).
         """
 
-        return np.einsum("k,mkl->ml", pi, self.__expm(T, u))
+        return self.__vecexp(pi, T, u)
 
     def __logdensity(self, s: dict, eta: np.array, y: np.array) -> np.array:
         """
@@ -298,7 +365,7 @@ class _fitcphreg:
         """
 
         u = np.exp(eta) * y
-        f0 = self.__rowexp(s["pi"], s["T"], u) @ s["t"]
+        f0 = self.__vecexp(s["pi"], s["T"], u, s["t"])
         with np.errstate(divide="ignore", invalid="ignore"):
             return eta + np.log(f0)
 
@@ -494,11 +561,12 @@ class _fitcphreg:
 
         censored = ~exact
         interval = kind[censored] == 3
-        a = self.__rowexp(s["pi"], s["T"], np.r_[u[censored], v[censored][interval]])
+        survival = self.__vecexp(s["pi"], s["T"], np.r_[u[censored], v[censored][interval]],
+                                 np.ones(self.nphases))
         m = int(np.count_nonzero(censored))
-        S = np.sum(a[:m], axis=1)
+        S = survival[:m]
         prob = np.where(kind[censored] == 1, S, 1.0 - S)
-        prob[interval] = S[interval] - np.sum(a[m:], axis=1)
+        prob[interval] = S[interval] - survival[m:]
         with np.errstate(divide="ignore", invalid="ignore"):
             out[censored] = np.where(prob > 0.0, np.log(np.where(prob > 0.0, prob, 1.0)), -np.inf)
 

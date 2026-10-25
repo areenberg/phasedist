@@ -625,8 +625,8 @@ class fitreg:
         if not x > 0.0:
             return float(np.exp(eta) * self.pi @ self.exitrates)
 
-        a = self.pi @ self.__unif.run(self.phgen, np.array([np.exp(eta) * float(x)]))[0]
-        return float(np.exp(eta) * (a @ self.exitrates))
+        f = self.__unif.vectorrun(self.phgen, np.array([np.exp(eta) * float(x)]), self.pi, self.exitrates)[0]
+        return float(np.exp(eta) * f)
 
     def getcumprob(self, x: float, covariates: dict = None, group=None) -> float:
         """
@@ -650,7 +650,7 @@ class fitreg:
             return float(self.zeroprob)
 
         u = np.array([np.exp(eta) * float(x)])
-        return float(1.0 - np.sum(self.pi @ self.__unif.run(self.phgen, u)[0]))
+        return float(1.0 - self.__unif.vectorrun(self.phgen, u, self.pi, np.ones(self.phgen.shape[0]))[0])
 
     def summary(self, effecttest: str = "lrt", nsim: int = 0, seed: int = None) -> None:
         """
@@ -1118,9 +1118,10 @@ class fitreg:
             eta = eta + self.ranef[design.groupcodes]
         u = np.exp(eta) * design.y
         self.pit = np.empty(design.n)
+        ones = np.ones(self.phgen.shape[0])
         for start in range(0, design.n, 2048):
-            block = self.__unif.run(self.phgen, u[start:start + 2048])
-            self.pit[start:start + 2048] = 1.0 - np.sum(np.einsum("k,mkl->ml", basepi, block), axis=1)
+            survival = self.__unif.vectorrun(self.phgen, u[start:start + 2048], basepi, ones)
+            self.pit[start:start + 2048] = 1.0 - survival
 
         if self.d.degenerate:
             print("Warning: The fitted distribution has a phase that holds a negligible share of the expected time.")

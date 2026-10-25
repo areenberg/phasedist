@@ -17,8 +17,8 @@ permissions:
   contents: read
 
 jobs:
-  build:
-    name: build the distribution
+  sdist:
+    name: build the source distribution
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
@@ -44,26 +44,56 @@ jobs:
           fi
           echo "Releasing version ${version}."
 
-      # phasedist is pure Python, so one sdist and one py3-none-any wheel serve
-      # every operating system. They are built once here and the test jobs
-      # install this exact wheel, which is what makes the matrix a test of the
-      # artefact rather than of the working tree
-      - name: Build the source distribution and the wheel
+      # the source distribution is what pip compiles where no wheel fits, so
+      # it is built into a wheel here as well, from the archive alone
+      - name: Build the source distribution, and a wheel from it
         run: |
           python -m pip install --upgrade pip build twine
-          python -m build
+          python -m build --sdist
+          python -m pip wheel --no-deps -w "${RUNNER_TEMP}/fromsdist" dist/*.tar.gz
+          ls "${RUNNER_TEMP}/fromsdist"
 
-      - name: Check the built distribution
+      - name: Check the source distribution
         run: python -m twine check --strict dist/*
 
       - uses: actions/upload-artifact@v4
         with:
-          name: distribution
-          path: dist/
+          name: sdist
+          path: dist/*.tar.gz
+
+  wheels:
+    name: wheels for ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        # the package compiles the kernels of the uniformization class, so a
+        # wheel is built per platform: x86-64 and ARM Linux, Windows, and
+        # macOS on ARM and Intel. Python 3.10 and 3.11 get a wheel each, 3.12
+        # and later share one stable-ABI wheel ([tool.cibuildwheel] in
+        # pyproject.toml), which is tested on each of them
+        os: [ubuntu-latest, ubuntu-24.04-arm, windows-latest, macos-latest, macos-15-intel]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pypa/cibuildwheel@v4.3.4
+
+      - name: Check the wheels
+        shell: bash
+        run: |
+          python -m pip install --upgrade twine
+          python -m twine check --strict wheelhouse/*.whl
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheels-${{ matrix.os }}
+          path: wheelhouse/*.whl
 
   test:
     name: ${{ matrix.os }} / Python ${{ matrix.python-version }}
-    needs: build
+    needs: wheels
     runs-on: ${{ matrix.os }}
     timeout-minutes: 45
     strategy:
@@ -86,25 +116,33 @@ jobs:
 
       - uses: actions/download-artifact@v4
         with:
-          name: distribution
+          name: wheels-${{ matrix.os }}
           path: dist
 
+      # the dependencies from PyPI, then phasedist from the built wheels only:
+      # pip picks the one that fits this platform and Python version, and
+      # cannot fall back to a release on PyPI
       - name: Install the built wheel
         shell: bash
         run: |
           python -m pip install --upgrade pip
-          python -m pip install "$(ls dist/*.whl)[test]"
+          python -m pip install "numpy>=1.24.0" "scipy>=1.10.0" "matplotlib>=3.7.0" "pandas>=1.5.0" "statsmodels>=0.14.0"
+          python -m pip install --no-index --no-deps --find-links dist phasedist
 
       # Each test file puts ../src on sys.path so it can be run from a clone
       # without installing anything. Run from the checkout and that shadows the
       # wheel, and the matrix would be testing the working tree on three
       # operating systems instead of the thing being released. Copying the
       # tests elsewhere leaves that path pointing at nothing, Python ignores it,
-      # and the installed package is what gets imported
+      # and the installed package is what gets imported. With
+      # PHASEDIST_REQUIRE_KERNEL set, test_unif.py fails unless the compiled
+      # kernels are loaded, so a wheel without them cannot pass on the numpy
+      # path unnoticed
       - name: Run the test suite against the installed package
         shell: bash
         env:
           MPLBACKEND: Agg
+          PHASEDIST_REQUIRE_KERNEL: "1"
         run: |
           cp -r tests "${RUNNER_TEMP}/phasedist-tests"
           cd "${RUNNER_TEMP}/phasedist-tests"
@@ -114,9 +152,25 @@ jobs:
             echo "::endgroup::"
           done
 
+      # the same suite on the numpy path of the uniformization class, which
+      # is what a platform without a wheel and without a compiler would run
+      - name: Run the uniformization tests on the numpy path
+        if: matrix.python-version == '3.12'
+        shell: bash
+        env:
+          MPLBACKEND: Agg
+          PHASEDIST_PUREPYTHON: "1"
+        run: |
+          cd "${RUNNER_TEMP}/phasedist-tests"
+          for testfile in test_unif.py test_dist.py test_ecph.py test_fitreg.py; do
+            echo "::group::$testfile"
+            python "$testfile"
+            echo "::endgroup::"
+          done
+
   minimumdependencies:
     name: oldest supported dependencies
-    needs: build
+    needs: wheels
     runs-on: ubuntu-latest
     timeout-minutes: 45
 
@@ -130,7 +184,7 @@ jobs:
 
       - uses: actions/download-artifact@v4
         with:
-          name: distribution
+          name: wheels-ubuntu-latest
           path: dist
 
       # the floors declared in pyproject.toml, pinned exactly, so a release
@@ -141,12 +195,13 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install "numpy==1.24.0" "scipy==1.10.0" "matplotlib==3.7.0" "pandas==1.5.0" "statsmodels==0.14.0"
-          python -m pip install --no-deps "$(ls dist/*.whl)"
+          python -m pip install --no-index --no-deps --find-links dist phasedist
 
       - name: Run the test suite against the installed package
         shell: bash
         env:
           MPLBACKEND: Agg
+          PHASEDIST_REQUIRE_KERNEL: "1"
         run: |
           cp -r tests "${RUNNER_TEMP}/phasedist-tests"
           cd "${RUNNER_TEMP}/phasedist-tests"
@@ -158,7 +213,7 @@ jobs:
 
   publish:
     name: publish to PyPI
-    needs: [build, test, minimumdependencies]
+    needs: [sdist, wheels, test, minimumdependencies]
     runs-on: ubuntu-latest
     # never on a pull request or a manual run, only on a pushed tag
     if: startsWith(github.ref, 'refs/tags/v')
@@ -171,7 +226,13 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
-          name: distribution
+          name: sdist
           path: dist
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: wheels-*
+          path: dist
+          merge-multiple: true
 
       - uses: pypa/gh-action-pypi-publish@release/v1

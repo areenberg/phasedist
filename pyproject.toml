@@ -1,17 +1,19 @@
 [build-system]
-requires = ["setuptools>=59.6.0"]
-build-backend = "setuptools.build_meta"
+requires = ["scikit-build-core>=0.10", "nanobind>=2.2"]
+build-backend = "scikit_build_core.build"
 
-[tool.setuptools]
-include-package-data = true
-
-# keeps compiled caches out of the wheel when the build runs in a
-# working tree that has been used, rather than a fresh checkout
-[tool.setuptools.exclude-package-data]
-"*" = ["__pycache__/*"]
-
-[tool.setuptools.packages.find]
-where = ["src"]
+# The package is Python apart from the compiled kernels of the uniformization
+# class (src/phasedist/_unifkernel.cpp, see CMakeLists.txt). Without them the
+# class falls back to numpy, with the same results.
+[tool.scikit-build]
+minimum-version = "build-system.requires"
+build-dir = "build/{wheel_tag}"
+cmake.build-type = "Release"
+wheel.packages = ["src/phasedist"]
+# stable-ABI wheels for Python 3.12 and later; older versions get one each
+wheel.py-api = "cp312"
+wheel.exclude = ["**/__pycache__/**", "**.pyc", "**/*.cpp"]
+sdist.exclude = [".github", ".vscode", "examples", "images", "validation", "tests", "build"]
 
 [project]
 name = "phasedist"
@@ -38,6 +40,7 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
     "Programming Language :: Python :: 3.14",
+    "Programming Language :: C++",
     "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
     "Topic :: Scientific/Engineering :: Mathematics"
@@ -52,3 +55,18 @@ test = [
 Homepage = "https://github.com/areenberg/phasedist"
 Documentation = "https://github.com/areenberg/phasedist/wiki"
 Issues = "https://github.com/areenberg/phasedist/issues"
+
+# Wheels for CPython 3.10 and 3.11 each, and one stable-ABI wheel for 3.12 and
+# later, which cibuildwheel then tests on 3.13 and 3.14 as well. Every wheel is
+# tested for the compiled kernels with test_unif.py; the full suite runs
+# against the wheels in the test jobs of the workflow.
+[tool.cibuildwheel]
+build = ["cp310-*", "cp311-*", "cp312-*", "cp313-*", "cp314-*"]
+skip = ["cp3??t-*", "*-musllinux_*", "*_i686", "*-win32"]
+test-sources = ["tests"]
+test-command = "python tests/test_unif.py"
+test-environment = { PHASEDIST_REQUIRE_KERNEL = "1" }
+
+# the oldest macOS on Intel that current numpy wheels support (ARM starts at 11)
+[tool.cibuildwheel.macos]
+environment = { MACOSX_DEPLOYMENT_TARGET = "10.15" }

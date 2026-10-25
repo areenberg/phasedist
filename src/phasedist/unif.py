@@ -1,7 +1,30 @@
+import os
 import warnings
 
 import numpy as np
 from scipy.special import gammainc, gammaln, pdtrik
+
+# The compiled kernels (_unifkernel.cpp, built with the package). Without them,
+# or with the environment variable PHASEDIST_PUREPYTHON set, the class sums the
+# same series with numpy.
+_kernel = None
+if not os.environ.get("PHASEDIST_PUREPYTHON"):
+    try:
+        from phasedist import _unifkernel as _kernel
+    except ImportError:
+        _kernel = None
+
+
+def _compiled() -> bool:
+    """
+    Returns whether the compiled kernels are in use.
+
+    Returns:
+        bool: True when _unif sums its series with the compiled kernels.
+    """
+
+    return _kernel is not None
+
 
 class _unif:
     """
@@ -15,6 +38,12 @@ class _unif:
 
     which is a Poisson-weighted sum of powers of P. Note that when T is a
     sub-intensity matrix, the matrix P is sub-stochastic.
+
+    The truncation point and the error bound are chosen here. The sums are
+    formed by the compiled kernels when they are available, and by numpy
+    otherwise; the two agree to rounding. The compiled kernels form each time's
+    weights from the mode by recurrence and leave out the tails of terms that
+    change exp(Ty) by at most a millionth of the tolerance together.
 
     Warning: This class does not contain any input checks.
 
@@ -82,6 +111,9 @@ class _unif:
         Returns:
             float: The largest norm found.
         """
+
+        if _kernel is not None:
+            return float(_kernel.normbound(P, int(horizon)))
 
         r = np.ones(P.shape[0])
         largest = 1.0
@@ -213,6 +245,60 @@ class _unif:
 
         return stacked
 
+    def __prepare(self, matrix: np.array, times: np.array) -> tuple:
+        """
+        Uniformizes the matrix and chooses the truncation point for the
+        largest time, setting gamma, rho, nterms and errorbound, with a warning
+        when the tolerance cannot be met within maxterms.
+
+        Args:
+            matrix (ndarray): The square matrix T.
+            times (ndarray): Non-negative values of y.
+
+        Returns:
+            tuple: P (ndarray, None when Gamma is zero), the Poisson parameter
+                of each time (ndarray), K (int) and the weight below which the
+                compiled kernels leave out a tail (float).
+        """
+
+        gamma, P = self.__uniformize(matrix)
+
+        if P is None:
+            self.gamma, self.rho, self.nterms, self.errorbound = 0.0, 1.0, 0, 0.0
+            return None, None, 0, 0.0
+
+        mus = gamma * times
+        mu = float(np.max(mus))
+
+        rowsums = np.sum(np.abs(P), axis=1)
+
+        if float(np.max(rowsums)) <= 1.0 + 1e-12:
+            # the powers of a sub-stochastic P have norm 1, so there is nothing
+            # to measure and the horizon it would need is not computed either
+            rho = 1.0
+        else:
+            horizon, _ = self.__terms(mu, 1.0)
+            rho = self.__normbound(P, min(horizon, self.maxterms))
+
+        nterms, bound = self.__terms(mu, rho)
+
+        if not np.isfinite(bound):
+            # the result is still returned, but its accuracy is not bounded
+            warnings.warn(
+                "The uniformization series reached maxterms (%d) before meeting the tolerance "
+                "of %.3e."
+                % (self.maxterms, self.tolerance),
+                RuntimeWarning,
+                stacklevel=3)
+
+        self.gamma, self.rho, self.nterms, self.errorbound = gamma, rho, nterms, bound
+
+        # each left-out tail weighs at most this, so that the terms left out
+        # change exp(Ty) by at most a millionth of the tolerance
+        cut = 0.5e-6 * self.tolerance / rho if np.isfinite(rho) and rho > 0.0 else 0.0
+
+        return P, mus, nterms, cut
+
     def run(
         self,
         matrix: np.array,
@@ -240,39 +326,68 @@ class _unif:
         if nrows is None:
             nrows = n
 
-        gamma, P = self.__uniformize(matrix)
+        P, mus, nterms, cut = self.__prepare(matrix, times)
 
         if P is None:
-            self.gamma, self.rho, self.nterms, self.errorbound = 0.0, 1.0, 0, 0.0
             return np.repeat(np.eye(n)[None, :nrows, :], times.size, axis=0)
 
-        mus = gamma * times
-        mu = float(np.max(mus))
-
-        rowsums = np.sum(np.abs(P), axis=1)
-
-        if float(np.max(rowsums)) <= 1.0 + 1e-12:
-            # the powers of a sub-stochastic P have norm 1, so there is nothing
-            # to measure and the horizon it would need is not computed either
-            rho = 1.0
-        else:
-            horizon, _ = self.__terms(mu, 1.0)
-            rho = self.__normbound(P, min(horizon, self.maxterms))
-
-        nterms, bound = self.__terms(mu, rho)
-
-        if not np.isfinite(bound):
-            # the result is still returned, but its accuracy is not bounded
-            warnings.warn(
-                "The uniformization series reached maxterms (%d) before meeting the tolerance "
-                "of %.3e."
-                % (self.maxterms, self.tolerance),
-                RuntimeWarning,
-                stacklevel=2)
-
-        self.gamma, self.rho, self.nterms, self.errorbound = gamma, rho, nterms, bound
+        if _kernel is not None:
+            return _kernel.powersum(P, np.ascontiguousarray(mus), int(nterms), int(nrows), float(cut))
 
         weights = self.__weights(mus, nterms)
         stacked = self.__powers(P, nterms, nrows)
 
         return np.matmul(weights, stacked).reshape(times.size, nrows, n)
+
+    def vectorrun(
+        self,
+        matrix: np.array,
+        times: np.array,
+        left: np.array,
+        right: np.array = None,
+    ) -> np.array:
+        """
+        Returns left exp(Ty) right for every y. The compiled kernels sum the
+        series of the scalars left P^k right, without forming exp(Ty); the
+        numpy path contracts exp(Ty) as run() forms it. The truncation point
+        and the error bound are those of run(), so each value is within
+        errorbound times the sum of the absolute entries of left times the
+        largest absolute entry of its column of right.
+
+        Args:
+            matrix (ndarray): The square matrix T.
+            times (ndarray): Non-negative values of y.
+            left (ndarray): A vector of length n.
+            right (ndarray, default=None): A vector of length n, or a matrix
+                with n rows. The identity when None, giving left exp(Ty).
+
+        Returns:
+            ndarray: Shape (len(times),) for a vector right, (len(times), q) for
+                a matrix right with q columns, and (len(times), n) when right
+                is None.
+        """
+
+        matrix = np.asarray(matrix, dtype=float)
+        times = np.atleast_1d(np.asarray(times, dtype=float))
+        left = np.ascontiguousarray(np.asarray(left, dtype=float).reshape(-1))
+
+        vector = right is not None and np.ndim(right) == 1
+        if right is not None:
+            right = np.ascontiguousarray(np.asarray(right, dtype=float).reshape(matrix.shape[0], -1))
+
+        P, mus, nterms, cut = self.__prepare(matrix, times)
+
+        if P is None:
+            value = left if right is None else left @ right
+            out = np.repeat(value[None, :], times.size, axis=0)
+        elif _kernel is not None:
+            out = _kernel.vectorsum(P, np.ascontiguousarray(mus), int(nterms), left, right, float(cut))
+        else:
+            # the numpy path: exp(Ty) as run() forms it, contracted with the
+            # vectors, which is as fast here as a series of scalars would be
+            n = matrix.shape[0]
+            full = np.matmul(self.__weights(mus, nterms), self.__powers(P, nterms, n))
+            rows = np.einsum("k,mkl->ml", left, full.reshape(times.size, n, n))
+            out = rows if right is None else rows @ right
+
+        return out[:, 0] if vector else out
