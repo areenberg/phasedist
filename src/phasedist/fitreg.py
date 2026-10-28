@@ -10,6 +10,7 @@ from phasedist.fitcphreg import _fitcphreg
 from phasedist.regdesign import _regformula, _regdesign
 from phasedist.unif import _unif
 from phasedist.dist import dist
+from phasedist.regtools import _ppband
 
 
 class fitreg:
@@ -796,9 +797,11 @@ class fitreg:
         dependent, so the plot is a visual check rather than a test.
 
         Args:
-            confint (bool, default=False): Whether to add pointwise
-                Clopper-Pearson intervals.
-            confidence (float, default=0.95): Confidence level for the intervals.
+            confint (bool, default=False): Whether to add a simultaneous
+                confidence band around the diagonal. Under the fitted model,
+                the whole curve lies inside it with probability `confidence`
+                (the equal-precision band of Aldor-Noiman et al., 2013).
+            confidence (float, default=0.95): Confidence level of the band.
             title (str): Plot title.
             filename (str, default="PPcheck.png"): Filename of the generated graph.
 
@@ -820,18 +823,17 @@ class fitreg:
         empirical = counts / float(n)
 
         plt.figure(figsize=(8, 6))
-        plt.plot([0.0, 1.0], [0.0, 1.0], lw=1, linestyle="-", color="blue", label="Uniform")
+        plt.plot([0.0, 1.0], [0.0, 1.0], lw=1, linestyle="-", color="blue", label="Perfect fit")
         plt.plot(transforms, empirical, lw=1, linestyle="-", color="red",
                  label="Empirical CDF of the transforms")
 
         if confint:
-            alpha = 1.0 - confidence
-            lower = beta.ppf(alpha / 2.0, counts, n - counts + 1)
-            upper = beta.ppf(1.0 - alpha / 2.0, counts + 1, n - counts)
-            lower[counts == 0] = 0.0
-            upper[counts == n] = 1.0
-            plt.plot(transforms, upper, lw=1, linestyle="--", color="red", label="Upper conf. int.")
-            plt.plot(transforms, lower, lw=1, linestyle="--", color="red", label="Lower conf. int.")
+            # the k-th sorted transform lies between lower[k] and upper[k] for
+            # every k at once with probability confidence, so the band is drawn
+            # at the height of each point of the curve
+            lower, upper = _ppband().run(n, confidence)
+            plt.fill_betweenx(empirical, lower, upper, color="blue", alpha=0.15, lw=0,
+                              label="%g%% confidence band" % (100.0 * confidence))
 
         plt.xlabel("Fitted conditional CDF")
         plt.ylabel("Empirical CDF")

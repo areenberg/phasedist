@@ -26,7 +26,7 @@ fit = ph.fitreg(formula="time ~ dose + group",
 #Print a summary of the model, with a test of each effect
 fit.summary()
 
-#Check the fit with a PP plot of the observations (saved as PPcheck.png)
+#Check the fit with a PP plot
 fit.plot()
 
 #Store the fitted distribution of a patient with dose 5 in the treatment group

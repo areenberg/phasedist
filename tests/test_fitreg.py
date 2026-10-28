@@ -60,8 +60,9 @@ import warnings
 import numpy as np
 import matplotlib
 
-# no display needed: Case 11 only writes the figure to file
+# no display needed: Case 11 writes the figure to file and inspects it
 matplotlib.use("Agg")
+import matplotlib.pyplot as plt
 
 from scipy.optimize import minimize
 from scipy.special import logsumexp
@@ -78,7 +79,7 @@ sys.path.insert(
 from phasedist.fitreg import fitreg
 from phasedist.dist import dist
 from phasedist.regdesign import _regformula, _regdesign
-from phasedist.regtools import _quadform
+from phasedist.regtools import _quadform, _ppband
 
 try:
     import pandas as pd
@@ -761,11 +762,25 @@ if "Formula: y ~ x + (1|group)" not in text or "Random effect (1|group): Std. de
     sys.exit("Validation test failed at case 11: summary does not report the formula, the random effect std. dev. and the log-likelihood.")
 
 filename = "fitreg_test_plot.png"
+closefigure = plt.close
 try:
-    model.plot(confint=True, filename=filename)
+    # the figure is kept open, so its legend and band can be inspected
+    plt.close = lambda *args, **kwargs: None
+    model.plot(confint=True, confidence=0.9, filename=filename)
     if not os.path.isfile(filename):
         sys.exit("Validation test failed at case 11: plot did not write a file.")
+    labels = [text.get_text() for text in plt.gca().get_legend().get_texts()]
+    bands = [c for c in plt.gca().collections if c.get_label() == "90% confidence band"]
+    if labels != ["Perfect fit", "Empirical CDF of the transforms", "90% confidence band"] or len(bands) != 1:
+        sys.exit("Validation test failed at case 11: The PP plot's legend is %s, not the diagonal, the curve and the 90%% confidence band." % labels)
+    # the band spans, at the height of the k-th point, the limits of _ppband
+    vertices = bands[0].get_paths()[0].vertices
+    lowerband, upperband = _ppband().run(model.pit.size, 0.9)
+    if np.min(vertices[:, 0]) != lowerband[0] or np.max(vertices[:, 0]) != upperband[-1]:
+        sys.exit("Validation test failed at case 11: The PP plot's band does not span the limits of _ppband.")
 finally:
+    plt.close = closefigure
+    plt.close("all")
     if os.path.isfile(filename):
         os.remove(filename)
 
