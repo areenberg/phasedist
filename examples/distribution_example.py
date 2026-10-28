@@ -1,3 +1,10 @@
+"""
+DISTRIBUTION EXAMPLE
+
+This file contains a simple example of fitting a phase-type
+distribution to data using the `fit` class.
+"""
+
 #Load the PhaseDist and NumPy packages
 import phasedist as ph
 import numpy as np
