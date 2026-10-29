@@ -1,25 +1,23 @@
-<img src="https://github.com/areenberg/phasedist/blob/development/images/phasedist_logo_dark.png" alt="A phase-type distribution being fitted to bimodal data" width="500">
+<img src="https://github.com/areenberg/phasedist/blob/development/images/phasedist_logo_dark.png" alt="PhaseDist logo" width="500">
 
 [![PyPI](https://img.shields.io/pypi/v/phasedist?logo=pypi&logoColor=white)](https://pypi.org/project/phasedist/)
 [![Python](https://img.shields.io/pypi/pyversions/phasedist?logo=python&logoColor=white)](https://pypi.org/project/phasedist/)
 [![License](https://img.shields.io/badge/license-MIT-blue)](https://github.com/areenberg/phasedist/blob/main/LICENSE)
 
-PhaseDist is a Python package for fitting continuous and discrete phase-type distributions.
+PhaseDist is a Python package for fitting phase-type regressions and distributions.
 
 ## Features
 
-* Fit continuous and discrete phase-type distributions using EM algorithms.
+* Fit phase-type regressions containing fixed and random effects.
+* Fit continuous and discrete phase-type distributions.
 * Fit to uncensored or censored observations.
-* Impose a special case on the fitted distribution, such as the *Coxian*, *generalized Erlang*, or *hyper-exponential* distribution.
-* Use built-in methods to check the fitted distribution.
-* Compute metrics, such as the mean, density, and quantile function.
-* Simulate observations from a phase-type distribution.
 * Approximate another distribution, e.g. a log-normal distribution, using a phase-type distribution.
-
+* Use built-in methods to check your fit.
+* Simulate observations from a phase-type distribution.
 
 <img src="https://github.com/areenberg/phasedist/blob/development/images/phasedist_fit.gif" alt="A phase-type distribution being fitted to bimodal data" width="500">
 
-*A phase-type distribution fitted using PhaseDist.*
+*A bimodal phase-type distribution fitted using PhaseDist.*
 
 ## Installation
 
