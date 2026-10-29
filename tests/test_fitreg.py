@@ -79,7 +79,8 @@ sys.path.insert(
 from phasedist.fitreg import fitreg
 from phasedist.dist import dist
 from phasedist.regdesign import _regformula, _regdesign
-from phasedist.regtools import _quadform, _ppband
+from phasedist.regtools import _quadform
+from phasedist.ppband import _ppband
 
 try:
     import pandas as pd
@@ -778,6 +779,14 @@ try:
     lowerband, upperband = _ppband().run(model.pit.size, 0.9)
     if np.min(vertices[:, 0]) != lowerband[0] or np.max(vertices[:, 0]) != upperband[-1]:
         sys.exit("Validation test failed at case 11: The PP plot's band does not span the limits of _ppband.")
+    plt.close("all")
+    # every title, axis label and legend entry can be set
+    model.plot(confint=True, xlabel="u", ylabel="F(u)", title="My PP plot", labeldiagonal="Ideal",
+               labelempirical="Transforms", labelband="Band", filename=filename)
+    axes = plt.gca()
+    labels = [text.get_text() for text in axes.get_legend().get_texts()]
+    if (axes.get_xlabel(), axes.get_ylabel(), axes.get_title()) != ("u", "F(u)", "My PP plot") or labels != ["Ideal", "Transforms", "Band"]:
+        sys.exit("Validation test failed at case 11: The PP plot ignores its labels: axes %s, %s, title %s, legend %s." % (axes.get_xlabel(), axes.get_ylabel(), axes.get_title(), labels))
 finally:
     plt.close = closefigure
     plt.close("all")

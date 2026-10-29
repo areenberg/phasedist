@@ -3,10 +3,10 @@ import warnings
 
 import numpy as np
 import matplotlib.pyplot as plt
-from scipy.stats import beta
 from phasedist.fitcph import _fitcph
 from phasedist.fitdph import _fitdph
 from phasedist.dist import dist
+from phasedist.ppband import _ppband
 
 
 class fit:
@@ -249,8 +249,10 @@ class fit:
         observations and the censoring limits, and a warning says so.
 
         Args:
-            confint (bool, default=False): Whether to add Clopper-Pearson confidence intervals to the empirical CDF.
-            confidence (float, default=0.95): Confidence level for the intervals.
+            confint (bool, default=False): Whether to add a confidence band 
+            (the equal-precision band of Aldor-Noiman et al., 2013) around
+            the fitted CDF.
+            confidence (float, default=0.95): Confidence level of the band.
             xlabel (str, default="x"): Label for the x-axis.
             ylabel (str, default="CDF"): Label for the y-axis.
             title (str, default="Empirical and Fitted CDFs"): Plot title.
@@ -303,7 +305,8 @@ class fit:
             empcdf = counts / float(self.obs.size)
 
             if confint:
-                empcdf_lower, empcdf_upper = self.__clopperpearson(counts, confidence)
+                bandlower, bandupper = _ppband().cdfband(theocdf, self.obs.size, confidence)
+                bandlabel = "%g%% confidence band" % (100.0 * confidence)
 
         plt.figure(figsize=(8, 6))
 
@@ -319,44 +322,17 @@ class fit:
                     color="red",
                 )
                 if confint:
-                    plt.plot(
-                        obssorted,
-                        empcdf_upper,
-                        label="Upper conf. int.",
-                        lw=1,
-                        linestyle="--",
-                        color="red",
-                    )
-                    plt.plot(
-                        obssorted,
-                        empcdf_lower,
-                        label="Lower conf. int.",
-                        lw=1,
-                        linestyle="--",
-                        color="red",
-                    )
+                    # step functions of the fitted CDF, shaded around the fitted curve
+                    plt.fill_between(x, bandlower, bandupper, step="post", color="blue",
+                                     alpha=0.15, lw=0, label=bandlabel)
         else:
             if not censored:
                 plt.scatter(
                     x, empcdf, label=labelempirical, lw=1, marker="x", color="red"
                 )
                 if confint:
-                    plt.scatter(
-                        x,
-                        empcdf_upper,
-                        label="Upper conf. int.",
-                        marker="_",
-                        s=100,
-                        color="red",
-                    )
-                    plt.scatter(
-                        x,
-                        empcdf_lower,
-                        label="Lower conf. int.",
-                        marker="_",
-                        s=100,
-                        color="red",
-                    )
+                    plt.scatter(x, bandupper, label=bandlabel, marker="_", s=100, color="blue")
+                    plt.scatter(x, bandlower, label="_nolegend_", marker="_", s=100, color="blue")
             plt.scatter(x, theocdf, label=labelfitted, lw=1, marker="x", color="blue")
 
         plt.xlabel(xlabel)
@@ -373,31 +349,6 @@ class fit:
     # ----------------------------------------------------------------------
     #   PRIVATE METHODS
     # ----------------------------------------------------------------------
-
-    def __clopperpearson(self, counts: np.array, confidence: float) -> tuple:
-        """
-        Returns the Clopper-Pearson interval for every count at once, the beta
-        quantiles being vectorized. The ends are set directly, the beta
-        distribution having no parameters for them.
-
-        Args:
-            counts (ndarray): Number of observations at or below each point.
-            confidence (float): Confidence level.
-
-        Returns:
-            tuple: The lower and the upper bound (ndarray).
-        """
-
-        alpha = 1.0 - confidence
-        total = self.obs.size
-
-        lower = beta.ppf(alpha / 2.0, counts, total - counts + 1)
-        upper = beta.ppf(1.0 - alpha / 2.0, counts + 1, total - counts)
-
-        lower[counts == 0] = 0.0
-        upper[counts == total] = 1.0
-
-        return lower, upper
 
     def __checkinputs(self) -> bool:
         """

@@ -42,8 +42,9 @@ Sub-tests:
     Case 10: getdist returns the distribution fit reports on.
     Case 11: plot writes a file, for continuous and for discrete data, leaves
              the empirical CDF out and warns when anything is censored, closes
-             the figure it wrote, draws no confidence intervals unless asked,
-             and computes them as Clopper-Pearson intervals.
+             the figure it wrote, draws no confidence band unless asked, and
+             draws it around the fitted CDF as _ppband's band (continuous and
+             discrete), but not with censored data.
     Case 12: An unknown distribution type yields no fit, and infeasible input
              terminates.
     Case 13: Censoring reaches the fitting class, survives the removal of the
@@ -65,7 +66,6 @@ import numpy as np
 import matplotlib
 from scipy.linalg import expm
 from scipy.stats import beta
-from statsmodels.stats.proportion import proportion_confint
 
 # a backend that needs no display, since case 11 only writes the figure to file
 matplotlib.use("Agg")
@@ -79,6 +79,7 @@ sys.path.insert(
 
 from phasedist.fit import fit
 from phasedist.dist import dist
+from phasedist.ppband import _ppband
 
 
 # ------------------------------------------------------------------
@@ -92,7 +93,6 @@ SEED = 0
 NPHASES = 3
 NOBS = 300
 
-CONFIDENCE = 0.95   # confidence level checked in case 11
 EMTOLERANCE = 1e-4  # convergence tolerance for the accuracy cases
 STARTTOLERANCE = 1e-5  # tighter, where two fits have to meet
 
@@ -686,24 +686,68 @@ try:
     if figures["default"] == figures["on"]:
         sys.exit("Validation test failed at case 11: asking for confidence intervals changed nothing in the figure.")
 
-    # The intervals are Clopper-Pearson, checked against the exact method in
-    # statsmodels. The two ends are included, the beta distribution having no
-    # parameters there and statsmodels returning a nan.
-    CPCOUNTS = np.array([0, 1, 37, NOBS - 1, NOBS])
+    # The band is drawn around the fitted CDF: For each point of the plot the
+    # limits of _ppband's cdfband at the fitted CDF value, labelled with its
+    # level, as a shaded area (continuous) or markers (discrete). The figure is
+    # kept open so its lines can be inspected.
+    # (at a level other than the default, so a band that ignores it shows)
+    BANDCONFIDENCE = 0.9
+    bandlabel = "%g%% confidence band" % (100.0 * BANDCONFIDENCE)
+    closefigure = plt.close
+    try:
+        plt.close = lambda *args, **kwargs: None
+        for label, model in (("continuous", continuousmodel), ("discrete", discretemodel)):
+            path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "test_fit_band_%s.png" % label)
+            plotted.append(path)
+            model.plot(confint=True, confidence=BANDCONFIDENCE, filename=path)
+            axes = plt.gca()
+            labels = [text.get_text() for text in axes.get_legend().get_texts()]
+            if labels.count(bandlabel) != 1 or any("conf. int." in text for text in labels):
+                sys.exit("Validation test failed at case 11: The %s plot's legend is %s, without one entry for the %s." % (label, labels, bandlabel))
 
-    lower, upper = continuousmodel._fit__clopperpearson(CPCOUNTS, CONFIDENCE)
+            if label == "continuous":
+                # a shaded area between the two step functions
+                fitted = [line for line in axes.get_lines() if line.get_label() == "Fitted CDF"][0]
+                points, cdf = np.asarray(fitted.get_xdata()), np.asarray(fitted.get_ydata())
+                wantlower, wantupper = _ppband().cdfband(cdf, model.obs.size, BANDCONFIDENCE)
+                band = [c for c in axes.collections if c.get_label() == bandlabel]
+                if len(band) != 1 or len(band[0].get_paths()) != 1:
+                    sys.exit("Validation test failed at case 11: The continuous plot does not draw the band as one shaded area.")
+                # its outline holds every corner of the two step functions, and nothing else
+                drawn = {tuple(vertex) for vertex in band[0].get_paths()[0].vertices}
+                stepx = np.repeat(points, 2)[1:]
+                want = (set(zip(stepx, np.repeat(wantlower, 2)[:-1])) | set(zip(stepx, np.repeat(wantupper, 2)[:-1]))
+                        | {(points[-1], wantlower[-1]), (points[-1], wantupper[-1])})
+                if drawn != want:
+                    sys.exit("Validation test failed at case 11: The continuous plot's shaded band is not the band of _ppband around the fitted CDF (%d corners, %d expected, %d shared)." % (len(drawn), len(want), len(drawn & want)))
+            else:
+                fitted = [c for c in axes.collections if c.get_label() == "Fitted CDF"][0]
+                points, cdf = fitted.get_offsets()[:, 0], fitted.get_offsets()[:, 1]
+                band = [c for c in axes.collections if c.get_label() in (bandlabel, "_nolegend_")]
+                drawn = [np.asarray(c.get_offsets()[:, 1]) for c in band]
+                pointsband = [np.asarray(c.get_offsets()[:, 0]) for c in band]
 
-    for index, count in enumerate(CPCOUNTS):
-        reference = proportion_confint(count, NOBS, alpha=1.0 - CONFIDENCE,
-                                       method="beta")
-        wantlower = 0.0 if count == 0 else reference[0]
-        wantupper = 1.0 if count == NOBS else reference[1]
+                wantlower, wantupper = _ppband().cdfband(np.asarray(cdf), model.obs.size, BANDCONFIDENCE)
+                if len(band) != 2 or [band[0].get_label(), band[1].get_label()] != [bandlabel, "_nolegend_"]:
+                    sys.exit("Validation test failed at case 11: The discrete plot does not draw the band as an upper and a lower limit.")
+                if any(np.any(p != np.asarray(points)) for p in pointsband):
+                    sys.exit("Validation test failed at case 11: The discrete plot's band is not drawn at the points of the fitted CDF.")
+                if np.any(drawn[0] != wantupper) or np.any(drawn[1] != wantlower):
+                    sys.exit("Validation test failed at case 11: The discrete plot's band is not the band of _ppband around the fitted CDF.")
+            plt.close("all")
 
-        if abs(lower[index] - wantlower) > TOL or abs(upper[index] - wantupper) > TOL:
-            sys.exit("Validation test failed at case 11: for %d of %d observations the interval is [%.10f, %.10f] against the Clopper-Pearson interval [%.10f, %.10f]." % (count, NOBS, lower[index], upper[index], wantlower, wantupper))
-
-    if not (np.all(np.isfinite(lower)) and np.all(np.isfinite(upper))):
-        sys.exit("Validation test failed at case 11: the Clopper-Pearson interval is not a number at one of the ends.")
+        # censored data: Neither the empirical CDF nor its band is drawn
+        path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "test_fit_band_censored.png")
+        plotted.append(path)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            plotcensored.plot(confint=True, filename=path)
+        labels = [text.get_text() for text in plt.gca().get_legend().get_texts()]
+        if labels != ["Fitted CDF"]:
+            sys.exit("Validation test failed at case 11: The censored plot with confint draws %s, not the fitted CDF alone." % labels)
+    finally:
+        plt.close = closefigure
+        plt.close("all")
 finally:
     for path in plotted:
         if os.path.exists(path):

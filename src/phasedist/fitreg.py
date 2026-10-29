@@ -10,7 +10,7 @@ from phasedist.fitcphreg import _fitcphreg
 from phasedist.regdesign import _regformula, _regdesign
 from phasedist.unif import _unif
 from phasedist.dist import dist
-from phasedist.regtools import _ppband
+from phasedist.ppband import _ppband
 
 
 class fitreg:
@@ -787,7 +787,12 @@ class fitreg:
         self,
         confint: bool = False,
         confidence: float = 0.95,
+        xlabel: str = "Fitted conditional CDF",
+        ylabel: str = "Empirical CDF",
         title: str = "PP plot of the fitted conditional CDFs",
+        labeldiagonal: str = "Perfect fit",
+        labelempirical: str = "Empirical CDF of the transforms",
+        labelband: str = None,
         filename: str = "PPcheck.png"
     ) -> None:
         """
@@ -802,7 +807,14 @@ class fitreg:
                 the whole curve lies inside it with probability `confidence`
                 (the equal-precision band of Aldor-Noiman et al., 2013).
             confidence (float, default=0.95): Confidence level of the band.
-            title (str): Plot title.
+            xlabel (str, default="Fitted conditional CDF"): Label for the x-axis.
+            ylabel (str, default="Empirical CDF"): Label for the y-axis.
+            title (str, default="PP plot of the fitted conditional CDFs"): Plot title.
+            labeldiagonal (str, default="Perfect fit"): Legend label for the diagonal.
+            labelempirical (str, default="Empirical CDF of the transforms"): Legend
+                label for the empirical CDF of the transforms.
+            labelband (str, default=None): Legend label for the confidence band;
+                "95% confidence band" (with the level of confidence) when None.
             filename (str, default="PPcheck.png"): Filename of the generated graph.
 
         Returns:
@@ -823,9 +835,8 @@ class fitreg:
         empirical = counts / float(n)
 
         plt.figure(figsize=(8, 6))
-        plt.plot([0.0, 1.0], [0.0, 1.0], lw=1, linestyle="-", color="blue", label="Perfect fit")
-        plt.plot(transforms, empirical, lw=1, linestyle="-", color="red",
-                 label="Empirical CDF of the transforms")
+        plt.plot([0.0, 1.0], [0.0, 1.0], lw=1, linestyle="-", color="blue", label=labeldiagonal)
+        plt.plot(transforms, empirical, lw=1, linestyle="-", color="red", label=labelempirical)
 
         if confint:
             # the k-th sorted transform lies between lower[k] and upper[k] for
@@ -833,10 +844,11 @@ class fitreg:
             # at the height of each point of the curve
             lower, upper = _ppband().run(n, confidence)
             plt.fill_betweenx(empirical, lower, upper, color="blue", alpha=0.15, lw=0,
-                              label="%g%% confidence band" % (100.0 * confidence))
+                              label=labelband if labelband is not None
+                              else "%g%% confidence band" % (100.0 * confidence))
 
-        plt.xlabel("Fitted conditional CDF")
-        plt.ylabel("Empirical CDF")
+        plt.xlabel(xlabel)
+        plt.ylabel(ylabel)
         plt.title(title)
         plt.legend()
         plt.grid()
