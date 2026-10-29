@@ -189,7 +189,7 @@ class _fitdph:
 
     def getphasegen(self) -> np.array:
         """
-        Returns the phase-type transition matrix.
+        Returns the phase-type generator matrix.
 
         Args:
             None

@@ -29,7 +29,58 @@ pip install phasedist
 
 ## Quick start guide
 
-The following shows how to use PhaseDist for fitting a continuous phase-type distribution from observed data. 
+### Fitting a phase-type regression
+
+The following shows how to use PhaseDist for fitting a phase-type regression, where the covariates scale the phase-type generator matrix.
+
+(1) Start by loading PhaseDist (and pandas) and reading the data. The data is a clinical trial dataset consisting of a continuous variable `dose`, a categorical variable `group` (`control` vs. `treatment`), and a response variable `time`.
+
+```python
+import phasedist as ph
+import pandas as pd
+
+data = pd.read_csv("https://raw.githubusercontent.com/areenberg/phasedist/development/examples/regression_data.csv")
+data["group"] = pd.Categorical(data["group"], categories=["control", "treatment"])
+```
+
+(2) Fit the regression `time ~ dose + group` with a Coxian distribution containing 2 phases.
+
+```python
+fit = ph.fitreg(formula="time ~ dose + group",
+                data=data,
+                nphases=2,
+                dtype="coxian")
+```
+
+(3) Test the coefficients. A positive coefficient means shorter times.
+
+```python
+fit.coeftest()
+#                     Estimate    Std.Err   LR stat  Pr(>Chi)
+#dose                   0.1639     0.0410     15.44    <0.001
+#group[treatment]       0.9902     0.2205     18.39    <0.001
+```
+
+(4) Store the fitted distribution of a patient with dose 5 in the treatment group in the object `phdist` and compute the mean, variance, and 95% quantile.
+
+```python
+phdist = fit.getdist(covariates={"dose": 5.0, "group": "treatment"})
+
+print(phdist.getmean())
+#3.210571
+
+print(phdist.getvar())
+#13.545293
+
+print(phdist.getquantile(p=0.95))
+#10.648819
+```
+
+Find the complete example, including a PP plot to check the fit, in the file `examples/regression_example.py`.
+
+### Fitting a phase-type distribution
+
+The following shows how to use PhaseDist for fitting a continuous phase-type distribution from observed data.
 
 (1) Start by loading PhaseDist (and NumPy) and defining the observed data.
 
@@ -68,7 +119,7 @@ print(phdist.getquantile(p=0.95))
 #3.055168
 ```
 
-Find the complete example in the file `examples/quickstart_example.py`.
+Find the complete example in the file `examples/distribution_example.py`.
 
 ## Documentation
 
