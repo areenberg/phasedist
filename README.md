@@ -52,13 +52,24 @@ fit = ph.fitreg(formula="time ~ dose + group",
                 dtype="coxian")
 ```
 
-(3) Test the coefficients. A positive coefficient means shorter times.
+(3) Print a summary of the model, with a likelihood-ratio test of each effect.
 
 ```python
-fit.coeftest()
-#                     Estimate    Std.Err   LR stat  Pr(>Chi)
-#dose                   0.1639     0.0410     15.44    <0.001
-#group[treatment]       0.9902     0.2205     18.39    <0.001
+fit.summary()
+#Phase-type regression (coxian, 2 phases)
+#Formula: time ~ dose + group
+#Observations: 120
+#Fixed effects: 2, with 2 coefficients
+#
+#Likelihood-ratio tests of the fixed effects:
+#                LR stat    df  Pr(>Chi)
+#dose              15.44     1    <0.001
+#group             18.39     1    <0.001
+#(The tests of the individual coefficients are given by coeftest(), their confidence intervals by confint())
+#
+#Log-likelihood: -314.9920   Deviance (-2 log-likelihood): 629.9841
+#AIC: 639.9841   BIC: 653.9215   Parameters: 5 (3 phase-type, 2 coefficients)
+#...
 ```
 
 (4) Store the fitted distribution of a patient with dose 5 in the treatment group in the object `phdist` and compute the mean, variance, and 95% quantile.
