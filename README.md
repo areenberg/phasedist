@@ -31,7 +31,7 @@ pip install phasedist
 
 ### Fitting a phase-type regression
 
-The following shows how to use PhaseDist for fitting a phase-type regression, where the covariates scale the phase-type generator matrix.
+The following shows how to use PhaseDist for fitting a phase-type regression.
 
 (1) Start by loading PhaseDist (and pandas) and reading the data. The data is a clinical trial dataset consisting of a continuous variable `dose`, a categorical variable `group` (`control` vs. `treatment`), and a response variable `time`.
 
@@ -68,7 +68,6 @@ fit.summary()
 #(The tests of the individual coefficients are given by coeftest(), their confidence intervals by confint())
 #
 #Log-likelihood: -314.9920   Deviance (-2 log-likelihood): 629.9841
-#AIC: 639.9841   BIC: 653.9215   Parameters: 5 (3 phase-type, 2 coefficients)
 #...
 ```
 
