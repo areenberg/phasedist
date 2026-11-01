@@ -33,6 +33,8 @@ pip install phasedist
 
 The following shows how to use PhaseDist for fitting a phase-type regression.
 
+The regression model is the phase-type regression of [Bladt (2022)](https://arxiv.org/abs/2110.05207): $Y \mid x \sim \mathrm{PH}(\pi, e^{\eta} T)$ with $\eta = x^\top \beta$. PhaseDist also supports a random intercept, $\eta = x^\top \beta + b$, which is not used in this example.
+
 (1) Start by loading PhaseDist (and pandas) and reading the data. The data is a clinical trial dataset consisting of a continuous variable `dose`, a categorical variable `group` (`control` vs. `treatment`), and a response variable `time`.
 
 ```python
