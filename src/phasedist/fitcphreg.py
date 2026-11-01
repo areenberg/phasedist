@@ -4,7 +4,7 @@ import warnings
 import numpy as np
 from phasedist.mcph import mcph
 from phasedist.rndcph import rndcph
-from phasedist.unif import _unif, _compiled
+from phasedist.unif import _unif
 from phasedist.regtools import _stoprule, _aghq, _quadform
 
 
@@ -226,10 +226,7 @@ class _fitcphreg:
         """
         Yields the chunks of sorted Poisson parameters that are exponentiated
         together: Parameters of similar size, within a budget of terms, and a
-        chunk above maxpoisson scaled to it by halvings. The compiled kernels
-        sum each time over its own window of terms, so with them the
-        parameters up to maxpoisson form a single chunk, with one stack of
-        powers.
+        chunk above maxpoisson scaled to it by halvings.
 
         Args:
             mus (ndarray): The sorted Poisson parameters.
@@ -242,10 +239,6 @@ class _fitcphreg:
         budget = 4e6
 
         start = 0
-        if _compiled():
-            start = int(np.searchsorted(mus, self.maxpoisson, side="right"))
-            if start > 0:
-                yield 0, start, 0
         while start < mus.size:
             limit = max(2.0 * mus[start], mus[start] + 32.0)
             stop = max(int(np.searchsorted(mus, limit, side="right")), start + 1)
@@ -1924,8 +1917,16 @@ class _fitcphreg:
                 information = self.__profiled(*self.__fixedinformation())
             else:
                 information = self.__profiled(*self.__randominformation())
-            if np.all(np.isfinite(information)) and np.all(np.linalg.eigvalsh(information) > 0.0):
+            def positivedefinite(matrix):
+                return bool(np.all(np.isfinite(matrix)) and np.all(np.linalg.eigvalsh(matrix) > 0.0))
+
+            if positivedefinite(information):
                 self.covariance[:kidentified, :kidentified] = np.linalg.inv(information)
+            elif kidentified > self.d > 0 and positivedefinite(information[:self.d, :self.d]):
+                # only sigma fails (sigma-hat near zero): Coefficient errors given sigma-hat
+                self.covariance[:self.d, :self.d] = np.linalg.inv(information[:self.d, :self.d])
+                warnings.warn("No standard error for the random effect's std. dev. (information "
+                              "not positive definite).", RuntimeWarning, stacklevel=3)
             else:
                 warnings.warn(
                     "The observed information is not positive definite, so no "

@@ -749,8 +749,9 @@ class fitreg:
                 print("Random effect (1|%s): Std. dev. = 0 (at the boundary, i.e. groups vary no more "
                       "than the fixed effects explain)" % self.design.group)
             else:
-                print("Random effect (1|%s): Std. dev. = %.4f (std. err. %.4f)"
-                      % (self.design.group, self.sigma, self.sigmastderr))
+                stderr = "%.4f" % self.sigmastderr if np.isfinite(self.sigmastderr) else "not available"
+                print("Random effect (1|%s): Std. dev. = %.4f (std. err. %s)"
+                      % (self.design.group, self.sigma, stderr))
             print("  Score test of std. dev. = 0: z = %.2f, p-value %s"
                   % (test["statistic"], self.__ptext(test["pvalue"])))
         if self.nzero:

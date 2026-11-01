@@ -1,7 +1,7 @@
 // Compiled kernels of the uniformization class _unif (unif.py).
 //
-// _unif computes the matrix exponential of a sub-intensity (or Van Loan
-// block) matrix T over many times y at once,
+// _unif computes the matrix exponential of a sub-intensity 
+// matrix T using uniformization,
 //
 //   exp(Ty) = sum_{k=0}^{K} w_k(mu) P^k,   P = T/Gamma + I,  mu = Gamma*y,
 //
@@ -24,15 +24,6 @@
 //              Van Loan block of a censored E-step.
 //   poisson    one Poisson weight, exposed for the tests.
 //
-// Each time's weights are formed at the mode with Loader's saddle-point
-// expansion, and from there outwards by the recurrences
-// w_{k+1} = w_k mu/(k+1) and w_{k-1} = w_k k/mu. Only each time's window of
-// terms is summed: a tail is left out once a geometric bound on its whole
-// weight falls below `cut`, which the class sets so that the two tails change
-// exp(Ty) by at most a millionth of the tolerance.
-//
-// No fast-math: The summation order is fixed, and the results agree with the
-// numpy path of the class to rounding, not bit for bit.
 //
 // To build (from the repository root): python3 -m pip install -e .
 
@@ -117,72 +108,14 @@ double poisson(int k, double mu) {
     return std::exp(-stirlerr(x) - bd0(x, mu) - 0.5 * (LOG2PI + std::log(x)));
 }
 
-// One time's window: the weights w[lo..hi] of the terms that are summed.
-struct Window {
-    int lo;
-    int hi;
-    std::size_t offset;   // position of w[lo] in the shared weight buffer
-};
-
-// Appends the weights of the window of mu to `weights`. The right tail from
-// hi+1 has ratios mu/(j+1) <= mu/(hi+2) < 1, the left tail below lo ratios
-// j/mu <= (lo-1)/mu < 1, so each tail weighs at most its first term over one
-// minus its first ratio; a tail is dropped once that is at most `cut`.
-Window window(double mu, int K, double cut, std::vector<double> &weights) {
+// The Poisson weights w_0,...,w_K of mu, from the mode outwards. Far from the
+// mode they may underflow to zero, as the numpy path's do.
+void poissonweights(double mu, int K, double *w) {
     int mode = static_cast<int>(std::floor(mu));
     if (mode > K) mode = K;
-
-    std::vector<double> right, left;
-    const double wm = poisson(mode, mu);
-
-    double w = wm;
-    int hi = mode;
-    while (hi < K) {
-        const double next = w * mu / (hi + 1);
-        const double ratio = mu / (hi + 2);
-        if (ratio < 1.0 && next / (1.0 - ratio) <= cut) break;
-        right.push_back(next);
-        w = next;
-        hi++;
-    }
-
-    w = wm;
-    int lo = mode;
-    while (lo > 0) {
-        const double next = w * lo / mu;
-        const double ratio = (lo - 1) / mu;
-        if (next / (1.0 - ratio) <= cut) break;
-        left.push_back(next);
-        w = next;
-        lo--;
-    }
-
-    Window out{lo, hi, weights.size()};
-    weights.insert(weights.end(), left.rbegin(), left.rend());
-    weights.push_back(wm);
-    weights.insert(weights.end(), right.begin(), right.end());
-    return out;
-}
-
-// The windows of every time. As in the numpy path, a time that is not positive
-// (not a number included) gets P^0 only, and an infinite one not a number;
-// lo = -1 marks both.
-std::vector<Window> windows(const double *mus, std::size_t m, int K, double cut,
-                            std::vector<double> &weights, int &highest) {
-    std::vector<Window> out(m);
-    highest = 0;
-    for (std::size_t t = 0; t < m; t++) {
-        const double mu = mus[t];
-        if (!(mu > 0.0)) {
-            out[t] = Window{-1, 0, 0};
-        } else if (std::isinf(mu)) {
-            out[t] = Window{-1, -1, 0};
-        } else {
-            out[t] = window(mu, K, cut, weights);
-            highest = std::max(highest, out[t].hi);
-        }
-    }
-    return out;
+    w[mode] = poisson(mode, mu);
+    for (int k = mode; k < K; k++) w[k + 1] = w[k] * mu / (k + 1);
+    for (int k = mode; k > 0; k--) w[k - 1] = w[k] * k / mu;
 }
 
 void checkinputs(const Matrix &P, std::size_t mus, int K) {
@@ -192,7 +125,7 @@ void checkinputs(const Matrix &P, std::size_t mus, int K) {
 }
 
 // The weighted sums of the leading nrows rows of P^k, one block per time.
-nb::ndarray<nb::numpy, double, nb::ndim<3>> powersum(Matrix P, Vector mus, int K, int nrows, double cut) {
+nb::ndarray<nb::numpy, double, nb::ndim<3>> powersum(Matrix P, Vector mus, int K, int nrows) {
     checkinputs(P, mus.shape(0), K);
     const std::size_t n = P.shape(0), m = mus.shape(0);
     const std::size_t r = static_cast<std::size_t>(nrows);
@@ -205,14 +138,13 @@ nb::ndarray<nb::numpy, double, nb::ndim<3>> powersum(Matrix P, Vector mus, int K
     {
         nb::gil_scoped_release release;
         const double *p = P.data();
-        std::vector<double> weights;
-        int highest = 0;
-        const std::vector<Window> win = windows(mus.data(), m, K, cut, weights, highest);
+        const double *mu = mus.data();
+        std::vector<double> w(static_cast<std::size_t>(K) + 1);
 
-        // the leading rows of P^0,...,P^highest
-        std::vector<double> powers(static_cast<std::size_t>(highest + 1) * rn, 0.0);
+        // the leading rows of P^0,...,P^K
+        std::vector<double> powers(static_cast<std::size_t>(K + 1) * rn, 0.0);
         for (std::size_t i = 0; i < r; i++) powers[i * n + i] = 1.0;
-        for (int k = 1; k <= highest; k++) {
+        for (int k = 1; k <= K; k++) {
             const double *prev = powers.data() + static_cast<std::size_t>(k - 1) * rn;
             double *next = powers.data() + static_cast<std::size_t>(k) * rn;
             for (std::size_t i = 0; i < r; i++) {
@@ -225,21 +157,22 @@ nb::ndarray<nb::numpy, double, nb::ndim<3>> powersum(Matrix P, Vector mus, int K
             }
         }
 
+        // as in the numpy path, a time that is not positive (not a number
+        // included) gives P^0, and an infinite one not a number
         for (std::size_t t = 0; t < m; t++) {
             double *o = out + t * rn;
-            const Window &w = win[t];
-            if (w.lo == -1) {
-                if (w.hi == 0) {
-                    std::copy(powers.begin(), powers.begin() + rn, o);
-                } else {
-                    std::fill(o, o + rn, NaN);
-                }
+            if (!(mu[t] > 0.0)) {
+                std::copy(powers.begin(), powers.begin() + rn, o);
                 continue;
             }
+            if (std::isinf(mu[t])) {
+                std::fill(o, o + rn, NaN);
+                continue;
+            }
+            poissonweights(mu[t], K, w.data());
             std::fill(o, o + rn, 0.0);
-            const double *wk = weights.data() + w.offset;
-            for (int k = w.lo; k <= w.hi; k++) {
-                const double weight = wk[k - w.lo];
+            for (int k = 0; k <= K; k++) {
+                const double weight = w[k];
                 const double *pk = powers.data() + static_cast<std::size_t>(k) * rn;
                 for (std::size_t q = 0; q < rn; q++) o[q] += weight * pk[q];
             }
@@ -252,7 +185,7 @@ nb::ndarray<nb::numpy, double, nb::ndim<3>> powersum(Matrix P, Vector mus, int K
 // The weighted sums of c_k = l P^k R (R the identity when not given), one row
 // per time.
 nb::ndarray<nb::numpy, double, nb::ndim<2>> vectorsum(Matrix P, Vector mus, int K, Vector left,
-                                                     std::optional<Matrix> right, double cut) {
+                                                     std::optional<Matrix> right) {
     checkinputs(P, mus.shape(0), K);
     const std::size_t n = P.shape(0), m = mus.shape(0);
     if (left.shape(0) != n) throw std::invalid_argument("The left vector does not match the matrix.");
@@ -266,14 +199,13 @@ nb::ndarray<nb::numpy, double, nb::ndim<2>> vectorsum(Matrix P, Vector mus, int 
         nb::gil_scoped_release release;
         const double *p = P.data();
         const double *R = right ? right->data() : nullptr;
-        std::vector<double> weights;
-        int highest = 0;
-        const std::vector<Window> win = windows(mus.data(), m, K, cut, weights, highest);
+        const double *mu = mus.data();
+        std::vector<double> w(static_cast<std::size_t>(K) + 1);
 
-        // c_k for k = 0,...,highest, from v_k = l P^k
-        std::vector<double> c(static_cast<std::size_t>(highest + 1) * q);
+        // c_k for k = 0,...,K, from v_k = l P^k
+        std::vector<double> c(static_cast<std::size_t>(K + 1) * q);
         std::vector<double> v(left.data(), left.data() + n), next(n);
-        for (int k = 0; k <= highest; k++) {
+        for (int k = 0; k <= K; k++) {
             double *ck = c.data() + static_cast<std::size_t>(k) * q;
             if (R) {
                 std::fill(ck, ck + q, 0.0);
@@ -285,7 +217,7 @@ nb::ndarray<nb::numpy, double, nb::ndim<2>> vectorsum(Matrix P, Vector mus, int 
             } else {
                 std::copy(v.begin(), v.end(), ck);
             }
-            if (k < highest) {
+            if (k < K) {
                 std::fill(next.begin(), next.end(), 0.0);
                 for (std::size_t l = 0; l < n; l++) {
                     const double a = v[l];
@@ -298,19 +230,18 @@ nb::ndarray<nb::numpy, double, nb::ndim<2>> vectorsum(Matrix P, Vector mus, int 
 
         for (std::size_t t = 0; t < m; t++) {
             double *o = out + t * q;
-            const Window &w = win[t];
-            if (w.lo == -1) {
-                if (w.hi == 0) {
-                    std::copy(c.begin(), c.begin() + q, o);
-                } else {
-                    std::fill(o, o + q, NaN);
-                }
+            if (!(mu[t] > 0.0)) {
+                std::copy(c.begin(), c.begin() + q, o);
                 continue;
             }
+            if (std::isinf(mu[t])) {
+                std::fill(o, o + q, NaN);
+                continue;
+            }
+            poissonweights(mu[t], K, w.data());
             std::fill(o, o + q, 0.0);
-            const double *wk = weights.data() + w.offset;
-            for (int k = w.lo; k <= w.hi; k++) {
-                const double weight = wk[k - w.lo];
+            for (int k = 0; k <= K; k++) {
+                const double weight = w[k];
                 const double *ck = c.data() + static_cast<std::size_t>(k) * q;
                 for (std::size_t j = 0; j < q; j++) o[j] += weight * ck[j];
             }
@@ -349,10 +280,9 @@ double normbound(Matrix P, int horizon) {
 
 NB_MODULE(_unifkernel, module) {
     module.doc() = "Compiled kernels of the uniformization class _unif.";
-    module.def("powersum", &powersum, nb::arg("P"), nb::arg("mus"), nb::arg("K"), nb::arg("nrows"),
-               nb::arg("cut"));
+    module.def("powersum", &powersum, nb::arg("P"), nb::arg("mus"), nb::arg("K"), nb::arg("nrows"));
     module.def("vectorsum", &vectorsum, nb::arg("P"), nb::arg("mus"), nb::arg("K"), nb::arg("left"),
-               nb::arg("right").none(), nb::arg("cut"));
+               nb::arg("right").none());
     module.def("normbound", &normbound, nb::arg("P"), nb::arg("horizon"));
     module.def("poisson", &poisson, nb::arg("k"), nb::arg("mu"));
 }

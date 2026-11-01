@@ -32,6 +32,11 @@ Sub-tests:
             decimal arithmetic. (scipy's poisson.pmf is no oracle here: Its
             error grows to 1e-11 at a parameter of 25000.)
 
+    Case 7: relative accuracy deep in a tail, where exp(Ty) is tiny and the
+            terms far below the Poisson mode carry all of it: one phase (P = 0,
+            exp(Ty) = exp(-lambda y)) and an Erlang (P nilpotent), against their
+            closed forms, for run() and vectorrun(), compiled and numpy.
+
 Cases 5 and 6 need the compiled kernels. Without them (a clone that has not
 been built, or PHASEDIST_PUREPYTHON set) they are not run and the final line
 says so; with PHASEDIST_REQUIRE_KERNEL set, as in CI, that is a failure.
@@ -108,22 +113,21 @@ SPREADGEN = np.array([[-2.00, 1.90],
 UNDERFLOWTIME = 500.0
 
 # Cases 4 and 5: an initial distribution, and the times of the comparisons,
-# from zero to well into the tail, so that the windows of the compiled kernels
+# from zero to well into the tail, so that the weights of the compiled kernels
 # range from a single term to the full series.
 INITDIST = {"dense": np.array([0.5, 0.3, 0.2]),
             "Coxian": np.array([1.0, 0.0, 0.0]),
             "loop": np.array([0.1, 0.4, 0.3, 0.2])}
 VECTORTIMES = np.array([0.0, 1e-9, 0.05, 0.5, 1.0, 2.5, 5.0, 10.0, 25.0, 60.0])
 
-# Case 5: a fast phase multiplies Gamma, so the series runs to hundreds of terms
-# and each time's window is a small part of it.
+# Case 5: a fast phase multiplies Gamma, so the series runs to hundreds of terms.
 FASTFACTOR = 40.0
 
 # Case 5: the compiled kernels and numpy sum the same series in a different
 # order and with differently formed weights, so they agree to rounding only.
 # The comparison is made at the tolerance of the other cases and at a coarse
 # one, under which the last terms of the series weigh far more than rounding,
-# so that a term lost at the end of a window or of the series shows.
+# so that a term lost at the end of the series shows.
 TOLKERNEL = 1e-13
 KERNELTOLERANCES = (TOLERANCE, 1e-6)
 
@@ -133,6 +137,14 @@ POISSONCASES = [(1e-6, 0), (0.3, 0), (0.3, 2), (1.0, 1), (2.5, 2), (7.0, 7), (7.
                 (15.5, 15), (16.0, 16), (35.7, 35), (80.2, 80), (80.2, 40), (499.9, 499),
                 (500.5, 500), (1000.0, 1000), (1000.0, 1150), (25000.0, 25000)]
 TOLPOISSON = 1e-14    # the weights are within 3e-15 of the reference here
+
+# Case 7: Poisson parameters lambda*y deep in the tail, where exp(-lambda y) is
+# far below the tolerance but far above the smallest double. A kernel that
+# drops terms far from the mode returns 0 there, and a log-likelihood -inf.
+TAILPOISSON = np.array([30.0, 100.0, 300.0, 700.0])
+TAILRATE = 1.7
+ERLANGPHASES = 3
+TOLRELATIVE = 1e-11   # both paths are within 2e-13 of the closed forms here
 
 
 # The constants above are the whole test, so a typo in one of them would quietly
@@ -332,7 +344,7 @@ if compiled is not None:
         sys.exit("Validation test failed at case 5: the norm of the Van Loan block is not measured (rho = %s), so the measured path is not being compared." % probe.rho)
     probe.run(fastgen, VECTORTIMES)
     if probe.nterms < 500:
-        sys.exit("Validation test failed at case 5: the fast-phase series has only %d terms, so the windows are not being compared on a long series." % probe.nterms)
+        sys.exit("Validation test failed at case 5: the fast-phase series has only %d terms, so the kernels are not being compared on a long series." % probe.nterms)
 
     probe = _unif(tolerance=KERNELTOLERANCES[-1])
     probe.run(SPREADGEN, VECTORTIMES)
@@ -365,10 +377,8 @@ if compiled is not None:
             if kernelvalues.shape != numpyvalues.shape:
                 sys.exit("Validation test failed at case 5: %s of the %s matrix returns shape %s compiled and %s in numpy." % (label, name, str(kernelvalues.shape), str(numpyvalues.shape)))
 
-            # rounding, and the terms the windows leave out: At most a
-            # millionth of the tolerance, scaled as the vectors scale it
-            scale = float(np.sum(np.abs(left))) * float(np.max(np.abs(np.sum(matrix, axis=1)))) if "vectorrun" in label else 1.0
-            allowed = TOLKERNEL + 1e-6 * tolerance * kernelstate[2] * max(scale, 1.0)
+            # both sum the same terms, so they agree to rounding
+            allowed = TOLKERNEL
             difference = float(np.max(np.abs(kernelvalues - numpyvalues)))
             if os.environ.get("CALIBRATE"):
                 print("%-60s %-12s %.2e %.2e" % (label, name, difference, allowed))
@@ -401,6 +411,39 @@ if compiled is not None:
 
         if abs(weight - reference) > TOLPOISSON * reference:
             sys.exit("Validation test failed at case 6: the Poisson weight at mu = %s, k = %d is %.17g, where the reference is %.17g." % (mu, k, weight, reference))
+
+
+# ------------------------------------------------------------------
+# CASE 7: relative accuracy deep in a tail
+# ------------------------------------------------------------------
+
+times = TAILPOISSON / TAILRATE
+onephase = np.array([[-TAILRATE]])
+erlang = TAILRATE * (np.eye(ERLANGPHASES, k=1) - np.eye(ERLANGPHASES))
+erlangexit = -np.sum(erlang, axis=1)
+first = np.eye(ERLANGPHASES)[0]
+# closed forms: exp(-lambda y), and the Erlang density lambda^p y^(p-1) exp(-lambda y) / (p-1)!
+exactone = np.exp(-TAILPOISSON)
+exacterlang = (TAILRATE * TAILPOISSON ** (ERLANGPHASES - 1) * np.exp(-TAILPOISSON)
+               / math.factorial(ERLANGPHASES - 1))
+
+if np.any(exactone < 1e-307) or np.any(exactone > 1e-12):
+    sys.exit("Validation test failed at case 7: the tail values are not between the tolerance and the smallest double, so the case tests nothing.")
+
+for kernel in (compiled, None) if compiled is not None else (None,):
+    unifmodule._kernel = kernel
+    path = "compiled" if kernel is not None else "numpy"
+    model = _unif(tolerance=TOLERANCE)
+    results = (("run() of one phase", model.run(onephase, times)[:, 0, 0], exactone),
+               ("vectorrun() of one phase", model.vectorrun(onephase, times, np.ones(1), np.ones(1)), exactone),
+               ("the Erlang density by run()", np.einsum("k,mkl,l->m", first, model.run(erlang, times), erlangexit), exacterlang),
+               ("the Erlang density by vectorrun()", model.vectorrun(erlang, times, first, erlangexit), exacterlang))
+    for label, got, exact in results:
+        relative = np.abs(got - exact) / exact
+        if not np.all(np.isfinite(relative)) or np.max(relative) > TOLRELATIVE:
+            worst = int(np.argmax(np.where(np.isfinite(relative), relative, np.inf)))
+            sys.exit("Validation test failed at case 7: %s on the %s path at lambda*y = %g is %.6e, where the closed form gives %.6e." % (label, path, TAILPOISSON[worst], got[worst], exact[worst]))
+unifmodule._kernel = compiled
 
 
 # ------------------------------------------------------------------

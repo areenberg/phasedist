@@ -45,6 +45,10 @@ Sub-tests:
              intervals against hand fits (uncensored, censored, random effect);
              the refits are shared; simulated p-values and critical values;
              runtime notes; refusals.
+    Case 22: When the information fails only in the direction of sigma (a
+             patched engine), the coefficients keep their standard errors,
+             conditional on sigma-hat; sigma gets none, with a warning and a
+             note in the summary.
 
 References:
     Bladt, M. (2022). Phase-type distributions for claim severity regression
@@ -77,6 +81,7 @@ sys.path.insert(
 )
 
 from phasedist.fitreg import fitreg
+from phasedist.fitcphreg import _fitcphreg
 from phasedist.dist import dist
 from phasedist.regdesign import _regformula, _regdesign
 from phasedist.regtools import _quadform
@@ -1955,6 +1960,90 @@ for method, arguments in ((modelexact.coeftest, dict(method="profile")), (modele
     result, printed = quiet(method, **arguments)
     if result is not None or not printed.startswith("Error"):
         sys.exit("Validation test failed at case 21: %s accepted %s." % (method.__name__, arguments))
+
+
+# ------------------------------------------------------------------
+# CASE 22: The information fails in the direction of sigma only
+# ------------------------------------------------------------------
+
+# With sigma-hat close to zero the likelihood is flat in log sigma, and the
+# central differences can give that direction a slightly negative curvature
+# (seen at sigma-hat = 0.02-0.04, an entry of about -8e-5). The coefficients
+# must keep their standard errors, conditional on sigma-hat, and sigma gets
+# none. So the case does not hinge on finding such a data set, the engine's
+# information is patched: Its log sigma entry is made negative, which changes
+# only that entry of the profiled information (it lies outside the phase-type
+# block, and profiling subtracts a positive semi-definite matrix).
+DATAFLAT = DATARANDOMEXACT.assign(w=np.random.default_rng([SEED, 22]).normal(size=len(DATARANDOMEXACT)))
+FLATARGS = dict(formula="y ~ x + w + (1|u)", data=DATAFLAT, quadnodes=15, **EXACT)
+ORIGINALINFORMATION = _fitcphreg._fitcphreg__randominformation
+
+
+def flatsigma(self):
+    """The engine's information with a negative log sigma entry."""
+    information, m = ORIGINALINFORMATION(self)
+    information = information.copy()
+    information[-1, -1] = -1e-4
+    return information, m
+
+
+def flatall(self):
+    """The engine's information with a coefficient's direction failing as well."""
+    information, m = flatsigma(self)
+    information[m, m] = -1.0
+    return information, m
+
+
+modelsound, _, caughtsound = quietfit(**FLATARGS)
+try:
+    _fitcphreg._fitcphreg__randominformation = flatsigma
+    modelflat, _, caughtflat = quietfit(**FLATARGS)
+    _fitcphreg._fitcphreg__randominformation = flatall
+    modelfail, _, caughtfail = quietfit(**FLATARGS)
+finally:
+    _fitcphreg._fitcphreg__randominformation = ORIGINALINFORMATION
+
+DIRECTIONWARNING = "No standard error for the random effect's std. dev."
+NOSTDERRWARNING = "so no standard errors are reported"
+d = modelsound.design.d
+if d != 2 or modelsound.boundary or not np.all(np.isfinite(modelsound.d.covariance)):
+    sys.exit("Validation test failed at case 22: The reference fit lacks two coefficients, an interior sigma or a full covariance.")
+if any(DIRECTIONWARNING in str(w.message) or NOSTDERRWARNING in str(w.message) for w in caughtsound):
+    sys.exit("Validation test failed at case 22: The reference fit warned about its information.")
+# the patch leaves the fit itself alone
+if modelflat.getloglik() != modelsound.getloglik() or modelflat.getsigma() != modelsound.getsigma() or \
+        any(modelflat.getcoef()[k] != modelsound.getcoef()[k] for k in modelsound.getcoef()):
+    sys.exit("Validation test failed at case 22: The patched information changed the fit.")
+
+# the conditional covariance is the inverse of the coefficients' block of the
+# information, here the inverse of the reference covariance
+information = np.linalg.inv(modelsound.d.covariance)
+scale = np.asarray(modelsound.design.scale, dtype=float)
+conditional = np.linalg.inv(information[:d, :d]) / np.outer(scale, scale)
+# (written as 'not <=' so a NaN fails)
+if not np.max(np.abs(modelflat.covariance - conditional)) <= TOL * np.max(np.abs(conditional)):
+    sys.exit("Validation test failed at case 22: The coefficients' covariance differs from the conditional one by %.3e." % np.max(np.abs(modelflat.covariance - conditional)))
+flatse = np.array([modelflat.getstderr()[k] for k in modelsound.design.columns])
+soundse = np.array([modelsound.getstderr()[k] for k in modelsound.design.columns])
+if not np.max(np.abs(flatse - np.sqrt(np.diag(conditional))) / flatse) <= TOL or not np.all(flatse <= soundse * (1.0 + TOL)):
+    sys.exit("Validation test failed at case 22: The standard errors are %s, against conditional %s and marginal %s (which they cannot exceed)." % (flatse, np.sqrt(np.diag(conditional)), soundse))
+if modelflat.sigmastderr is None or np.isfinite(modelflat.sigmastderr):
+    sys.exit("Validation test failed at case 22: A standard error is reported for sigma: %s." % modelflat.sigmastderr)
+if not any(DIRECTIONWARNING in str(w.message) for w in caughtflat) or any(NOSTDERRWARNING in str(w.message) for w in caughtflat):
+    sys.exit("Validation test failed at case 22: The fit did not warn that only sigma lacks a standard error.")
+# the methods that use the standard errors work, and the summary says what is missing
+waldflat = modelflat.getwaldtest()
+_, printedflat = quiet(modelflat.summary, effecttest="wald")
+if not all(np.isfinite(waldflat[term][2]) for term in ("x", "w")) or \
+        "Std. dev. = %.4f (std. err. not available)" % modelflat.getsigma() not in printedflat:
+    sys.exit("Validation test failed at case 22: The Wald tests are %s, or the summary does not report the missing standard error of sigma." % waldflat)
+
+# when a coefficient's direction fails too, nothing is reported, as before
+if not np.all(np.isnan(modelfail.covariance)) or not np.all(np.isnan(list(modelfail.getstderr().values()))) or \
+        np.isfinite(modelfail.sigmastderr):
+    sys.exit("Validation test failed at case 22: Standard errors are reported although the coefficients' information fails.")
+if not any(NOSTDERRWARNING in str(w.message) for w in caughtfail) or any(DIRECTIONWARNING in str(w.message) for w in caughtfail):
+    sys.exit("Validation test failed at case 22: The fit with a failed coefficient did not warn that no standard errors are reported.")
 
 
 print("fitreg: All tests passed.")

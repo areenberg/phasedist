@@ -15,17 +15,6 @@ if not os.environ.get("PHASEDIST_PUREPYTHON"):
         _kernel = None
 
 
-def _compiled() -> bool:
-    """
-    Returns whether the compiled kernels are in use.
-
-    Returns:
-        bool: True when _unif sums its series with the compiled kernels.
-    """
-
-    return _kernel is not None
-
-
 class _unif:
     """
     Evaluates the matrix exponential exp(Ty) over several values of y using
@@ -41,9 +30,8 @@ class _unif:
 
     The truncation point and the error bound are chosen here. The sums are
     formed by the compiled kernels when they are available, and by numpy
-    otherwise; the two agree to rounding. The compiled kernels form each time's
-    weights from the mode by recurrence and leave out the tails of terms that
-    change exp(Ty) by at most a millionth of the tolerance together.
+    otherwise. Both sum the same terms; they agree to rounding, the compiled
+    kernels forming each time's weights from the mode by recurrence.
 
     Warning: This class does not contain any input checks.
 
@@ -257,15 +245,14 @@ class _unif:
 
         Returns:
             tuple: P (ndarray, None when Gamma is zero), the Poisson parameter
-                of each time (ndarray), K (int) and the weight below which the
-                compiled kernels leave out a tail (float).
+                of each time (ndarray) and K (int).
         """
 
         gamma, P = self.__uniformize(matrix)
 
         if P is None:
             self.gamma, self.rho, self.nterms, self.errorbound = 0.0, 1.0, 0, 0.0
-            return None, None, 0, 0.0
+            return None, None, 0
 
         mus = gamma * times
         mu = float(np.max(mus))
@@ -293,11 +280,7 @@ class _unif:
 
         self.gamma, self.rho, self.nterms, self.errorbound = gamma, rho, nterms, bound
 
-        # each left-out tail weighs at most this, so that the terms left out
-        # change exp(Ty) by at most a millionth of the tolerance
-        cut = 0.5e-6 * self.tolerance / rho if np.isfinite(rho) and rho > 0.0 else 0.0
-
-        return P, mus, nterms, cut
+        return P, mus, nterms
 
     def run(
         self,
@@ -326,13 +309,13 @@ class _unif:
         if nrows is None:
             nrows = n
 
-        P, mus, nterms, cut = self.__prepare(matrix, times)
+        P, mus, nterms = self.__prepare(matrix, times)
 
         if P is None:
             return np.repeat(np.eye(n)[None, :nrows, :], times.size, axis=0)
 
         if _kernel is not None:
-            return _kernel.powersum(P, np.ascontiguousarray(mus), int(nterms), int(nrows), float(cut))
+            return _kernel.powersum(P, np.ascontiguousarray(mus), int(nterms), int(nrows))
 
         weights = self.__weights(mus, nterms)
         stacked = self.__powers(P, nterms, nrows)
@@ -375,13 +358,13 @@ class _unif:
         if right is not None:
             right = np.ascontiguousarray(np.asarray(right, dtype=float).reshape(matrix.shape[0], -1))
 
-        P, mus, nterms, cut = self.__prepare(matrix, times)
+        P, mus, nterms = self.__prepare(matrix, times)
 
         if P is None:
             value = left if right is None else left @ right
             out = np.repeat(value[None, :], times.size, axis=0)
         elif _kernel is not None:
-            out = _kernel.vectorsum(P, np.ascontiguousarray(mus), int(nterms), left, right, float(cut))
+            out = _kernel.vectorsum(P, np.ascontiguousarray(mus), int(nterms), left, right)
         else:
             # the numpy path: exp(Ty) as run() forms it, contracted with the
             # vectors, which is as fast here as a series of scalars would be
