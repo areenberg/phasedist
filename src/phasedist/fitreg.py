@@ -144,6 +144,8 @@ class fitreg:
         self.lrnotice = 10.0
         # expected refits per profile-likelihood interval, for the runtime note
         self.profilepoints = 12
+        # confint warns about the interval of the std. dev. below these degrees of freedom
+        self.sigmawarnf = 4.0
 
         # checking and fitting
         if self.__checkinputs():
@@ -275,13 +277,15 @@ class fitreg:
         return out
 
     def confint(self, confidence: float = 0.95, method: str = "profile", nsim: int = 0, seed: int = None,
-                coefficients=None, show: bool = True) -> dict:
+                coefficients=None, sigma: bool = False, show: bool = True) -> dict:
         """
         Return confidence intervals of the coefficients. The default is the
         profile-likelihood interval ("profile"), optionally with a simulated critical
         value (nsim > 0). The alternative is the Wald interval ("wald"). Note that
         the Wald interval is much faster to compute, but less accurate in small
-        samples.
+        samples. With sigma=True, the interval of the random effect's std. dev. is
+        added, which uses a scaled chi-square (Satterthwaite) interval with
+        f = sigma^2 / (2 SE^2) degrees of freedom.
 
         Args:
             confidence (float, default=0.95): Confidence level.
@@ -291,17 +295,27 @@ class fitreg:
             seed (int, optional): Random seed of the simulation.
             coefficients (str or list, optional): The coefficients, named as in
                 getcoef; all when omitted.
+            sigma (bool, default=False): Whether to add the interval of the random
+                effect's std. dev.
             show (bool, default=True): Whether to print the table.
 
         Returns:
             dict: For each coefficient, a dictionary with 'estimate', 'lower' and
                 'upper' (infinite for an unbounded interval), with "profile" also
-                'critical' (the critical value), and with nsim > 0 'nsim'. None if
+                'critical' (the critical value), and with nsim > 0 'nsim'. With
+                sigma=True also 'sd(<group>)', with 'estimate', 'lower', 'upper' and
+                'f' (NaN when the data do not support the random effect). None if
                 the arguments are invalid.
         """
 
         names = self.__checkcoefargs(method, ("profile", "wald"), nsim, seed, confidence, coefficients, show)
         if names is None:
+            return None
+        if not isinstance(sigma, bool):
+            print("Error: The argument 'sigma' needs to be of type 'bool'.")
+            return None
+        if sigma and self.sigma is None:
+            print("Error: The model has no random effect, so there is no std. dev. for sigma=True.")
             return None
 
         out = {}
@@ -337,27 +351,41 @@ class fitreg:
                 result.update(lower=float(ends[0]), upper=float(ends[1]), critical=critical)
                 out[name] = result
 
+        sigmaname = "sd(%s)" % self.design.group if sigma else None
+        if sigma:
+            out[sigmaname] = self.__sigmainterval(confidence)
+
         if show:
-            if not out:
+            if not names and not sigma:
                 print("The model has no coefficients.")
                 return out
-            width = max(12, max(len(name) for name in out) + 2)
-            kind = "Wald" if method == "wald" else "Profile-likelihood"
-            print("%s confidence intervals of the coefficients (%g%%):" % (kind, 100.0 * confidence))
-            header = "%-*s %10s %10s %10s" % (width, "", "Estimate", "Lower", "Upper")
-            if method == "profile":
-                header += " %10s" % "Crit. val."
-            print(header)
-            for name, row in out.items():
-                text = "%-*s %10.4f %10.4f %10.4f" % (width, name, row["estimate"], row["lower"], row["upper"])
+            if names:
+                width = max(12, max(len(name) for name in names) + 2)
+                kind = "Wald" if method == "wald" else "Profile-likelihood"
+                print("%s confidence intervals of the coefficients (%g%%):" % (kind, 100.0 * confidence))
+                header = "%-*s %10s %10s %10s" % (width, "", "Estimate", "Lower", "Upper")
                 if method == "profile":
-                    text += " %10.4f" % row["critical"]
-                print(text)
-            if method == "profile":
-                if nsim:
-                    print("Critical values simulated from %d data sets per coefficient, simulated from the fit." % nsim)
-                else:
-                    print("Critical value: The %g%% quantile of chi-square(1)." % (100.0 * confidence))
+                    header += " %10s" % "Crit. val."
+                print(header)
+                for name in names:
+                    row = out[name]
+                    text = "%-*s %10.4f %10.4f %10.4f" % (width, name, row["estimate"], row["lower"], row["upper"])
+                    if method == "profile":
+                        text += " %10.4f" % row["critical"]
+                    print(text)
+                if method == "profile":
+                    if nsim:
+                        print("Critical values simulated from %d data sets per coefficient, simulated from the fit." % nsim)
+                    else:
+                        print("Critical value: The %g%% quantile of chi-square(1)." % (100.0 * confidence))
+            if sigma and np.isfinite(out[sigmaname]["f"]):
+                row = out[sigmaname]
+                width = max(12, len(sigmaname) + 2)
+                print("Confidence interval of the random effect's std. dev. (%g%%), scaled chi-square with f "
+                      "degrees of freedom:" % (100.0 * confidence))
+                print("%-*s %10s %10s %10s %10s" % (width, "", "Estimate", "Lower", "Upper", "f"))
+                print("%-*s %10.4f %10.4f %10.4f %10.1f" % (width, sigmaname, row["estimate"], row["lower"],
+                                                          row["upper"], row["f"]))
 
         return out
 
@@ -1477,6 +1505,31 @@ class fitreg:
             print("Warning: %d of the %d simulated data sets for '%s' could not be fitted and were left out."
                   % (nsim - len(values), nsim, name))
         return np.array(values)
+
+    def __sigmainterval(self, confidence: float) -> dict:
+        """
+        Return the scaled chi-square (Satterthwaite) interval of the random
+        effect's std. dev.: sigma^2 f / chi2_f quantiles with
+        f = sigma^2 / (2 SE^2). Warns when f is below sigmawarnf, and gives no
+        interval at sigma = 0 or without a standard error.
+
+        Args:
+            confidence (float): Confidence level.
+
+        Returns:
+            dict: 'estimate', 'lower', 'upper' and 'f'.
+        """
+        se = self.sigmastderr
+        if not self.sigma > 0.0 or se is None or not np.isfinite(se) or not se > 0.0:
+            print("Warning: The data do not support the random effect.")
+            return dict(estimate=float(self.sigma), lower=np.nan, upper=np.nan, f=np.nan)
+        f = self.sigma ** 2 / (2.0 * se ** 2)
+        if f < self.sigmawarnf:
+            print("Warning: The std. dev. of the random effect is poorly determined (f = %.1f). The confidence "
+                  "interval might be misleading." % f)
+        tail = (1.0 - confidence) / 2.0
+        return dict(estimate=float(self.sigma), lower=float(self.sigma * np.sqrt(f / chi2.ppf(1.0 - tail, f))),
+                    upper=float(self.sigma * np.sqrt(f / chi2.ppf(tail, f))), f=float(f))
 
     def __sigmatest(self) -> tuple:
         """

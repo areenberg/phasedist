@@ -49,6 +49,11 @@ Sub-tests:
              patched engine), the coefficients keep their standard errors,
              conditional on sigma-hat; sigma gets none, with a warning and a
              note in the summary.
+    Case 23: The interval of sigma (confint(sigma=True)): The scaled
+             chi-square (Satterthwaite) interval with f = sigma^2 / (2 SE^2),
+             checked by its defining quantiles; the warning below f = 4; no
+             interval, with a warning, at the boundary or without a standard
+             error; no refits; refusals.
 
 References:
     Bladt, M. (2022). Phase-type distributions for claim severity regression
@@ -2044,6 +2049,90 @@ if not np.all(np.isnan(modelfail.covariance)) or not np.all(np.isnan(list(modelf
     sys.exit("Validation test failed at case 22: Standard errors are reported although the coefficients' information fails.")
 if not any(NOSTDERRWARNING in str(w.message) for w in caughtfail) or any(DIRECTIONWARNING in str(w.message) for w in caughtfail):
     sys.exit("Validation test failed at case 22: The fit with a failed coefficient did not warn that no standard errors are reported.")
+
+
+# ------------------------------------------------------------------
+# CASE 23: The interval of sigma
+# ------------------------------------------------------------------
+
+# The interval is sigma-hat sqrt(f / q) for the upper and lower chi-square(f)
+# quantiles q, with f = sigma-hat^2 / (2 SE^2); it is checked through the
+# quantiles it must sit at, so a swapped or mislevelled quantile shows. The
+# one-phase data of case 2 (f about 13), data on the design of case 2 with a
+# small group effect whose f-hat is below 4, data at the boundary, and the
+# fit without a standard error for sigma of case 22.
+SIGMANAME = "sd(u)"
+NOSUPPORT = "Warning: The data do not support the random effect.\n"
+
+
+def checkquantiles(row, sigmahat, f, confidence, label):
+    """Exits unless the ends of the interval of sigma sit at the chi-square(f) quantiles of the level."""
+    tail = (1.0 - confidence) / 2.0
+    at = [chi2.cdf(f * sigmahat ** 2 / end ** 2, f) for end in (row["lower"], row["upper"])]
+    if not (abs(at[0] - (1.0 - tail)) <= TOL and abs(at[1] - tail) <= TOL and row["lower"] < sigmahat < row["upper"]):
+        sys.exit("Validation test failed at case 23: The interval of sigma %s is [%.8f, %.8f], at chi-square(%.4f) probabilities %.10f and %.10f, not %g and %g." % (label, row["lower"], row["upper"], f, at[0], at[1], 1.0 - tail, tail))
+
+
+counter = countfits(modelrandomexact)
+intervals, printed = quiet(modelrandomexact.confint, sigma=True)
+counter[0] = 0
+sigmaonly, printedonly = quiet(modelrandomexact.confint, coefficients=[], sigma=True)
+sigmahat, sigmase = modelrandomexact.getsigma(), modelrandomexact.sigmastderr
+fhat = sigmahat ** 2 / (2.0 * sigmase ** 2)
+row = intervals[SIGMANAME] if SIGMANAME in intervals else {}
+if not fhat >= modelrandomexact.sigmawarnf:
+    sys.exit("Validation test failed at case 23: The data of case 2 have f = %.3f, below the warning threshold the case needs." % fhat)
+if list(intervals) != ["x", SIGMANAME] or intervals["x"] != quiet(modelrandomexact.confint, coefficients="x")[0]["x"]:
+    sys.exit("Validation test failed at case 23: confint(sigma=True) gives %s, or changed the interval of x." % list(intervals))
+if row.get("estimate") != sigmahat or not abs(row.get("f", np.nan) - fhat) <= TOL * fhat:
+    sys.exit("Validation test failed at case 23: The interval of sigma has estimate %s and f = %s, not %.10f and %.10f." % (row.get("estimate"), row.get("f"), sigmahat, fhat))
+checkquantiles(row, sigmahat, fhat, 0.95, "of the data of case 2")
+checkquantiles(quiet(modelrandomexact.confint, 0.9, coefficients=[], sigma=True)[0][SIGMANAME], sigmahat, fhat, 0.9, "at the 90% level")
+# the same with either method, without refits, and only sigma when asked
+if quiet(modelrandomexact.confint, method="wald", sigma=True)[0][SIGMANAME] != row or sigmaonly != {SIGMANAME: row} or counter[0] != 0:
+    sys.exit("Validation test failed at case 23: The interval of sigma depends on the method, refits the model, or comes with other rows.")
+fields = [line.split() for line in printed.splitlines() if line.split()[:1] == [SIGMANAME]]
+if "Warning" in printed or "Confidence interval of the random effect's std. dev. (95%), scaled chi-square with f degrees of freedom:" not in printed or \
+        len(fields) != 1 or [float(v) for v in fields[0][1:]] != [round(row[k], 4) for k in ("estimate", "lower", "upper")] + [round(fhat, 1)] or \
+        "confidence intervals of the coefficients" in printedonly or SIGMANAME not in printedonly:
+    sys.exit("Validation test failed at case 23: confint does not print the interval of sigma as its own table, or warned.")
+
+# f-hat below 4: A warning naming f, and still the interval; also with show=False
+smallrng = np.random.default_rng([SEED, 23, 10])
+small = smallrng.normal(scale=0.15, size=NGROUPSEXACT)
+response = smallrng.exponential(size=xre.size) / (EXACTRATE * np.exp(EXACTBETA["x"] * xre + small[groupsexact]))
+modelsmallf, _, _ = quietfit(formula="y ~ x + (1|u)", data=pd.DataFrame({"y": response, "x": xre, "u": categorical(groupsexact)}),
+                             quadnodes=15, **EXACT)
+fsmall = modelsmallf.getsigma() ** 2 / (2.0 * modelsmallf.sigmastderr ** 2) if modelsmallf.getsigma() > 0.0 else np.nan
+if not 0.0 < fsmall < modelsmallf.sigmawarnf:
+    sys.exit("Validation test failed at case 23: The small-f data have f = %s, not between 0 and the threshold." % fsmall)
+warning = ("Warning: The std. dev. of the random effect is poorly determined (f = %.1f). The confidence interval "
+           "might be misleading.\n" % fsmall)
+rowsmall, printedsmall = quiet(modelsmallf.confint, coefficients=[], sigma=True, show=False)
+if printedsmall != warning:
+    sys.exit("Validation test failed at case 23: With f = %.2f confint printed '%s', not the warning." % (fsmall, printedsmall.strip()))
+checkquantiles(rowsmall[SIGMANAME], modelsmallf.getsigma(), fsmall, 0.95, "with a small f")
+
+# no interval at the boundary, nor without a standard error: Only the warning
+smallrng = np.random.default_rng([SEED, 23, 1])
+small = smallrng.normal(scale=0.15, size=NGROUPSEXACT)
+response = smallrng.exponential(size=xre.size) / (EXACTRATE * np.exp(EXACTBETA["x"] * xre + small[groupsexact]))
+modelzerosigma, _, _ = quietfit(formula="y ~ x + (1|u)", data=pd.DataFrame({"y": response, "x": xre, "u": categorical(groupsexact)}),
+                                quadnodes=15, **EXACT)
+if not modelzerosigma.boundary or not (modelflat.getsigma() > 0.0 and np.isnan(modelflat.sigmastderr)):
+    sys.exit("Validation test failed at case 23: The boundary data are not at the boundary, or the fit of case 22 has a standard error.")
+for label, model in (("at the boundary", modelzerosigma), ("without a standard error", modelflat)):
+    result, printedno = quiet(model.confint, coefficients=[], sigma=True)
+    name = "sd(%s)" % model.design.group
+    rowno = result[name]
+    if printedno != NOSUPPORT or rowno["estimate"] != model.getsigma() or not all(np.isnan(rowno[k]) for k in ("lower", "upper", "f")):
+        sys.exit("Validation test failed at case 23: %s confint gives %s and prints '%s'." % (label.capitalize(), rowno, printedno.strip()))
+
+# refusals: An error and None
+for model, arguments in ((modelrandomexact, dict(sigma=1)), (modelexact, dict(sigma=True))):
+    result, printedno = quiet(model.confint, **arguments)
+    if result is not None or not printedno.startswith("Error"):
+        sys.exit("Validation test failed at case 23: confint accepted %s." % arguments)
 
 
 print("fitreg: All tests passed.")
