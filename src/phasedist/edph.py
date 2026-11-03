@@ -238,7 +238,9 @@ class edph:
             Kmat = matK[:n, n:]
 
             piTpow = np.matmul(self.initdist, Tpow)
-            den = 1.0 - np.sum(piTpow)  # P(Y <= limit)
+            # P(Y <= limit), formed from the same terms as b_i so that they sum to
+            # one exactly even if the initial distribution drifts from one by rounding
+            den = np.sum(self.initdist) - np.sum(piTpow)
             self.piTyt = den
 
             piM = np.matmul(self.initdist, Mmat)

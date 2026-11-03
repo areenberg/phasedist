@@ -210,7 +210,9 @@ class ecph:
             Kt = matsK[index][:, n:]
 
             pieTt = np.matmul(self.initdist, eTt)
-            den = 1.0 - np.sum(pieTt)  # P(Y <= limit)
+            # P(Y <= limit), formed from the same terms as b_i so that they sum to
+            # one exactly even if the initial distribution drifts from one by rounding
+            den = np.sum(self.initdist) - np.sum(pieTt)
             self.pieTyt = den
 
             piM = np.matmul(self.initdist, Mt)

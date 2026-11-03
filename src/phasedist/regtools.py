@@ -262,21 +262,24 @@ class _quadform:
                 return 0.5 * (self.mean - x)
             return np.sin(phi(u) - omega * u) / (u * rho(u))
 
-        # Directly up to max(1 / max|w|, 1 / omega), then as Fourier integrals
+        # Directly up to max(1 / max|w|, 1 / omega), then as Fourier integrals.
+        # Far out rho(u) overflows to inf, where the integrand's limit is 0
+        # anyway, so the overflow is expected and not reported.
         edge = 1.0 / np.max(np.abs(w))
-        head, _ = quad(integrand, 0.0, edge, limit=200, epsabs=1e-12, epsrel=1e-10)
-        if omega == 0.0:
-            tail, _ = quad(integrand, edge, np.inf, limit=1000, epsabs=1e-12, epsrel=1e-10)
-        else:
-            frequency = abs(omega)
-            sign = np.sign(omega)
-            start = max(edge, 1.0 / frequency)
-            if start > edge:
-                head += quad(lambda t: integrand(np.exp(t)) * np.exp(t), np.log(edge), np.log(start),
-                             limit=1000, epsabs=1e-12, epsrel=1e-10)[0]
-            tail = (quad(lambda u: np.sin(phi(u)) / (u * rho(u)), start, np.inf, weight="cos", wvar=frequency,
-                         limlst=200)[0]
-                    - sign * quad(lambda u: np.cos(phi(u)) / (u * rho(u)), start, np.inf, weight="sin", wvar=frequency,
-                                  limlst=200)[0])
+        with np.errstate(over="ignore"):
+            head, _ = quad(integrand, 0.0, edge, limit=200, epsabs=1e-12, epsrel=1e-10)
+            if omega == 0.0:
+                tail, _ = quad(integrand, edge, np.inf, limit=1000, epsabs=1e-12, epsrel=1e-10)
+            else:
+                frequency = abs(omega)
+                sign = np.sign(omega)
+                start = max(edge, 1.0 / frequency)
+                if start > edge:
+                    head += quad(lambda t: integrand(np.exp(t)) * np.exp(t), np.log(edge), np.log(start),
+                                 limit=1000, epsabs=1e-12, epsrel=1e-10)[0]
+                tail = (quad(lambda u: np.sin(phi(u)) / (u * rho(u)), start, np.inf, weight="cos", wvar=frequency,
+                             limlst=200)[0]
+                        - sign * quad(lambda u: np.cos(phi(u)) / (u * rho(u)), start, np.inf, weight="sin",
+                                      wvar=frequency, limlst=200)[0])
 
         return float(np.clip(0.5 + (head + tail) / np.pi, 0.0, 1.0))

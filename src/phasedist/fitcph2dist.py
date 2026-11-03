@@ -270,6 +270,9 @@ class fitcph2dist:
                 stacklevel=2)
         # the loop reads it where each iteration starts, so once more here
         self.__estep()
+        if not np.isfinite(self.loglikelihood):
+            print("Error: The fit failed: Its log-likelihood is not finite.")
+            return 1
 
         # create object for output PH distribution
         self.dist = dist(
@@ -920,8 +923,8 @@ class fitcph2dist:
 
             step = loglikelihood - loglik0
 
-            # Each EM iteration is guaranteed to increase the likelihood
-            if step < 0.0:
+            # Each EM iteration is guaranteed to increase the likelihood (up to rounding)
+            if step < -1e-9 * max(1.0, abs(loglikelihood)):
                 warnings.warn(
                     "The log-likelihood decreased by %.3e at iteration %d."
                     % (abs(float(step)), iter + 1),
@@ -989,7 +992,9 @@ class fitcph2dist:
                 bestloglik = self.loglikelihood
                 best = self.__pack()
 
-        self.__unpack(best)
+        # no start may reach a finite log-likelihood, which fit() reports
+        if best is not None:
+            self.__unpack(best)
 
         return None
 
@@ -1279,10 +1284,11 @@ class fitcph2dist:
             means = -np.diff(partial) / self.hy
 
         # a segment carrying no mass has no conditional mean, and one in the
-        # far tail can lose its leading digits to the subtraction
+        # far tail can lose its leading digits to the subtraction, which can
+        # leave it exactly at an end (at 0, where the density may be 0)
         midpoints = 0.5 * (edges[:-1] + edges[1:])
         usable = (np.isfinite(means) & (self.hy > 0.0)
-                  & (means >= edges[:-1]) & (means <= edges[1:]))
+                  & (means > edges[:-1]) & (means < edges[1:]))
 
         return np.where(usable, means, midpoints)
 

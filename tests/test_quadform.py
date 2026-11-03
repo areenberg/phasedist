@@ -10,10 +10,14 @@ Sub-tests:
             E1, E2 exponential, on both sides of zero.
     Case 3: Mean and variance; zero weights are dropped; with no weight left
             the tail is NaN.
+    Case 4: Many degrees of freedom, as in the score test with many
+            observations: Far out the integrand's denominator overflows, which
+            must not surface as a warning, and the tail is still exact.
 '''
 
 import os
 import sys
+import warnings
 
 import numpy as np
 from scipy.stats import chi2
@@ -72,6 +76,28 @@ if q.weights.size != 2 or abs(q.mean - (6.0 - 2.0)) > TOL or abs(q.var - 2.0 * (
     sys.exit("Validation test failed at case 3: The weights are %s, the mean %.6f and the variance %.6f." % (q.weights, q.mean, q.var))
 if not np.isnan(_quadform(np.zeros(3), np.ones(3)).sf(1.0)):
     sys.exit("Validation test failed at case 3: With every weight zero the tail is not NaN.")
+
+
+
+# ------------------------------------------------------------------
+# CASE 4: Many degrees of freedom
+# ------------------------------------------------------------------
+
+# Q = a chi2(2) - b chi2(2k) is positive when an exponential exceeds (b/a)
+# times a gamma(k) variable, so P(Q > 0) = (1 + b/a)^(-k). With k = 177, as in
+# the score test of 20 groups in 200 observations, rho(u) overflows far out,
+# where the integrand is 0 in the limit; that harmless overflow used to surface
+# as 'RuntimeWarning: overflow encountered in exp' in half the random-intercept
+# fits of the validation study.
+a, b, k = 7.3, 0.15, 177
+q = _quadform(np.array([a, -b]), np.array([2, 2 * k]))
+with warnings.catch_warnings(record=True) as caught:
+    warnings.simplefilter("always")
+    tail = q.sf(0.0)
+if caught:
+    sys.exit("Validation test failed at case 4: P(Q > 0) with %d degrees of freedom warned: %s" % (2 * k, caught[0].message))
+if abs(tail - (1.0 + b / a) ** -k) > TOL:
+    sys.exit("Validation test failed at case 4: P(Q > 0) is %.12f, not (1 + b/a)^(-k) = %.12f." % (tail, (1.0 + b / a) ** -k))
 
 
 print("_quadform: All tests passed.")
