@@ -50,7 +50,7 @@ The experiments are performed by `validation/fitcph2dist_estimation.py`. `fitcph
 |         16 | 10.000000 |               1.000000 |                $8.8 \cdot 10^{-14}$ |
 |         32 | 10.000000 |               1.000000 |                $5.8 \cdot 10^{-13}$ |
 
-**Conclusion.** `fitcph2dist` performed as expected from theory. PH target distributions were recovered with an error that decreased at the second-order rate expected from the discretisation and became negligible on fine grids, the approximation error for other target distributions decreased as the number of phases increased, and the mean and the SCV bound were respected by every approximation. The only limitation observed was that the default tolerance terminated the slowly converging EM algorithm before the optimum when many phases were used, which a reduced tolerance remedied.
+**Conclusion.** The parameters of PH target distributions were recovered. Their error decreased at the second-order rate expected from the discretisation, and it became negligible on fine grids. For other target distributions, the approximation error decreased as the number of phases increased. Every approximation preserved the mean of the target distribution and respected the SCV bound $1/p$. Where theory requires the Erlang distribution, the approximation was the Erlang distribution. The only limitation was the default tolerance. With many phases, it terminated the slowly converging EM algorithm before the optimum, and a reduced tolerance remedied this.
 
 ## 4. Fitting phase-type distributions to observed data
 
@@ -99,7 +99,7 @@ The bias decreased as $n$ increased (Table 4). At $n = 1000$, every bias was bel
 
 ![Estimates of the hyper-exponential parameters for each type of censoring. The boxes show the quartiles and the dashed lines the truth.](output/fit_estimation_experiment6_censoring.png)
 
-**Conclusion.** `fit` performed as expected from theory. It reproduced the closed-form estimates to machine precision, the estimates with two phases were consistent, with a bias and a root-mean-square error that decreased as the number of observations increased, and censoring increased the variance of the estimates without introducing bias. The only deviation was that 0.5% of the hyper-exponential fits at $n = 100$ converged to a local maximum, which is a known property of the EM algorithm and can be mitigated by repeating the fit from several random starting points.
+**Conclusion.** `fit` reproduced the closed-form estimates for one phase to machine precision. With two phases, the estimates were consistent. Their bias and root-mean-square error decreased as the number of observations increased, and the fitted mean equalled the sample mean in every fit. Censoring increased the variance of the estimates, but it did not introduce bias. The only deviation was that 0.5% of the hyper-exponential fits at $n = 100$ converged to a local maximum. This is a known property of the EM algorithm, and it can be mitigated by repeating the fit from several random starting points.
 
 ## 5. Fitting a phase-type regression
 
@@ -137,7 +137,7 @@ The mean estimate of the standard deviation of the random effect was $0.465 \pm 
 
 ![Root-mean-square error of the coefficients with the exponential baseline distribution. The dashed lines decrease in proportion to $1/\sqrt{n}$.](output/fitreg_estimation_rmse.png)
 
-**Conclusion.** The estimated coefficients and their standard errors performed as expected from theory. The coefficients showed only small finite-sample biases, their root-mean-square errors decreased at the rate $1/\sqrt{n}$, and the reported standard errors agreed with the observed variation of the estimates in all settings, including right-censored observations and a random intercept. The downward bias of the estimated standard deviation of the random effect is expected for maximum likelihood with 20 groups.
+**Conclusion.** The estimated coefficients showed only small finite-sample biases, and their root-mean-square errors decreased at the rate $1/\sqrt{n}$. The reported standard errors agreed with the observed variation of the estimates in all settings, including right-censored observations and a random intercept. The standard deviation of the random effect was underestimated by 7%. This is the downward bias expected for maximum likelihood with 20 groups.
 
 ## 6. Tests and confidence intervals of a phase-type regression
 
@@ -189,7 +189,7 @@ The experiments are performed by `validation/fitreg_tests.py`. The data were sim
 |           0.3 |        3.6 | 0.845 [0.787, 0.892] | 0.904 [0.852, 0.942] | 0.810 [0.709, 0.887] |    0.52 |       0.07 |
 |           0.5 |        9.0 | 0.970 [0.936, 0.989] | 0.970 [0.936, 0.989] | 0.967 [0.930, 0.988] |    0.09 |       0.00 |
 
-**Conclusion.** The default tests and confidence intervals of `fitreg` performed as expected from theory. The likelihood-ratio tests held their nominal level, their power agreed with asymptotic theory, and the profile-likelihood confidence intervals attained their nominal coverage. The score test of the random effect held its level with 20 groups, whereas the likelihood-ratio test was slightly conservative, as expected. The scaled chi-square interval of the standard deviation of the random effect attained its nominal coverage when the standard deviation was well determined by the data, and a small $f$ reliably indicated when it was not. When the standard deviation is small relative to the information in the data, the interval may undercover, also for fits with $f \ge 4$.
+**Conclusion.** The likelihood-ratio tests held their nominal level, and their power agreed with asymptotic theory. The profile-likelihood confidence intervals attained their nominal coverage. The score test of the random effect held its level with 20 groups, whereas the likelihood-ratio test was slightly conservative, as expected. The scaled chi-square interval of the standard deviation of the random effect attained its nominal coverage when the standard deviation was well determined by the data. A small $f$ reliably indicated when it was not. However, when the standard deviation is small relative to the information in the data, the interval may undercover, also for fits with $f \ge 4$.
 
 ## References
 
