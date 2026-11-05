@@ -27,7 +27,7 @@ dependencies = [
 authors = [
   { name="Anders Reenberg Andersen", email="andersra@live.dk" },
 ]
-description = "Fit continuous and discrete phase-type distributions"
+description = "Fit phase-type regressions and distributions"
 readme = "README.md"
 requires-python = ">=3.10"
 keywords = ["phase-type", "statistics", "distribution fitting", "EM algorithm", "Markov chain", "survival analysis"]

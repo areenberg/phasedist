@@ -1,4 +1,4 @@
-<img src="https://github.com/areenberg/phasedist/blob/development/images/phasedist_logo_dark.png" alt="PhaseDist logo" width="500">
+<img src="https://github.com/areenberg/phasedist/blob/main/images/phasedist_logo_dark.png" alt="PhaseDist logo" width="500">
 
 [![PyPI](https://img.shields.io/pypi/v/phasedist?logo=pypi&logoColor=white)](https://pypi.org/project/phasedist/)
 [![Python](https://img.shields.io/pypi/pyversions/phasedist?logo=python&logoColor=white)](https://pypi.org/project/phasedist/)
@@ -15,7 +15,7 @@ PhaseDist is a Python package for fitting phase-type regressions and distributio
 * Use built-in methods to check your fit.
 * Simulate observations from a phase-type distribution.
 
-<img src="https://github.com/areenberg/phasedist/blob/development/images/phasedist_fit.gif" alt="A phase-type distribution being fitted to bimodal data" width="500">
+<img src="https://github.com/areenberg/phasedist/blob/main/images/phasedist_fit.gif" alt="A phase-type distribution being fitted to bimodal data" width="500">
 
 *A bimodal phase-type distribution fitted using PhaseDist.*
 
@@ -41,7 +41,7 @@ The regression model is the phase-type regression of [Bladt (2022)](https://arxi
 import phasedist as ph
 import pandas as pd
 
-data = pd.read_csv("https://raw.githubusercontent.com/areenberg/phasedist/development/examples/regression_data.csv")
+data = pd.read_csv("https://raw.githubusercontent.com/areenberg/phasedist/main/examples/regression_data.csv")
 data["group"] = pd.Categorical(data["group"], categories=["control", "treatment"])
 ```
 
