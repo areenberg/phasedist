@@ -104,6 +104,15 @@ least one of them on its own. With case 2 disabled the whole
 set is still caught, so the log-likelihood invariant and the two convergence
 cases have independent bite rather than one standing in for the others.
 
+Case 15 holds targets whose mass sits far from zero relative to their spread
+(a normal with mean 10 and sd 1, a lognormal with mean 7.7 and sd 2.4). Their
+first cells carry almost no mass, and the conditional mean of such a cell, a
+difference of two nearly equal partial expectations, used to come out exactly
+at its lower end, 0, where a structure without an exit from its first phase has
+density 0: The fit crashed, or returned NaN. Both targets vary less than any
+four-phase distribution can, so the fit is known exactly: The Erlang with the
+target mean (Aldous and Shepp 1987), with 4 * SCV = 1.
+
 Two of the faults are caught by exactly one case each, which is why those cases
 are not redundant: the rescaling of the exit rates is some four hundred times
 below the discretization error of the method, so only the hand-computed M-step
@@ -112,6 +121,7 @@ distribution shows up only on the percentile target of case 6, that being the
 one target whose cells do not already carry the whole mass.
 '''
 
+import contextlib
 import io
 import os
 import subprocess
@@ -1296,6 +1306,31 @@ try:
         sys.exit("Validation test failed at case 12: the two-phase M-step returned the exit rates %s, against the %s that ni/zi gives." % (maximized.exitrates, expectedrates))
     if np.max(np.abs(maximized.phgen - expectedgen)) > TOLQUAD:
         sys.exit("Validation test failed at case 12: the two-phase M-step returned a generator differing from nij/zi by %.3e." % np.max(np.abs(maximized.phgen - expectedgen)))
+
+    # ------------------------------------------------------------------
+    # CASE 15
+    # Targets far from zero relative to their spread: The fit succeeds without
+    # a warning, every cell sits above zero, and the fit is the Erlang with the
+    # target mean, the least variable four-phase distribution.
+    # ------------------------------------------------------------------
+
+    for label, configure, targetmean in (
+            ("normal (10, 1)", lambda model: model.norm(mu=10.0, sigma=1.0), 10.0),
+            ("lognormal (2, 0.3)", lambda model: model.lognorm(mu=2.0, sigma=0.3), float(np.exp(2.0 + 0.3 ** 2 / 2.0)))):
+        with warnings.catch_warnings(record=True) as caught, contextlib.redirect_stdout(io.StringIO()):
+            warnings.simplefilter("always")
+            narrow = fitcph2dist(nphases=4, dtype="generlang", seed=SEED)
+            configure(narrow)
+            status = narrow.fit()
+        if status != 0 or not np.all(np.isfinite(narrow.getphasegen())):
+            sys.exit("Validation test failed at case 15: The fit to the %s target failed (status %s)." % (label, status))
+        if caught:
+            sys.exit("Validation test failed at case 15: The fit to the %s target warned: %s" % (label, caught[0].message))
+        if not np.min(narrow.y) > 0.0:
+            sys.exit("Validation test failed at case 15: A cell of the %s target sits at %.3e, not above zero." % (label, np.min(narrow.y)))
+        narrowmean, narrowvar = narrow.getmean(), narrow.getvar()
+        if abs(narrowmean / targetmean - 1.0) > TOL or abs(4.0 * narrowvar / narrowmean ** 2 - 1.0) > TOL:
+            sys.exit("Validation test failed at case 15: The fit to the %s target has mean %.12f (target %.12f) and 4 * SCV = %.12f, not the Erlang." % (label, narrowmean, targetmean, 4.0 * narrowvar / narrowmean ** 2))
 
 finally:
     if os.path.exists(PLOTFILE):

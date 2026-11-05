@@ -1,0 +1,39 @@
+EXPERIMENT 1: Exponential baseline, 400 data sets per n
+EXPERIMENT 2: Coxian baseline, fitreg defaults, 100 data sets per n
+EXPERIMENT 3: Right-censored, exponential baseline, n = 200, 300 data sets
+EXPERIMENT 4: Random intercept, 20 groups of 10, sigma = 0.5, 300 data sets
+
+THE COEFFICIENTS
+SD: standard deviation of the estimates. SE: reported standard error; SD/SE should be near 1.
+z = (estimate - truth) / SE should have mean 0 and SD 1; 'normal p' tests its normality.
+
+setting                     truth     bias +/- 95% CI       SD  mean SE   SD/SE  z mean    z SD  normal p
+exponential, n = 50    x     0.80  +0.0071 +/- 0.0154   0.1565   0.1520   1.030  +0.060   1.015      0.12
+exponential, n = 50    z    -0.50  +0.0171 +/- 0.0290   0.2947   0.2887   1.021  +0.059   1.021      0.94
+exponential, n = 200   x     0.80  +0.0004 +/- 0.0073   0.0745   0.0724   1.030  +0.003   1.027      0.18
+exponential, n = 200   z    -0.50  +0.0060 +/- 0.0133   0.1354   0.1421   0.952  +0.042   0.952      0.72
+exponential, n = 1000  x     0.80  +0.0006 +/- 0.0030   0.0308   0.0316   0.973  +0.022   0.972      0.86
+exponential, n = 1000  z    -0.50  -0.0005 +/- 0.0062   0.0631   0.0633   0.997  -0.008   0.997      0.29
+Coxian, n = 100        x     0.80  +0.0314 +/- 0.0237   0.1196   0.1235   0.968  +0.248   0.943      0.04
+Coxian, n = 100        z    -0.50  -0.0347 +/- 0.0497   0.2503   0.2390   1.048  -0.151   1.039      0.47
+Coxian, n = 300        x     0.80  +0.0057 +/- 0.0123   0.0621   0.0690   0.900  +0.091   0.879      0.11
+Coxian, n = 300        z    -0.50  -0.0045 +/- 0.0275   0.1387   0.1371   1.012  -0.030   1.013      0.99
+30% censored, n = 200  x     0.80  +0.0110 +/- 0.0104   0.0914   0.0924   0.989  +0.098   0.982      0.42
+30% censored, n = 200  z    -0.50  -0.0051 +/- 0.0200   0.1756   0.1740   1.009  -0.026   1.009      0.63
+random intercept       x     0.80  -0.0008 +/- 0.0083   0.0728   0.0769   0.947  -0.007   0.942      0.92
+random intercept       z    -0.50  -0.0024 +/- 0.0178   0.1566   0.1517   1.033  -0.017   1.031      0.08
+
+Censored share in experiment 3: 0.33
+Warnings in all fits: none
+
+THE RANDOM-INTERCEPT STD. DEV. (experiment 4, truth 0.5)
+  mean estimate 0.4646 +/- 0.0144 (95% CI), relative bias -7.1%
+  SD of the estimates 0.1271, mean reported SE 0.1138
+  estimates at 0 (the boundary): 0.0%
+
+ROOT-MEAN-SQUARE ERROR, exponential baseline: sqrt(n) RMSE should settle at a constant
+     n       beta_x      beta_z
+    50        1.106       2.084
+   200        1.053       1.914
+  1000        0.971       1.993
+

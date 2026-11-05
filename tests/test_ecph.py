@@ -22,6 +22,8 @@ Sub-tests:
             limits are very close to the observation.
     Case 5: The input checks refuse infeasible input, accept feasible input,
             and are not fooled by the caching of the sample checks.
+    Case 6: The initiation counts of every observation, of every kind, sum to
+            one, also when the initial distribution does not sum to one.
 
 References:
     Bladt, M., & Nielsen, B. F. (2017). Matrix-Exponential Distributions in
@@ -447,6 +449,33 @@ try:
     sys.exit("Validation test failed at case 5: an infeasible initial distribution was accepted on a later call, so the parameters are not checked at every call.")
 except ValueError:
     pass
+
+
+# ------------------------------------------------------------------
+# CASE 6: The initiation counts of an observation sum to one
+# ------------------------------------------------------------------
+
+# Every observation starts in exactly one phase, so its expected initiation
+# counts sum to one, whatever kind of observation it is. The E-step must keep
+# this when the initial distribution does not sum to one exactly: The M-step
+# sets pi = b / n, so a left-censored row that reads P(Y <= c) as
+# 1 - pi exp(Tc) e, while its counts sum to sum(pi) - pi exp(Tc) e, pushes the
+# drift of pi from one further at every iteration, until the input check
+# stopped the EM algorithm of fit with a ValueError. An initial distribution
+# summing to 0.9 (which the check accepts) makes the difference plain.
+SHORTPI = 0.9 * INITDIST
+limits = OBSSMALL
+kinds = {
+    "uncensored": None,
+    "right-censored": np.column_stack([np.full(NSMALL, np.nan), limits]),
+    "left-censored": np.column_stack([limits, np.full(NSMALL, np.nan)]),
+    "interval-censored": np.column_stack([limits, limits + 1.0]),
+}
+for kind, censoring in kinds.items():
+    est = ecph(nphases=NPHASES)
+    bi, zi, ni, nij = est.run(obs=OBSSMALL, initdist=SHORTPI, phgen=PHGEN, exitrates=EXITRATES, censoring=censoring)
+    if abs(np.sum(bi) - NSMALL) > TOL * NSMALL:
+        sys.exit("Validation test failed at case 6: The initiation counts of %d %s observations sum to %.12f, not %d." % (NSMALL, kind, np.sum(bi), NSMALL))
 
 
 # ------------------------------------------------------------------

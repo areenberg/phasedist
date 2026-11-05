@@ -1,0 +1,69 @@
+EXPERIMENT 1: Exponential, rate 0.5, n = 20, 2000 data sets
+  Largest relative difference from the closed form 1/mean:   6.7e-16
+  Mean estimate 0.5253 +/- 0.0056 (95% CI); exact expectation n rate/(n-1) = 0.5263
+  2 n rate / estimate against chi-square(40): Pearson statistic 26.1 on 19 df, p = 0.13
+  Warnings: 0
+
+EXPERIMENT 2: Right-censored exponential, rate 0.5, n = 50, 200 data sets
+  Censored share 0.35
+  Largest relative difference from the closed form events/time at risk: 6.7e-16
+  Warnings: 0
+
+EXPERIMENT 3: Geometric, probability of staying 0.7, n = 20, 2000 data sets
+  Largest difference from the closed form 1 - 1/mean:   1.1e-16
+  Mean estimate 0.6878 +/- 0.0026 (95% CI); exact expectation 0.6893
+  Warnings: 0
+
+EXPERIMENTS 4 AND 5: Two-phase distributions, 200 data sets per n
+If the estimates are consistent, the bias shrinks and sqrt(n) RMSE settles down as n grows.
+
+Hyperexponential (p_fast: probability of the fast branch)
+parameter    truth      n     mean      bias +/- 95% CI       SD  sqrt(n) RMSE
+p_fast       0.300    100   0.3198   +0.0198 +/- 0.0159   0.1140         1.154
+p_fast       0.300    300   0.2941   -0.0059 +/- 0.0083   0.0598         1.038
+p_fast       0.300   1000   0.3045   +0.0045 +/- 0.0041   0.0294         0.939
+rate_fast    5.000    100   5.9090   +0.9090 +/- 0.4923   3.5304        36.370
+rate_fast    5.000    300   5.3409   +0.3409 +/- 0.2126   1.5248        26.997
+rate_fast    5.000   1000   4.9759   -0.0241 +/- 0.0931   0.6679        21.081
+rate_slow    0.500    100   0.5047   +0.0047 +/- 0.0115   0.0827         0.826
+rate_slow    0.500    300   0.5045   +0.0045 +/- 0.0063   0.0452         0.784
+rate_slow    0.500   1000   0.4953   -0.0047 +/- 0.0033   0.0240         0.770
+Fits whose log-likelihood lies below that of the truth (by more than 1e-6), i.e. that stopped at a local maximum: 3 of 600, at n = 100, 100, 100
+Largest relative gap between the fitted mean and the sample mean: 2.4e-15
+Warnings: 0
+
+Generalised Erlang (continuous)
+parameter    truth      n     mean      bias +/- 95% CI       SD  sqrt(n) RMSE
+rate_slow    1.000    100   1.1054   +0.1054 +/- 0.0342   0.2451         2.662
+rate_slow    1.000    300   1.0310   +0.0310 +/- 0.0194   0.1390         2.461
+rate_slow    1.000   1000   1.0047   +0.0047 +/- 0.0078   0.0558         1.766
+rate_fast    3.000    100   3.2093   +0.2093 +/- 0.2343   1.6802        16.891
+rate_fast    3.000    300   3.0257   +0.0257 +/- 0.1101   0.7897        13.650
+rate_fast    3.000   1000   3.0462   +0.0462 +/- 0.0575   0.4122        13.083
+Fits whose log-likelihood lies below that of the truth (by more than 1e-6), i.e. that stopped at a local maximum: 0 of 600
+Largest relative gap between the fitted mean and the sample mean: 1.2e-15
+Warnings: 0
+
+Discrete generalised Erlang (stay: probability of staying in a phase)
+parameter    truth      n     mean      bias +/- 95% CI       SD  sqrt(n) RMSE
+stay_low     0.500    100   0.5099   +0.0099 +/- 0.0219   0.1572         1.571
+stay_low     0.500    300   0.5038   +0.0038 +/- 0.0136   0.0978         1.691
+stay_low     0.500   1000   0.4989   -0.0011 +/- 0.0071   0.0509         1.607
+stay_high    0.800    100   0.7816   -0.0184 +/- 0.0062   0.0443         0.479
+stay_high    0.800    300   0.7950   -0.0050 +/- 0.0033   0.0236         0.417
+stay_high    0.800   1000   0.7986   -0.0014 +/- 0.0014   0.0102         0.324
+Fits whose log-likelihood lies below that of the truth (by more than 1e-6), i.e. that stopped at a local maximum: 0 of 600
+Largest relative gap between the fitted mean and the sample mean: 8.9e-16
+Warnings: 0
+
+EXPERIMENT 6: Censored hyperexponential data, n = 1000, 100 data sets per scheme
+Right: independent exponential censoring times (mean 4). Left: values below the detection limit
+0.1. Interval: every value only known to an interval of width 0.2. Censoring loses information,
+so the SD may grow, but the bias should stay small.
+
+scheme             censored       p_fast bias +/- CI   rate_fast bias +/- CI   rate_slow bias +/- CI below truth  warnings
+uncensored             0.00         +0.0038 +/- 0.0051        -0.0622 +/- 0.1156        +0.0004 +/- 0.0043           0         0
+right-censored         0.25         +0.0031 +/- 0.0059        +0.0608 +/- 0.1315        +0.0016 +/- 0.0058           0         0
+left-censored          0.15         +0.0070 +/- 0.0068        -0.0333 +/- 0.1405        +0.0011 +/- 0.0050           0         0
+interval-censored      1.00         -0.0000 +/- 0.0051        +0.0971 +/- 0.1431        -0.0026 +/- 0.0043           0         0
+

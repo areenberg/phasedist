@@ -115,8 +115,8 @@ class _fitdph:
             #self.__updatelikelihood()
             step = self.loglikelihood - loglik0
 
-            # Each EM iteration is guaranteed to increase the likelihood
-            if step < 0.0:
+            # Each EM iteration is guaranteed to increase the likelihood (up to rounding)
+            if step < -1e-9 * max(1.0, abs(self.loglikelihood)):
                 warnings.warn(
                     "The log-likelihood decreased by %.3e at iteration %d. The "
                     "EM algorithm cannot decrease it, so this is either "
@@ -189,7 +189,7 @@ class _fitdph:
 
     def getphasegen(self) -> np.array:
         """
-        Returns the phase-type transition matrix.
+        Returns the phase-type generator matrix.
 
         Args:
             None

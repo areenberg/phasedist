@@ -124,7 +124,7 @@ class ecph:
         n = self.nphases
         block = self.__blockJ()
 
-        # every distinct value in one call: the powers of the uniformized matrix
+        # Every distinct value in one call: The powers of the uniformized matrix
         # do not depend on the value, so they are built once and shared
         mats = self.unif.run(block, values, nrows=n)
 
@@ -210,7 +210,9 @@ class ecph:
             Kt = matsK[index][:, n:]
 
             pieTt = np.matmul(self.initdist, eTt)
-            den = 1.0 - np.sum(pieTt)  # P(Y <= limit)
+            # P(Y <= limit), formed from the same terms as b_i so that they sum to
+            # one exactly even if the initial distribution drifts from one by rounding
+            den = np.sum(self.initdist) - np.sum(pieTt)
             self.pieTyt = den
 
             piM = np.matmul(self.initdist, Mt)
@@ -377,7 +379,7 @@ class ecph:
                     or censoring.shape[0] < obs.size):
                 raise ValueError("The censoring array must have two columns and at least one row per observation.")
 
-            # zero is admissible: it is the lower limit of a left-censored
+            # Zero is admissible: It is the lower limit of a left-censored
             # interval
             known = censoring[np.isfinite(censoring)]
 

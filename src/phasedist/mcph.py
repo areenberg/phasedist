@@ -43,7 +43,7 @@ class mcph:
             zi: np.array,
             ni: np.array,
             nij: np.array
-        ) -> None:    
+        ) -> tuple:
         """
         Performs the calculations of the M-step.
 

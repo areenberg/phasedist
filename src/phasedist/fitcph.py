@@ -113,8 +113,8 @@ class _fitcph:
 
             step = self.loglikelihood - loglik0  # loglik is evaluated within the E-step
 
-            # Each EM iteration is guaranteed to increase the likelihood
-            if step < 0.0:
+            # Each EM iteration is guaranteed to increase the likelihood (up to rounding)
+            if step < -1e-9 * max(1.0, abs(self.loglikelihood)):
                 warnings.warn(
                     "The log-likelihood decreased by %.3e at iteration %d."
                     % (abs(float(step)), iter + 1),

@@ -1,25 +1,23 @@
-<img src="https://github.com/areenberg/phasedist/blob/development/images/phasedist_logo_dark.png" alt="A phase-type distribution being fitted to bimodal data" width="500">
+<img src="https://github.com/areenberg/phasedist/blob/main/images/phasedist_logo_dark.png" alt="PhaseDist logo" width="500">
 
 [![PyPI](https://img.shields.io/pypi/v/phasedist?logo=pypi&logoColor=white)](https://pypi.org/project/phasedist/)
 [![Python](https://img.shields.io/pypi/pyversions/phasedist?logo=python&logoColor=white)](https://pypi.org/project/phasedist/)
 [![License](https://img.shields.io/badge/license-MIT-blue)](https://github.com/areenberg/phasedist/blob/main/LICENSE)
 
-PhaseDist is a Python package for fitting continuous and discrete phase-type distributions.
+PhaseDist is a Python package for fitting phase-type regressions and distributions.
 
 ## Features
 
-* Fit continuous and discrete phase-type distributions using EM algorithms.
+* Fit phase-type regressions containing fixed and random effects.
+* Fit continuous and discrete phase-type distributions.
 * Fit to uncensored or censored observations.
-* Impose a special case on the fitted distribution, such as the *Coxian*, *generalized Erlang*, or *hyper-exponential* distribution.
-* Use built-in methods to check the fitted distribution.
-* Compute metrics, such as the mean, density, and quantile function.
-* Simulate observations from a phase-type distribution.
 * Approximate another distribution, e.g. a log-normal distribution, using a phase-type distribution.
+* Use built-in methods to check your fit.
+* Simulate observations from a phase-type distribution.
 
+<img src="https://github.com/areenberg/phasedist/blob/main/images/phasedist_fit.gif" alt="A phase-type distribution being fitted to bimodal data" width="500">
 
-<img src="https://github.com/areenberg/phasedist/blob/development/images/phasedist_fit.gif" alt="A phase-type distribution being fitted to bimodal data" width="500">
-
-*A phase-type distribution fitted using PhaseDist.*
+*A bimodal phase-type distribution fitted using PhaseDist.*
 
 ## Installation
 
@@ -31,7 +29,70 @@ pip install phasedist
 
 ## Quick start guide
 
-The following shows how to use PhaseDist for fitting a continuous phase-type distribution from observed data. 
+### Fitting a phase-type regression
+
+The following shows how to use PhaseDist for fitting a phase-type regression.
+
+The regression model is the phase-type regression of [Bladt (2022)](https://arxiv.org/abs/2110.05207): $Y \mid x \sim \mathrm{PH}(\pi, e^{\eta} T)$ with $\eta = x^\top \beta$. PhaseDist also supports a random intercept, $\eta = x^\top \beta + b$, which is not used in this example.
+
+(1) Start by loading PhaseDist (and pandas) and reading the data. The data is a clinical trial dataset consisting of a continuous variable `dose`, a categorical variable `group` (`control` vs. `treatment`), and a response variable `time`.
+
+```python
+import phasedist as ph
+import pandas as pd
+
+data = pd.read_csv("https://raw.githubusercontent.com/areenberg/phasedist/main/examples/regression_data.csv")
+data["group"] = pd.Categorical(data["group"], categories=["control", "treatment"])
+```
+
+(2) Fit the regression `time ~ dose + group` with a Coxian distribution containing 2 phases.
+
+```python
+fit = ph.fitreg(formula="time ~ dose + group",
+                data=data,
+                nphases=2,
+                dtype="coxian")
+```
+
+(3) Print a summary of the model, with a likelihood-ratio test of each effect.
+
+```python
+fit.summary()
+#Phase-type regression (coxian, 2 phases)
+#Formula: time ~ dose + group
+#Observations: 120
+#Fixed effects: 2, with 2 coefficients
+#
+#Likelihood-ratio tests of the fixed effects:
+#                LR stat    df  Pr(>Chi)
+#dose              15.44     1    <0.001
+#group             18.39     1    <0.001
+#(The tests of the individual coefficients are given by coeftest(), their confidence intervals by confint())
+#
+#Log-likelihood: -314.9920   Deviance (-2 log-likelihood): 629.9841
+#...
+```
+
+(4) Store the fitted distribution of a patient with dose 5 in the treatment group in the object `phdist` and compute the mean, variance, and 95% quantile.
+
+```python
+phdist = fit.getdist(covariates={"dose": 5.0, "group": "treatment"})
+
+print(phdist.getmean())
+#3.210571
+
+print(phdist.getvar())
+#13.545293
+
+print(phdist.getquantile(p=0.95))
+#10.648819
+```
+
+Find the complete example, including a PP plot to check the fit, in the file `examples/regression_example.py`.
+
+### Fitting a phase-type distribution
+
+The following shows how to use PhaseDist for fitting a continuous phase-type distribution from observed data.
 
 (1) Start by loading PhaseDist (and NumPy) and defining the observed data.
 
@@ -70,7 +131,7 @@ print(phdist.getquantile(p=0.95))
 #3.055168
 ```
 
-Find the complete example in the file `examples/quickstart_example.py`.
+Find the complete example in the file `examples/distribution_example.py`.
 
 ## Documentation
 

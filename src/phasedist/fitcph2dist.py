@@ -104,20 +104,6 @@ class fitcph2dist:
         else:
             sys.exit(1)  # terminate the program
 
-    def __exponential(self, matrix: np.array, x: float) -> np.array:
-        """
-        Returns exp(matrix * x) by uniformization.
-
-        Args:
-            matrix (ndarray): The matrix to exponentiate.
-            x (float): The time to exponentiate over.
-
-        Returns:
-            ndarray: The matrix exponential.
-        """
-
-        return self.__unif.run(matrix, float(x))[0]
-
     # ----------------------------------------------------------------------
     #   PUBLIC METHODS
     # ----------------------------------------------------------------------
@@ -284,6 +270,9 @@ class fitcph2dist:
                 stacklevel=2)
         # the loop reads it where each iteration starts, so once more here
         self.__estep()
+        if not np.isfinite(self.loglikelihood):
+            print("Error: The fit failed: Its log-likelihood is not finite.")
+            return 1
 
         # create object for output PH distribution
         self.dist = dist(
@@ -934,8 +923,8 @@ class fitcph2dist:
 
             step = loglikelihood - loglik0
 
-            # Each EM iteration is guaranteed to increase the likelihood
-            if step < 0.0:
+            # Each EM iteration is guaranteed to increase the likelihood (up to rounding)
+            if step < -1e-9 * max(1.0, abs(loglikelihood)):
                 warnings.warn(
                     "The log-likelihood decreased by %.3e at iteration %d."
                     % (abs(float(step)), iter + 1),
@@ -1003,7 +992,9 @@ class fitcph2dist:
                 bestloglik = self.loglikelihood
                 best = self.__pack()
 
-        self.__unpack(best)
+        # no start may reach a finite log-likelihood, which fit() reports
+        if best is not None:
+            self.__unpack(best)
 
         return None
 
@@ -1293,10 +1284,11 @@ class fitcph2dist:
             means = -np.diff(partial) / self.hy
 
         # a segment carrying no mass has no conditional mean, and one in the
-        # far tail can lose its leading digits to the subtraction
+        # far tail can lose its leading digits to the subtraction, which can
+        # leave it exactly at an end (at 0, where the density may be 0)
         midpoints = 0.5 * (edges[:-1] + edges[1:])
         usable = (np.isfinite(means) & (self.hy > 0.0)
-                  & (means >= edges[:-1]) & (means <= edges[1:]))
+                  & (means > edges[:-1]) & (means < edges[1:]))
 
         return np.where(usable, means, midpoints)
 
@@ -1342,8 +1334,8 @@ class fitcph2dist:
         if self.disttype == "ph":
             # the life left beyond q is phase-type with the same generator,
             # started from where the process is at q
-            alive = np.matmul(np.asarray(self.param1, dtype=float).ravel(),
-                              self.__exponential(self.param2, q))
+            alive = self.__unif.vectorrun(self.param2, float(q),
+                                          np.asarray(self.param1, dtype=float).ravel())[0]
             green = np.linalg.inv(-np.asarray(self.param2, dtype=float))
             return float(q + np.sum(np.matmul(alive, green)) / np.sum(alive))
 
@@ -1446,12 +1438,12 @@ class fitcph2dist:
         Returns:
             float: Cumulative probability.
         """
+        ones = np.ones(np.asarray(self.param2).shape[0])
         if x0 == 0:
-            return 1 - np.sum(np.matmul(self.param1, self.__exponential(self.param2, x1)))
+            return 1 - float(self.__unif.vectorrun(self.param2, float(x1), self.param1, ones)[0])
         else:
-            return np.sum(np.matmul(self.param1, self.__exponential(self.param2, x0))) - np.sum(
-                np.matmul(self.param1, self.__exponential(self.param2, x1))
-            )
+            survival = self.__unif.vectorrun(self.param2, np.array([x0, x1], dtype=float), self.param1, ones)
+            return float(survival[0]) - float(survival[1])
 
     def __per_dcdf(self, x0: float, x1: float) -> float:
         """

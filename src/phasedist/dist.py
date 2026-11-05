@@ -502,22 +502,22 @@ class dist:
                     ),
                 ).item()
         else:
-            return np.matmul(
-                self.initdist, np.matmul(self.__exponential(x), self.exitrates)
-            ).item()
+            return float(self.__series(x, self.exitrates)[0])
 
-    def __exponential(self, x: float) -> np.array:
+    def __series(self, x: float, right: np.array) -> np.array:
         """
-        Returns exp(T x) by uniformization.
+        Returns pi exp(T x) right by uniformization, without forming exp(T x).
 
         Args:
             x (float): The time to exponentiate over.
+            right (ndarray): A column vector, or a matrix of column vectors.
 
         Returns:
-            ndarray: The matrix exponential.
+            ndarray: One value per column of right.
         """
 
-        return self.__unif.run(self.phgen, float(x))[0]
+        columns = np.asarray(right, dtype=float).reshape(self.nphases, -1)
+        return self.__unif.vectorrun(self.phgen, float(x), self.initdist, columns)[0]
 
     def __computecumprob(self, x: float) -> float:
         """
@@ -539,7 +539,7 @@ class dist:
                     np.matmul(self.initdist, np.linalg.matrix_power(self.phgen, int(x)))
                 )
         else:
-            return 1 - np.sum(np.matmul(self.initdist, self.__exponential(x)))
+            return 1 - float(self.__series(x, np.ones(self.nphases))[0])
 
     def __computequantile(self, p: float, tolerance: float = 1e-9) -> int | float:
         """
@@ -667,17 +667,17 @@ class dist:
         param2 = np.log(1 + var / np.power(mean, 2))
         x = lognorm.ppf(prob, param2, scale=np.exp(param1))
 
-        # improve x until convergence
-        eTx = self.__exponential(x)
-        trc = 1 - np.sum(np.matmul(self.initdist, eTx))
+        # improve x until convergence, with the survival function and the
+        # density at x from one series
+        columns = np.c_[np.ones(self.nphases), np.asarray(self.exitrates, dtype=float).reshape(-1)]
+        survival, density = self.__series(x, columns)
+        trc = 1 - survival
         iter = 0
         while np.abs(trc - prob) > tol and iter < itermax:
-            grad = np.matmul(
-                self.initdist, np.matmul(eTx, self.exitrates)
-            ).item()
+            grad = density
             x = x - (trc - prob) / grad
-            eTx = self.__exponential(x)
-            trc = 1 - np.sum(np.matmul(self.initdist, eTx))
+            survival, density = self.__series(x, columns)
+            trc = 1 - survival
             iter += 1
         if iter == itermax:
             print(
