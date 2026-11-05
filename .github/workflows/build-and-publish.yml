@@ -80,6 +80,13 @@ jobs:
 
       - uses: pypa/cibuildwheel@v4.3.4
 
+      # cibuildwheel builds with Pythons of its own, so the check needs one
+      # too: The macOS runners have no `python` on the path, and pip may not
+      # install into their system Python
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
       - name: Check the wheels
         shell: bash
         run: |
